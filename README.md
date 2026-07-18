@@ -2,8 +2,6 @@
 
 我的用户脚本合集，用于 Violentmonkey / Tampermonkey。
 
-> 所有脚本已发布到 Greasy Fork，[📦 从这里批量重装](install.html)可恢复在线状态
-
 ## 脚本列表
 
 | # | 脚本 | 用途 | 安装 |
