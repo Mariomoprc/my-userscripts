@@ -2,11 +2,7 @@
 
 我的用户脚本合集，用于 Violentmonkey / Tampermonkey。
 
-## 批量安装
-
-> 点击 [#] 列的链接 → Violentmonkey 弹出安装/更新确认 → 点「更新」即可
-
-[📦 一键批量安装页面](install.html)
+> 所有脚本已发布到 Greasy Fork，[📦 从这里批量重装](install.html)可恢复在线状态
 
 ## 脚本列表
 

@@ -3,112 +3,51 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>一键批量安装用户脚本</title>
+<title>批量安装用户脚本</title>
 <style>
 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; max-width: 720px; margin: 0 auto; padding: 20px; background: #f6f8fa; }
 h1 { font-size: 20px; }
-.status-bar { background: #ddf4ff; border: 1px solid #54aeff; border-radius: 6px; padding: 12px; margin: 16px 0; font-size: 14px; }
+.info { background: #ddf4ff; border: 1px solid #54aeff; border-radius: 6px; padding: 12px; margin: 16px 0; font-size: 14px; }
 table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
 th { background: #f6f8fa; padding: 10px 12px; text-align: left; font-size: 13px; color: #57606a; border-bottom: 1px solid #d0d7de; }
 td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
-.btn { display: inline-block; padding: 4px 12px; font-size: 13px; border-radius: 6px; border: 1px solid #d0d7de; cursor: pointer; text-decoration: none; color: #24292f; background: #f6f8fa; }
-.btn:hover { background: #eaeef2; }
-.btn-install { background: #2da44e; color: #fff; border-color: #2da44e; }
-.btn-install:hover { background: #218838; }
-.btn-primary { background: #0969da; color: #fff; border-color: #0969da; padding: 8px 20px; font-size: 15px; }
-.btn-primary:hover { background: #0550ae; }
-.btn-primary:disabled { background: #8bb8f0; cursor: not-allowed; }
-td.status { width: 80px; text-align: center; font-size: 12px; }
-.done { color: #2da44e; }
-.pending { color: #9a9a9a; }
-.progress { color: #0969da; }
-#counter { font-weight: 600; }
+a { color: #0969da; text-decoration: none; }
+a:hover { text-decoration: underline; }
+.btn-install { display: inline-block; padding: 4px 14px; font-size: 13px; border-radius: 6px; text-decoration: none; background: #2da44e; color: #fff; border: 1px solid #2da44e; white-space: nowrap; }
+.btn-install:hover { background: #218838; text-decoration: none; }
 </style>
 </head>
 <body>
-<h1>📦 一键批量安装用户脚本</h1>
-<p>点击「安装全部」→ Violentmonkey 逐个弹出确认 → 点「更新」即可</p>
-
-<div class="status-bar" id="statusBar">
-  准备就绪，共 <strong id="totalCount">19</strong> 个脚本
+<h1>📦 批量安装用户脚本</h1>
+<div class="info">
+  <strong>操作方法：</strong>点击「安装」→ 新标签打开 → Violentmonkey 弹出确认 → 点「更新」→ 关标签 → 点下一个
 </div>
-
-<p>
-  <button class="btn btn-primary" id="installAll" onclick="installAll()">⚡ 安装全部</button>
-  <span id="counter" style="margin-left:12px;"></span>
-</p>
 
 <table>
 <thead>
-  <tr><th>#</th><th>脚本名</th><th>操作</th></tr>
+  <tr><th>#</th><th>脚本名</th><th style="text-align:center">安装</th></tr>
 </thead>
-<tbody id="scriptList"></tbody>
+<tbody>
+  <tr><td>1</td><td><a href="https://greasyfork.org/zh-CN/scripts/587500-discord-token-获取器" target="_blank">Discord Token 获取器</a></td><td style="text-align:center"><a class="btn-install" href="https://greasyfork.org/scripts/587500/code/script.user.js" target="_blank">安装</a></td></tr>
+  <tr><td>2</td><td><a href="https://greasyfork.org/zh-CN/scripts/587501-gemini-alt-click-快速删除" target="_blank">Gemini Alt+Click 快速删除</a></td><td style="text-align:center"><a class="btn-install" href="https://greasyfork.org/scripts/587501/code/script.user.js" target="_blank">安装</a></td></tr>
+  <tr><td>3</td><td><a href="https://greasyfork.org/zh-CN/scripts/587502-gemini-默认开启临时对话-终极稳定版" target="_blank">Gemini 默认开启临时对话 (终极稳定版)</a></td><td style="text-align:center"><a class="btn-install" href="https://greasyfork.org/scripts/587502/code/script.user.js" target="_blank">安装</a></td></tr>
+  <tr><td>4</td><td><a href="https://greasyfork.org/zh-CN/scripts/587499-deepseek-历史对话快捷删除-alt-左键-完美版" target="_blank">DeepSeek 历史对话快捷删除 - 完美版</a></td><td style="text-align:center"><a class="btn-install" href="https://greasyfork.org/scripts/587499/code/script.user.js" target="_blank">安装</a></td></tr>
+  <tr><td>5</td><td><a href="https://greasyfork.org/zh-CN/scripts/587497-chatgpt-历史对话快捷删除-alt-左键-彻底终结版" target="_blank">ChatGPT 历史对话快捷删除 - 彻底终结版</a></td><td style="text-align:center"><a class="btn-install" href="https://greasyfork.org/scripts/587497/code/script.user.js" target="_blank">安装</a></td></tr>
+  <tr><td>6</td><td><a href="https://greasyfork.org/zh-CN/scripts/587510-豆包对话快捷删除-alt-click" target="_blank">豆包对话快捷删除 (Alt+Click)</a></td><td style="text-align:center"><a class="btn-install" href="https://greasyfork.org/scripts/587510/code/script.user.js" target="_blank">安装</a></td></tr>
+  <tr><td>7</td><td><a href="https://greasyfork.org/zh-CN/scripts/587507-禁用-google-语音搜索-解决-ctrl-shift-与-copilot-冲突" target="_blank">禁用 Google 语音搜索</a></td><td style="text-align:center"><a class="btn-install" href="https://greasyfork.org/scripts/587507/code/script.user.js" target="_blank">安装</a></td></tr>
+  <tr><td>8</td><td><a href="https://greasyfork.org/zh-CN/scripts/587509-谷歌搜索去污染-强制解锁-ai-概览" target="_blank">谷歌搜索去污染 + 强制解锁 AI 概览</a></td><td style="text-align:center"><a class="btn-install" href="https://greasyfork.org/scripts/587509/code/script.user.js" target="_blank">安装</a></td></tr>
+  <tr><td>9</td><td><a href="https://greasyfork.org/zh-CN/scripts/587503-google-搜索新标签打开" target="_blank">Google 搜索新标签打开</a></td><td style="text-align:center"><a class="btn-install" href="https://greasyfork.org/scripts/587503/code/script.user.js" target="_blank">安装</a></td></tr>
+  <tr><td>10</td><td><a href="https://greasyfork.org/zh-CN/scripts/587496-bing-深色模式" target="_blank">Bing 深色模式</a></td><td style="text-align:center"><a class="btn-install" href="https://greasyfork.org/scripts/587496/code/script.user.js" target="_blank">安装</a></td></tr>
+  <tr><td>11</td><td><a href="https://greasyfork.org/zh-CN/scripts/587495-bing-搜索响应式布局-like-google" target="_blank">Bing 搜索响应式布局 (like Google)</a></td><td style="text-align:center"><a class="btn-install" href="https://greasyfork.org/scripts/587495/code/script.user.js" target="_blank">安装</a></td></tr>
+  <tr><td>12</td><td><a href="https://greasyfork.org/zh-CN/scripts/587498-chub-ai-中文汉化" target="_blank">Chub AI 中文汉化</a></td><td style="text-align:center"><a class="btn-install" href="https://greasyfork.org/scripts/587498/code/script.user.js" target="_blank">安装</a></td></tr>
+  <tr><td>13</td><td><a href="https://greasyfork.org/zh-CN/scripts/587506-坚果云-webdav-双击复制" target="_blank">坚果云 WebDAV 双击复制</a></td><td style="text-align:center"><a class="btn-install" href="https://greasyfork.org/scripts/587506/code/script.user.js" target="_blank">安装</a></td></tr>
+  <tr><td>14</td><td><a href="https://greasyfork.org/zh-CN/scripts/587512-豆瓣剧集完结时间" target="_blank">豆瓣剧集完结时间</a></td><td style="text-align:center"><a class="btn-install" href="https://greasyfork.org/scripts/587512/code/script.user.js" target="_blank">安装</a></td></tr>
+  <tr><td>15</td><td><a href="https://greasyfork.org/zh-CN/scripts/587511-豆瓣人人视频跳转" target="_blank">豆瓣人人视频跳转</a></td><td style="text-align:center"><a class="btn-install" href="https://greasyfork.org/scripts/587511/code/script.user.js" target="_blank">安装</a></td></tr>
+  <tr><td>16</td><td><a href="https://greasyfork.org/zh-CN/scripts/587513-豆瓣自动加载更多" target="_blank">豆瓣自动加载更多</a></td><td style="text-align:center"><a class="btn-install" href="https://greasyfork.org/scripts/587513/code/script.user.js" target="_blank">安装</a></td></tr>
+  <tr><td>17</td><td><a href="https://greasyfork.org/zh-CN/scripts/587505-全站-最小化自动暂停-仅在含音视频页面生效" target="_blank">全站 最小化自动暂停</a></td><td style="text-align:center"><a class="btn-install" href="https://greasyfork.org/scripts/587505/code/script.user.js" target="_blank">安装</a></td></tr>
+  <tr><td>18</td><td><a href="https://greasyfork.org/zh-CN/scripts/587504-人人视频增强包" target="_blank">人人视频增强包</a></td><td style="text-align:center"><a class="btn-install" href="https://greasyfork.org/scripts/587504/code/script.user.js" target="_blank">安装</a></td></tr>
+  <tr><td>19</td><td><a href="https://greasyfork.org/zh-CN/scripts/587508-网页代理检测器" target="_blank">网页代理检测器</a></td><td style="text-align:center"><a class="btn-install" href="https://greasyfork.org/scripts/587508/code/script.user.js" target="_blank">安装</a></td></tr>
+</tbody>
 </table>
-
-<script>
-const scripts = [
-  { id: 587500, name: 'Discord Token 获取器', slug: 'discord-token-获取器' },
-  { id: 587501, name: 'Gemini Alt+Click 快速删除', slug: 'gemini-alt-click-快速删除' },
-  { id: 587502, name: 'Gemini 默认开启临时对话 (终极稳定版)', slug: 'gemini-默认开启临时对话-终极稳定版' },
-  { id: 587499, name: 'DeepSeek 历史对话快捷删除 - 完美版', slug: 'deepseek-历史对话快捷删除-alt-左键-完美版' },
-  { id: 587497, name: 'ChatGPT 历史对话快捷删除 - 彻底终结版', slug: 'chatgpt-历史对话快捷删除-alt-左键-彻底终结版' },
-  { id: 587510, name: '豆包对话快捷删除 (Alt+Click)', slug: '豆包对话快捷删除-alt-click' },
-  { id: 587507, name: '禁用 Google 语音搜索', slug: '禁用-google-语音搜索-解决-ctrl-shift-与-copilot-冲突' },
-  { id: 587509, name: '谷歌搜索去污染 + 强制解锁 AI 概览', slug: '谷歌搜索去污染-强制解锁-ai-概览' },
-  { id: 587503, name: 'Google 搜索新标签打开', slug: 'google-搜索新标签打开' },
-  { id: 587496, name: 'Bing 深色模式', slug: 'bing-深色模式' },
-  { id: 587495, name: 'Bing 搜索响应式布局 (like Google)', slug: 'bing-搜索响应式布局-like-google' },
-  { id: 587498, name: 'Chub AI 中文汉化', slug: 'chub-ai-中文汉化' },
-  { id: 587506, name: '坚果云 WebDAV 双击复制', slug: '坚果云-webdav-双击复制' },
-  { id: 587512, name: '豆瓣剧集完结时间', slug: '豆瓣剧集完结时间' },
-  { id: 587511, name: '豆瓣人人视频跳转', slug: '豆瓣人人视频跳转' },
-  { id: 587513, name: '豆瓣自动加载更多', slug: '豆瓣自动加载更多' },
-  { id: 587505, name: '全站 最小化自动暂停', slug: '全站-最小化自动暂停-仅在含音视频页面生效' },
-  { id: 587504, name: '人人视频增强包', slug: '人人视频增强包' },
-  { id: 587508, name: '网页代理检测器', slug: '网页代理检测器' },
-];
-
-function renderTable() {
-  const tbody = document.getElementById('scriptList');
-  scripts.forEach((s, i) => {
-    const tr = document.createElement('tr');
-    tr.id = 'row-' + i;
-    tr.innerHTML = '<td>' + (i+1) + '</td>'
-      + '<td><a href="https://greasyfork.org/zh-CN/scripts/' + s.id + '-' + s.slug + '" target="_blank">' + s.name + '</a></td>'
-      + '<td class="status"><span class="pending" id="status-' + i + '">⏳ 等待</span></td>';
-    tbody.appendChild(tr);
-  });
-}
-
-function getInstallUrl(id) {
-  return 'https://greasyfork.org/scripts/' + id + '/code/script.user.js';
-}
-
-async function installAll() {
-  const btn = document.getElementById('installAll');
-  btn.disabled = true;
-  btn.textContent = '⏳ 安装中...';
-  document.getElementById('counter').textContent = '';
-
-  for (let i = 0; i < scripts.length; i++) {
-    const statusEl = document.getElementById('status-' + i);
-    statusEl.className = 'progress';
-    statusEl.textContent = '⏳ 打开中';
-
-    document.getElementById('counter').textContent = (i+1) + ' / ' + scripts.length;
-    document.getElementById('totalCount').textContent = scripts.length;
-
-    window.open(getInstallUrl(scripts[i].id), '_blank');
-
-    // Wait before next
-    await new Promise(r => setTimeout(r, 800));
-  }
-
-  btn.textContent = '✅ 全部打开完毕';
-  document.getElementById('statusBar').textContent = '所有安装链接已打开，Violentmonkey 会依次弹出确认，逐个点「更新」即可';
-}
-
-renderTable();
-</script>
 </body>
 </html>
