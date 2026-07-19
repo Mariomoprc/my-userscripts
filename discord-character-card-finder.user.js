@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Discord 角色卡检测提示
 // @namespace    http://tampermonkey.net/
-// @version      2.1
-// @description  仅针对含有 chara 元数据的 PNG 提供图标按钮，显示角色卡版本号
+// @version      2.2
+// @description  仅针对含有 chara 元数据的 PNG 提供图标按钮，显示版本号
 // @author       pass
 // @match        https://discord.com/*
 // @grant        GM_xmlhttpRequest
@@ -33,7 +33,7 @@
     const knownCharaUrls = new Map();
     const nonCharaUrls = new Set();
 
-    function parseMetadataRaw(type, dataUint8Array) {
+    function parseMetadata(type, dataUint8Array) {
         const decoder = (type === 'iTXt') ? new TextDecoder('utf-8') : new TextDecoder('iso-8859-1');
         const fullString = decoder.decode(dataUint8Array);
         const parts = fullString.split('\0');
@@ -48,30 +48,20 @@
                 const bytes = new Uint8Array(raw.length);
                 for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
                 jsonStr = new TextDecoder('utf-8').decode(bytes);
-            } catch (e) {
-                jsonStr = value;
-            }
+            } catch (e) { jsonStr = value; }
         }
-
         if (jsonStr) {
             try {
                 const obj = JSON.parse(jsonStr);
                 const cv = obj.character_version || (obj.data && obj.data.character_version);
                 if (cv) return cv;
                 const spec = obj.spec || (obj.data && obj.data.spec);
-                if (spec) {
-                    const m = spec.match(/v(\d+(?:\.\d+)?)/);
-                    if (m) return m[1];
-                }
+                if (spec) { const m = spec.match(/v(\d+(?:\.\d+)?)/); if (m) return m[1]; }
                 if (obj.spec_version) return obj.spec_version;
             } catch (e) {}
         }
-
-        const keyLower = (key || '').toLowerCase();
-        const keyMatch = keyLower.match(/chara(?:_card)?_v(\d+)/);
-        if (keyMatch) return keyMatch[1];
-
-        return null;
+        const m = (key || '').toLowerCase().match(/chara(?:_card)?_v(\d+)/);
+        return m ? m[1] : null;
     }
 
     function extractVersionFromMessage(element) {
@@ -84,42 +74,10 @@
         return m ? (m[1] || m[2]) : null;
     }
 
-    function findPngUrl(element) {
-        const a = element.closest('a[href*=".png"]') || element.closest('a[href*=".PNG"]');
-        if (a) return a.href;
-
-        if (element.tagName === 'IMG') {
-            const src = element.src || element.getAttribute('data-src') || '';
-            if (/\.png/i.test(src)) return src;
-        }
-
-        const img = element.querySelector('img[src*=".png"], img[src*=".PNG"]');
-        if (img) return img.src || img.getAttribute('data-src') || '';
-
-        return null;
-    }
-
-    function findContainer(element) {
-        const wrapper = element.closest('[class*="imageWrapper"]') ||
-                         element.closest('[class*="clickableWrapper"]') ||
-                         element.closest('[class*="imageContainer"]');
-        if (wrapper) return wrapper;
-
-        if (element.tagName === 'IMG') {
-            let el = element;
-            for (let i = 0; i < 5 && el; i++) {
-                if (getComputedStyle(el).position !== 'static') return el;
-                el = el.parentElement;
-            }
-        }
-
-        return element;
-    }
-
-    function checkImage(url, container) {
+    function checkImage(url, linkElement) {
         if (nonCharaUrls.has(url)) return;
         if (knownCharaUrls.has(url)) {
-            addFloatingUI(container, url, knownCharaUrls.get(url));
+            addFloatingUI(linkElement, url, knownCharaUrls.get(url));
             return;
         }
 
@@ -143,7 +101,7 @@
                     const length = view.getUint32(offset);
                     const type = String.fromCharCode(view.getUint8(offset+4), view.getUint8(offset+5), view.getUint8(offset+6), view.getUint8(offset+7));
                     if (type === 'tEXt' || type === 'iTXt') {
-                        const meta = parseMetadataRaw(type, new Uint8Array(buffer.slice(offset + 8, offset + 8 + length)));
+                        const meta = parseMetadata(type, new Uint8Array(buffer.slice(offset + 8, offset + 8 + length)));
                         if (meta.key.toLowerCase().includes('chara')) {
                             charaKey = meta.key;
                             charaValue = meta.value;
@@ -157,7 +115,7 @@
                 if (charaKey) {
                     const version = extractVersionFromChara(charaKey, charaValue);
                     knownCharaUrls.set(url, version);
-                    addFloatingUI(container, url, version);
+                    addFloatingUI(linkElement, url, version);
                 } else {
                     nonCharaUrls.add(url);
                 }
@@ -196,18 +154,8 @@
     }
 
     function scan() {
-        const elements = document.querySelectorAll(
-            'a[href*=".png"], a[href*=".PNG"], img[src*=".png"], img[src*=".PNG"]'
-        );
-        elements.forEach(el => {
-            if (el.querySelector && el.querySelector('.chara-tag-container')) return;
-            if (el.closest && el.closest('.chara-tag-container')) return;
-
-            const url = findPngUrl(el);
-            if (!url) return;
-
-            const container = findContainer(el);
-            checkImage(url, container);
+        document.querySelectorAll('a[href*=".png"]').forEach(link => {
+            if (!link.querySelector('.chara-tag-container')) checkImage(link.href, link);
         });
     }
 
