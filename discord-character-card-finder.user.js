@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Discord 角色卡检测提示
 // @namespace    http://tampermonkey.net/
-// @version      2.3
+// @version      2.4
 // @description  仅针对含有 chara 元数据的 PNG 提供图标按钮，显示版本号
 // @author       pass
 // @match        https://discord.com/*
@@ -30,8 +30,11 @@
         .chara-icon-btn:hover { filter: brightness(1.5); transform: scale(1.1); }
     `);
 
+    const LOG = '[角色卡]';
     const knownCharaUrls = new Map();
     const nonCharaUrls = new Set();
+    const checkedUrls = new Set();
+    const SCANNED_ATTR = 'data-chara-scanned';
 
     function parseMetadata(type, dataUint8Array) {
         const decoder = (type === 'iTXt') ? new TextDecoder('utf-8') : new TextDecoder('iso-8859-1');
@@ -78,8 +81,7 @@
         if (el.tagName === 'A') return el.href;
         if (el.tagName === 'IMG') {
             const src = el.src || el.getAttribute('data-src') || '';
-            if (/\.png/i.test(src)) return src;
-            if (/attachments.*\//i.test(src)) return src;
+            if (src && (src.includes('.png') || src.includes('.PNG') || src.includes('attachments'))) return src;
         }
         const img = el.querySelector('img[src*=".png"], img[src*=".PNG"], img[src*="attachments"]');
         if (img) return img.src || '';
@@ -103,21 +105,30 @@
     }
 
     function checkImage(url, container) {
-        if (nonCharaUrls.has(url)) return;
+        if (nonCharaUrls.has(url) || checkedUrls.has(url)) return;
         if (knownCharaUrls.has(url)) {
             addFloatingUI(container, url, knownCharaUrls.get(url));
             return;
         }
 
+        checkedUrls.add(url);
+        console.log(LOG, '正在检测 PNG:', url.substring(0, 80));
+
         GM_xmlhttpRequest({
             method: "GET",
             url: url,
             responseType: "arraybuffer",
-            timeout: 10000,
+            timeout: 15000,
             onload: function(response) {
                 const buffer = response.response;
+                if (!buffer || buffer.byteLength < 8) {
+                    console.log(LOG, '文件太小或为空');
+                    nonCharaUrls.add(url);
+                    return;
+                }
                 const view = new DataView(buffer);
-                if (buffer.byteLength < 8 || view.getUint32(0) !== 0x89504E47) {
+                if (view.getUint32(0) !== 0x89504E47) {
+                    console.log(LOG, '不是 PNG 文件');
                     nonCharaUrls.add(url);
                     return;
                 }
@@ -127,6 +138,7 @@
                 let charaValue = null;
                 while (offset < buffer.byteLength) {
                     const length = view.getUint32(offset);
+                    if (length > buffer.byteLength - offset - 12) break;
                     const type = String.fromCharCode(view.getUint8(offset+4), view.getUint8(offset+5), view.getUint8(offset+6), view.getUint8(offset+7));
                     if (type === 'tEXt' || type === 'iTXt') {
                         const meta = parseMetadata(type, new Uint8Array(buffer.slice(offset + 8, offset + 8 + length)));
@@ -142,11 +154,23 @@
 
                 if (charaKey) {
                     const version = extractVersionFromChara(charaKey, charaValue);
+                    console.log(LOG, '✅ 角色卡!', charaKey, '版本:', version);
                     knownCharaUrls.set(url, version);
                     addFloatingUI(container, url, version);
                 } else {
+                    console.log(LOG, '❌ 非角色卡');
                     nonCharaUrls.add(url);
                 }
+            },
+            onerror: function(e) {
+                console.log(LOG, '⚠️ 请求失败', e);
+                nonCharaUrls.add(url);
+                checkedUrls.delete(url);
+            },
+            ontimeout: function() {
+                console.log(LOG, '⚠️ 请求超时');
+                nonCharaUrls.add(url);
+                checkedUrls.delete(url);
             }
         });
     }
@@ -179,6 +203,7 @@
 
         if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
         container.appendChild(ui);
+        console.log(LOG, '📌 标签已添加到 DOM');
     }
 
     function scan() {
@@ -195,6 +220,8 @@
         });
     }
 
+    console.log(LOG, '🚀 v2.4 已加载');
+    console.log(LOG, '匹配到的元素:', document.querySelectorAll('a[href*=".png"], img[src*=".png"], img[src*="attachments"]').length);
     scan();
     const observer = new MutationObserver(scan);
     observer.observe(document.body, { childList: true, subtree: true });
