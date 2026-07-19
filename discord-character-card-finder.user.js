@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Discord 角色卡检测提示
 // @namespace    http://tampermonkey.net/
-// @version      2.2
+// @version      2.3
 // @description  仅针对含有 chara 元数据的 PNG 提供图标按钮，显示版本号
 // @author       pass
 // @match        https://discord.com/*
@@ -74,10 +74,38 @@
         return m ? (m[1] || m[2]) : null;
     }
 
-    function checkImage(url, linkElement) {
+    function getPngUrl(el) {
+        if (el.tagName === 'A') return el.href;
+        if (el.tagName === 'IMG') {
+            const src = el.src || el.getAttribute('data-src') || '';
+            if (/\.png/i.test(src)) return src;
+            if (/attachments.*\//i.test(src)) return src;
+        }
+        const img = el.querySelector('img[src*=".png"], img[src*=".PNG"], img[src*="attachments"]');
+        if (img) return img.src || '';
+        return null;
+    }
+
+    function getContainer(el) {
+        const w = el.closest('[class*="imageWrapper"]') ||
+                  el.closest('[class*="clickableWrapper"]') ||
+                  el.closest('[class*="imageContainer"]');
+        if (w) return w;
+        if (el.tagName === 'IMG') {
+            let p = el.parentElement;
+            for (let i = 0; i < 8 && p; i++) {
+                const s = getComputedStyle(p);
+                if (s.position !== 'static' || s.overflow === 'hidden') return p;
+                p = p.parentElement;
+            }
+        }
+        return el;
+    }
+
+    function checkImage(url, container) {
         if (nonCharaUrls.has(url)) return;
         if (knownCharaUrls.has(url)) {
-            addFloatingUI(linkElement, url, knownCharaUrls.get(url));
+            addFloatingUI(container, url, knownCharaUrls.get(url));
             return;
         }
 
@@ -115,7 +143,7 @@
                 if (charaKey) {
                     const version = extractVersionFromChara(charaKey, charaValue);
                     knownCharaUrls.set(url, version);
-                    addFloatingUI(linkElement, url, version);
+                    addFloatingUI(container, url, version);
                 } else {
                     nonCharaUrls.add(url);
                 }
@@ -154,8 +182,16 @@
     }
 
     function scan() {
-        document.querySelectorAll('a[href*=".png"]').forEach(link => {
-            if (!link.querySelector('.chara-tag-container')) checkImage(link.href, link);
+        const els = document.querySelectorAll(
+            'a[href*=".png"], a[href*=".PNG"], img[src*=".png"], img[src*=".PNG"], img[src*="attachments"]'
+        );
+        els.forEach(el => {
+            if (el.querySelector && el.querySelector('.chara-tag-container')) return;
+            if (el.closest && el.closest('.chara-tag-container')) return;
+            const url = getPngUrl(el);
+            if (!url) return;
+            const container = getContainer(el);
+            checkImage(url, container);
         });
     }
 
