@@ -22,28 +22,3 @@
 | 12 | [豆瓣自动加载更多](https://greasyfork.org/zh-CN/scripts/587513-豆瓣自动加载更多) | 页面自动加载更多内容 | [🔗](https://greasyfork.org/scripts/587513/code/script.user.js) |
 | 13 | [全站 最小化自动暂停](https://greasyfork.org/zh-CN/scripts/587505-全站-最小化自动暂停-仅在含音视频页面生效) | 切到后台时自动暂停音视频 | [🔗](https://greasyfork.org/scripts/587505/code/script.user.js) |
 | 14 | [人人视频增强包](https://greasyfork.org/zh-CN/scripts/587504-人人视频增强包) | 反调试、去广告、豆瓣跳转等 | [🔗](https://greasyfork.org/scripts/587504/code/script.user.js) |
-
-
-## 工作流程
-
-### 制造新脚本
-
-1. 在[此仓库](https://github.com/Mariomoprc/my-userscripts)的 `main` 分支下创建 `.user.js` 文件
-2. 确保元数据完整（`@name`, `@version`, `@match`, `@grant`, `@description`）
-3. 更新 README.md：新脚本放在脚本列表**最前面**，序号从 1 开始递增，后续脚本顺延编号
-4. `git add + commit + push`
-5. 提交 raw GitHub URL 到 [Greasy Fork 导入页](https://greasyfork.org/zh-CN/import)，选择「自动」同步
-6. 浏览器中从 Greasy Fork 安装脚本（获得在线状态 + 云图标）
-
-### 修改已有脚本
-
-1. 编辑 `.user.js` 文件
-2. `@version` 版本号 +1（Greasy Fork 识别新版本的依据）
-3. `git add + commit + push` → Webhook 自动同步到 Greasy Fork
-4. Violentmonkey 检测到新版本 → 自动更新
-
-### 注意事项
-
-- 敏感数据（Token、密钥等）用 `GM_getValue`/`GM_setValue` 存储，不要硬编码在脚本中
-- 不要手动修改 Greasy Fork 上的 `@downloadURL` 和 `@updateURL`，由 GF 自动管理
-- 首次从 GF 安装后才能获得在线状态，导入 zip 无法得到云图标
