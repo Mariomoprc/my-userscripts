@@ -1,7 +1,5 @@
 # my-userscripts
 
-我的用户脚本合集，用于 Violentmonkey / Tampermonkey。
-
 ## 脚本列表
 
 > 新添加的脚本放在列表最前面。
