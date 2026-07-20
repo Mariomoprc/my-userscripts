@@ -26,7 +26,7 @@
 | 16 | [豆瓣自动加载更多](https://greasyfork.org/zh-CN/scripts/587513-豆瓣自动加载更多) | 页面自动加载更多内容 | [🔗](https://greasyfork.org/scripts/587513/code/script.user.js) |
 | 17 | [全站 最小化自动暂停](https://greasyfork.org/zh-CN/scripts/587505-全站-最小化自动暂停-仅在含音视频页面生效) | 切到后台时自动暂停音视频 | [🔗](https://greasyfork.org/scripts/587505/code/script.user.js) |
 | 18 | [人人视频增强包](https://greasyfork.org/zh-CN/scripts/587504-人人视频增强包) | 反调试、去广告、豆瓣跳转等 | [🔗](https://greasyfork.org/scripts/587504/code/script.user.js) |
-| 19 | [网页代理检测器](https://greasyfork.org/zh-CN/scripts/587508-网页代理检测器) | 检测是否需要代理 | [🔗](https://greasyfork.org/scripts/587508/code/script.user.js) |
+
 
 ## 工作流程
 
