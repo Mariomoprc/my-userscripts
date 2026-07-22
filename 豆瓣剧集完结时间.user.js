@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         豆瓣剧集完结时间
 // @namespace    http://tampermonkey.net/
-// @version      16.0
+// @version      16.1
 // @description  在豆瓣剧集详情页显示完结时间、更新进度（多数据源）
 // @author       You
 // @match        https://movie.douban.com/subject/*
@@ -160,6 +160,12 @@
         if (daysSinceStart === 0) aired = 1;
 
         return Math.min(aired, totalEpisodes);
+    }
+
+    function getMDLSearchUrl(info) {
+        var query = info.engTitle || info.aka || info.chTitle;
+        if (!query) return window.location.href;
+        return 'https://mydramalist.com/search?adv=titles&ty=68&q=' + encodeURIComponent(query);
     }
 
     function showResult(data) {
@@ -337,7 +343,7 @@
         var freq = inferUpdateFrequency(info.region);
         var epPerWeek = freq.epPerWeek;
 
-        var sourceUrl = window.location.href;
+        var sourceUrl = getMDLSearchUrl(info);
 
         var premiereDate = new Date(info.premiere);
         var weeksNeeded = Math.ceil(total / epPerWeek);
