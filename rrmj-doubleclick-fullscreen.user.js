@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         人人视频双击全屏
 // @namespace    http://tampermonkey.net/
-// @version      5.0
+// @version      6.0
 // @description  双击全屏+滑动进度+弹幕保留，支持安卓手机
 // @author       You
 // @match        *://mh.yichengwlkj.com/*
@@ -14,7 +14,7 @@
 (function() {
     'use strict';
 
-    const LOG = '[人人视频v5]';
+    const LOG = '[人人视频v6]';
     function log(...a) { console.log(LOG, ...a); }
 
     function requestFS(el) {
@@ -39,7 +39,7 @@
         try { screen.orientation && screen.orientation.unlock && screen.orientation.unlock(); } catch(e) {}
     }
 
-    let lastBoundVideo = null;
+    let boundContainer = null;
     let pendingPlayState = null;
     let swipeIndicator = null;
 
@@ -72,73 +72,52 @@
         return swipeIndicator;
     }
 
-    // === 弹幕修复：全屏时强制弹幕层可见 ===
-    function fixDanmakuInFullscreen(container) {
-        const style = document.createElement('style');
-        style.id = 'rrmj-danmaku-fs-fix';
-        style.textContent = `
-            :fullscreen .barrage-container,
-            :-webkit-full-screen .barrage-container,
-            [class*="barrage"][class*="layer"],
-            [class*="danmaku"],
-            [class*="danmu"],
-            [class*="bullet-comment"],
-            [id*="barrage-layer"] {
-                display: block !important;
-                visibility: visible !important;
-                opacity: 1 !important;
-                pointer-events: none !important;
-            }
-            :fullscreen #player-container > *,
-            :-webkit-full-screen #player-container > * {
-                position: relative;
-            }
-        `;
-        document.head.appendChild(style);
-        log('已注入弹幕修复样式');
-    }
-
     function setup() {
         const video = document.querySelector('#player-container video')
                    || document.querySelector('.player-container video')
                    || document.querySelector('video');
         if (!video) { setTimeout(setup, 1000); return; }
 
-        // 检测是否是新视频（SPA切换）
-        if (video === lastBoundVideo) return;
-        lastBoundVideo = video;
+        const container = video.closest('#player-container')
+                       || video.closest('.player-container')
+                       || video.parentElement;
+        if (!container) { setTimeout(setup, 1000); return; }
 
-        log('绑定事件到 video:', video.src?.substring(0, 80));
+        if (container === boundContainer) return;
+        boundContainer = container;
+        log('绑定到容器');
 
         // === 双击全屏 ===
         let lastTap = 0;
 
-        function handleDblTap(e) {
+        container.addEventListener('touchend', function(e) {
+            const now = Date.now();
+            if (now - lastTap < 300) {
+                e.preventDefault();
+                e.stopPropagation();
+                lastTap = 0;
+                if (isFS()) {
+                    exitFS();
+                } else {
+                    pendingPlayState = !video.paused;
+                    requestFS(container);
+                    tryLock();
+                }
+            } else {
+                lastTap = now;
+            }
+        }, { passive: false });
+
+        container.addEventListener('dblclick', function(e) {
             e.preventDefault();
             e.stopPropagation();
             if (isFS()) {
                 exitFS();
             } else {
                 pendingPlayState = !video.paused;
-                const target = video.closest('#player-container')
-                            || video.closest('.player-container')
-                            || video.parentElement;
-                requestFS(target);
-                tryLock();
-                fixDanmakuInFullscreen(target);
+                requestFS(container);
             }
-        }
-
-        video.addEventListener('touchend', function(e) {
-            const now = Date.now();
-            if (now - lastTap < 300) {
-                handleDblTap(e);
-            } else {
-                lastTap = now;
-            }
-        }, { passive: false });
-
-        video.addEventListener('dblclick', handleDblTap);
+        });
 
         // 全屏进入后恢复播放状态
         function restoreState() {
@@ -150,7 +129,7 @@
                         video.pause();
                     }
                     pendingPlayState = null;
-                }, 100);
+                }, 150);
             }
             if (!isFS()) {
                 tryUnlock();
@@ -165,25 +144,19 @@
         let touchStartX = 0;
         let touchStartY = 0;
         let isSwiping = false;
-        let hasMoved = false;
 
-        video.addEventListener('touchstart', function(e) {
+        container.addEventListener('touchstart', function(e) {
             if (e.touches.length !== 1) return;
             touchStartX = e.touches[0].clientX;
             touchStartY = e.touches[0].clientY;
             isSwiping = false;
-            hasMoved = false;
         }, { passive: true });
 
-        video.addEventListener('touchmove', function(e) {
+        container.addEventListener('touchmove', function(e) {
             if (e.touches.length !== 1) return;
             const touch = e.touches[0];
             const dx = touch.clientX - touchStartX;
             const dy = touch.clientY - touchStartY;
-
-            if (!hasMoved && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
-                hasMoved = true;
-            }
 
             if (!isSwiping && Math.abs(dx) > 15 && Math.abs(dx) > Math.abs(dy) * 1.5) {
                 isSwiping = true;
@@ -197,7 +170,6 @@
 
                 const seekDelta = (dx / window.innerWidth) * duration * 0.5;
                 const targetTime = Math.max(0, Math.min(duration, video.currentTime + seekDelta));
-
                 const ind = createIndicator();
                 ind.style.display = 'block';
                 const diff = targetTime - video.currentTime;
@@ -206,7 +178,7 @@
             }
         }, { passive: false });
 
-        video.addEventListener('touchend', function(e) {
+        container.addEventListener('touchend', function(e) {
             if (isSwiping) {
                 const touch = e.changedTouches[0];
                 const dx = touch.clientX - touchStartX;
@@ -225,13 +197,16 @@
         log('绑定完成');
     }
 
-    // 定期检查新视频（SPA路由变化）
+    // 定期检测 SPA 切换
     setInterval(() => {
         const video = document.querySelector('#player-container video')
                    || document.querySelector('.player-container video');
-        if (video && video !== lastBoundVideo) {
-            log('检测到新视频，重新绑定');
-            setup();
+        if (video) {
+            const container = video.closest('#player-container') || video.closest('.player-container');
+            if (container && container !== boundContainer) {
+                log('检测到新容器');
+                setup();
+            }
         }
     }, 2000);
 
@@ -239,7 +214,10 @@
 
     const obs = new MutationObserver(() => {
         const video = document.querySelector('#player-container video');
-        if (video && video !== lastBoundVideo) setup();
+        if (video) {
+            const container = video.closest('#player-container');
+            if (container && container !== boundContainer) setup();
+        }
     });
     obs.observe(document.body || document.documentElement, { childList: true, subtree: true });
 
