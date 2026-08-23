@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         豆瓣剧集完结时间
 // @namespace    http://tampermonkey.net/
-// @version      15.0
+// @version      16.1
 // @description  在豆瓣剧集详情页显示完结时间、更新进度（多数据源）
 // @author       You
 // @match        https://movie.douban.com/subject/*
@@ -43,10 +43,8 @@
         var akaM = txt.match(/又名:\s*(.+)/);
         var aka = akaM ? akaM[1].split('/')[0].trim() : '';
 
-        var isChina = false;
-        if (regionM) {
-            isChina = regionM[1].indexOf('中国大陆') >= 0 || regionM[1].indexOf('中国台湾') >= 0 || regionM[1].indexOf('中国香港') >= 0;
-        }
+        var region = regionM ? regionM[1].trim() : '';
+        var isChina = region.indexOf('中国大陆') >= 0 || region.indexOf('中国台湾') >= 0 || region.indexOf('中国香港') >= 0;
 
         return {
             imdbId: imdbM ? imdbM[1] : '',
@@ -56,6 +54,7 @@
             engTitle: engTitle,
             chTitle: chTitle,
             aka: aka,
+            region: region,
             isChina: isChina,
             title: title
         };
@@ -86,6 +85,89 @@
         return span;
     }
 
+    function formatDate(date) {
+        return date.getFullYear() + '-' +
+               String(date.getMonth() + 1).padStart(2, '0') + '-' +
+               String(date.getDate()).padStart(2, '0');
+    }
+
+    function inferUpdateFrequency(region) {
+        var regionMap = {
+            '韩国': { epPerWeek: 2 },
+            'South Korea': { epPerWeek: 2 },
+            '日本': { epPerWeek: 1 },
+            'Japan': { epPerWeek: 1 },
+            '中国大陆': { epPerWeek: 5 },
+            '中国香港': { epPerWeek: 5 },
+            '中国台湾': { epPerWeek: 5 },
+            'China': { epPerWeek: 5 },
+            '泰国': { epPerWeek: 2 },
+            'Thailand': { epPerWeek: 2 },
+            '越南': { epPerWeek: 2 },
+            'Vietnam': { epPerWeek: 2 },
+            '菲律宾': { epPerWeek: 2 },
+            'Philippines': { epPerWeek: 2 },
+            '印度尼西亚': { epPerWeek: 2 },
+            'Indonesia': { epPerWeek: 2 },
+            '马来西亚': { epPerWeek: 2 },
+            'Malaysia': { epPerWeek: 2 },
+            '新加坡': { epPerWeek: 2 },
+            'Singapore': { epPerWeek: 2 },
+            '美国': { epPerWeek: 1 },
+            'United States': { epPerWeek: 1 },
+            '英国': { epPerWeek: 1 },
+            'United Kingdom': { epPerWeek: 1 },
+            '德国': { epPerWeek: 1 },
+            'Germany': { epPerWeek: 1 },
+            '法国': { epPerWeek: 1 },
+            'France': { epPerWeek: 1 },
+            '意大利': { epPerWeek: 1 },
+            'Italy': { epPerWeek: 1 },
+            '西班牙': { epPerWeek: 1 },
+            'Spain': { epPerWeek: 1 },
+            '加拿大': { epPerWeek: 1 },
+            'Canada': { epPerWeek: 1 },
+            '澳大利亚': { epPerWeek: 1 },
+            'Australia': { epPerWeek: 1 },
+            '印度': { epPerWeek: 5 },
+            'India': { epPerWeek: 5 },
+            '土耳其': { epPerWeek: 1 },
+            'Turkey': { epPerWeek: 1 },
+            '巴西': { epPerWeek: 5 },
+            'Brazil': { epPerWeek: 5 },
+            '墨西哥': { epPerWeek: 5 },
+            'Mexico': { epPerWeek: 5 }
+        };
+
+        for (var key in regionMap) {
+            if (region.indexOf(key) >= 0) {
+                return regionMap[key];
+            }
+        }
+        return { epPerWeek: 1 };
+    }
+
+    function calculateAiredEpisodes(premiereDate, epPerWeek, totalEpisodes) {
+        var today = new Date();
+        var premiere = new Date(premiereDate);
+        var daysSinceStart = Math.floor((today - premiere) / (1000 * 60 * 60 * 24));
+
+        if (daysSinceStart < 0) return 0;
+
+        var weeksAired = Math.floor(daysSinceStart / 7);
+        var aired = weeksAired * epPerWeek;
+
+        if (daysSinceStart === 0) aired = 1;
+
+        return Math.min(aired, totalEpisodes);
+    }
+
+    function getMDLSearchUrl(info) {
+        var query = info.engTitle || info.aka || info.chTitle;
+        if (!query) return window.location.href;
+        return 'https://mydramalist.com/search?adv=titles&ty=68&q=' + encodeURIComponent(query);
+    }
+
     function showResult(data) {
         var span = document.querySelector('#end-date-info');
         if (!span) span = createInfoSpan();
@@ -93,22 +175,32 @@
 
         var link = data.sourceUrl ? ' <a href="' + data.sourceUrl + '" target="_blank" style="color:#bbb;font-size:11px;">🔗</a>' : '';
 
+        var sourceTag = '';
+        if (data.isEstimate) {
+            sourceTag = ' <span style="color:#ffa726;font-size:11px;background:#fff3e0;padding:2px 6px;border-radius:3px;">⚠ 预估</span>';
+        } else {
+            sourceTag = ' <span style="color:#66bb6a;font-size:11px;background:#e8f5e9;padding:2px 6px;border-radius:3px;">✓ 准确</span>';
+        }
+
         if (data.notFound) {
             span.style.background = 'linear-gradient(135deg,#fff3e0,#fff8e1)';
             span.style.borderColor = '#ffcc80';
-            span.innerHTML = '<span style="color:#ffa726;">⚠</span> <span style="color:#999">' + (data.reason || '未找到') + '</span>' + link;
+            span.innerHTML = '<span style="color:#ffa726;">⚠</span> <span style="color:#999">' + (data.reason || '未找到') + '</span>' + sourceTag + link;
         } else if (data.completed) {
             span.style.background = 'linear-gradient(135deg,#e3f2fd,#e8eaf6)';
             span.style.borderColor = '#90caf9';
-            span.innerHTML = '<span style="color:#42a5f5;">✅</span> <b>已完结 ' + data.total + '/' + data.total + '</b> 完结日期: <b>' + data.endDate + '</b>' + link;
+            var endLabel = data.isEstimate ? '预估完结:' : '完结日期:';
+            span.innerHTML = '<span style="color:#42a5f5;">✅</span> <b>已完结 ' + data.total + '/' + data.total + '</b> ' + endLabel + ' <b>' + data.endDate + '</b>' + sourceTag + link;
         } else {
             var updateFreq = '';
-            if (data.updateDay && data.epPerWeek) {
+            if (data.epPerWeek && !data.updateDay) {
+                updateFreq = ' 每周' + data.epPerWeek + '集';
+            } else if (data.updateDay && data.epPerWeek) {
                 updateFreq = ' 每' + data.updateDay + '更新' + data.epPerWeek + '集';
             } else if (data.updateDay) {
                 updateFreq = ' 每' + data.updateDay + '更新';
             }
-            span.innerHTML = '<span style="color:#66bb6a;">▶</span> <b>更新中</b> ' + data.aired + '/' + data.total + updateFreq + ' <span style="color:#888;">预估完结:</span> <b>' + data.endDate + '</b>' + link;
+            span.innerHTML = '<span style="color:#66bb6a;">▶</span> <b>更新中</b> ' + data.aired + '/' + data.total + updateFreq + ' <span style="color:#888;">预估完结:</span> <b>' + data.endDate + '</b>' + sourceTag + link;
         }
     }
 
@@ -178,7 +270,8 @@
             endDate: endDate,
             updateDay: updateDay,
             epPerWeek: epPerWeek,
-            sourceUrl: sourceUrl
+            sourceUrl: sourceUrl,
+            isEstimate: false
         });
     }
 
@@ -189,12 +282,22 @@
             var s = results[i].show;
             if (s && s.premiered) {
                 var showYear = new Date(s.premiered).getFullYear();
-                if (Math.abs(showYear - year) <= 2) {
+                if (Math.abs(showYear - year) <= 3) {
                     return s.id;
                 }
             }
         }
         return null;
+    }
+
+    function lookupByImdb(imdbId) {
+        return fetchJSON(TVMAZE + '/lookup?imdb=' + imdbId)
+            .then(function(data) {
+                if (data && data.id) {
+                    return data.id;
+                }
+                return null;
+            });
     }
 
     function loadShow(showId, season) {
@@ -235,28 +338,37 @@
     function fallbackFromDouban(info) {
         if (!info.premiere || !info.totalEpisodes) return false;
 
-        var premiereDate = new Date(info.premiere);
         var total = info.totalEpisodes;
-        var epPerWeek = info.isChina ? 5 : 1;
-        var sourceUrl = window.location.href;
 
+        var freq = inferUpdateFrequency(info.region);
+        var epPerWeek = freq.epPerWeek;
+
+        var sourceUrl = getMDLSearchUrl(info);
+
+        var premiereDate = new Date(info.premiere);
         var weeksNeeded = Math.ceil(total / epPerWeek);
         var endDateObj = new Date(premiereDate);
         endDateObj.setDate(endDateObj.getDate() + weeksNeeded * 7 - 1);
-        var endDate = endDateObj.getFullYear() + '-' +
-                      String(endDateObj.getMonth() + 1).padStart(2, '0') + '-' +
-                      String(endDateObj.getDate()).padStart(2, '0');
+        var endDate = formatDate(endDateObj);
+
+        var aired = calculateAiredEpisodes(info.premiere, epPerWeek, total);
 
         var today = new Date();
         var completed = today >= endDateObj;
 
         if (completed) {
-            showResult({ completed: true, total: total, aired: total, endDate: endDate, sourceUrl: sourceUrl });
+            showResult({ completed: true, total: total, aired: total, endDate: endDate, sourceUrl: sourceUrl, isEstimate: true });
         } else {
-            var daysSinceStart = Math.round((today - premiereDate) / (1000 * 60 * 60 * 24));
-            var weeksAired = Math.floor(daysSinceStart / 7);
-            var aired = Math.min(weeksAired * epPerWeek, total);
-            showResult({ completed: false, total: total, aired: aired, endDate: endDate, sourceUrl: sourceUrl });
+            showResult({
+                completed: false,
+                total: total,
+                aired: aired,
+                endDate: endDate,
+                sourceUrl: sourceUrl,
+                updateDay: null,
+                epPerWeek: epPerWeek,
+                isEstimate: true
+            });
         }
         return true;
     }
@@ -272,9 +384,16 @@
         var span = createInfoSpan();
         if (span) span.innerHTML = '<span style="color:#66bb6a;">⏳</span> 正在获取更新信息...';
 
-        // 优先用英文名搜索（跳过不可靠的IMDb查询）
         var searchPromise;
-        if (info.engTitle && info.engTitle.length >= 3) {
+        if (info.imdbId) {
+            searchPromise = lookupByImdb(info.imdbId)
+                .then(function(showId) {
+                    if (showId) {
+                        return loadShow(showId, season);
+                    }
+                    return false;
+                });
+        } else if (info.engTitle && info.engTitle.length >= 3) {
             searchPromise = searchAndLoad(info.engTitle, info, season);
         } else {
             searchPromise = Promise.resolve(false);
@@ -283,7 +402,6 @@
         searchPromise
             .then(function(success) {
                 if (success) return;
-                // 英文名失败，尝试中文名
                 var searchName = info.aka || info.chTitle;
                 if (searchName) {
                     return searchAndLoad(searchName, info, season);
@@ -292,7 +410,6 @@
             })
             .then(function(success) {
                 if (!success) {
-                    // 所有搜索失败，用豆瓣信息估算
                     if (!fallbackFromDouban(info)) {
                         showResult({ notFound: true, reason: 'TVmaze未收录' });
                     }
