@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         人人视频双击全屏
 // @namespace    http://tampermonkey.net/
-// @version      4.0
+// @version      5.0
 // @description  双击全屏+滑动进度+弹幕保留，支持安卓手机
 // @author       You
 // @match        *://mh.yichengwlkj.com/*
@@ -14,7 +14,7 @@
 (function() {
     'use strict';
 
-    const LOG = '[人人视频v4]';
+    const LOG = '[人人视频v5]';
     function log(...a) { console.log(LOG, ...a); }
 
     function requestFS(el) {
@@ -39,78 +39,118 @@
         try { screen.orientation && screen.orientation.unlock && screen.orientation.unlock(); } catch(e) {}
     }
 
-    let bound = false;
+    let lastBoundVideo = null;
+    let pendingPlayState = null;
+    let swipeIndicator = null;
 
-    function findFullscreenTarget(video) {
-        const candidates = [
-            video.closest('#player-container'),
-            video.closest('.player-container'),
-            video.closest('#ve-player-container'),
-            video.closest('[class*="player"]'),
-            video.parentElement
-        ];
-        for (const c of candidates) {
-            if (c && c.offsetWidth > 100 && c.offsetHeight > 100) return c;
-        }
-        return video.parentElement;
+    function formatTime(s) {
+        const m = Math.floor(s / 60);
+        const sec = Math.floor(s % 60);
+        return m + ':' + (sec < 10 ? '0' : '') + sec;
+    }
+
+    function createIndicator() {
+        if (swipeIndicator) return swipeIndicator;
+        swipeIndicator = document.createElement('div');
+        Object.assign(swipeIndicator.style, {
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            background: 'rgba(0,0,0,0.8)',
+            color: '#fff',
+            padding: '14px 28px',
+            borderRadius: '10px',
+            fontSize: '18px',
+            zIndex: '999999',
+            pointerEvents: 'none',
+            display: 'none',
+            fontFamily: 'sans-serif',
+            whiteSpace: 'nowrap'
+        });
+        document.body.appendChild(swipeIndicator);
+        return swipeIndicator;
+    }
+
+    // === 弹幕修复：全屏时强制弹幕层可见 ===
+    function fixDanmakuInFullscreen(container) {
+        const style = document.createElement('style');
+        style.id = 'rrmj-danmaku-fs-fix';
+        style.textContent = `
+            :fullscreen .barrage-container,
+            :-webkit-full-screen .barrage-container,
+            [class*="barrage"][class*="layer"],
+            [class*="danmaku"],
+            [class*="danmu"],
+            [class*="bullet-comment"],
+            [id*="barrage-layer"] {
+                display: block !important;
+                visibility: visible !important;
+                opacity: 1 !important;
+                pointer-events: none !important;
+            }
+            :fullscreen #player-container > *,
+            :-webkit-full-screen #player-container > * {
+                position: relative;
+            }
+        `;
+        document.head.appendChild(style);
+        log('已注入弹幕修复样式');
     }
 
     function setup() {
-        if (bound) return;
-
         const video = document.querySelector('#player-container video')
                    || document.querySelector('.player-container video')
                    || document.querySelector('video');
         if (!video) { setTimeout(setup, 1000); return; }
 
-        const fsTarget = findFullscreenTarget(video);
-        log('全屏目标:', fsTarget?.id || fsTarget?.className?.substring(0, 60));
+        // 检测是否是新视频（SPA切换）
+        if (video === lastBoundVideo) return;
+        lastBoundVideo = video;
 
+        log('绑定事件到 video:', video.src?.substring(0, 80));
+
+        // === 双击全屏 ===
         let lastTap = 0;
-        let pendingPlayState = null;
 
-        fsTarget.addEventListener('touchend', function(e) {
-            const now = Date.now();
-            if (now - lastTap < 300) {
-                e.preventDefault();
-                e.stopPropagation();
-                lastTap = 0;
-
-                if (isFS()) {
-                    exitFS();
-                } else {
-                    pendingPlayState = !video.paused;
-                    requestFS(fsTarget);
-                    tryLock();
-                }
-            } else {
-                lastTap = now;
-            }
-        }, { passive: false });
-
-        fsTarget.addEventListener('dblclick', function(e) {
+        function handleDblTap(e) {
             e.preventDefault();
             e.stopPropagation();
             if (isFS()) {
                 exitFS();
             } else {
                 pendingPlayState = !video.paused;
-                requestFS(fsTarget);
+                const target = video.closest('#player-container')
+                            || video.closest('.player-container')
+                            || video.parentElement;
+                requestFS(target);
+                tryLock();
+                fixDanmakuInFullscreen(target);
             }
-        });
+        }
 
-        // 全屏进入后，恢复播放状态（防止单击误触暂停）
-        document.addEventListener('fullscreenchange', restoreState);
-        document.addEventListener('webkitfullscreenchange', restoreState);
+        video.addEventListener('touchend', function(e) {
+            const now = Date.now();
+            if (now - lastTap < 300) {
+                handleDblTap(e);
+            } else {
+                lastTap = now;
+            }
+        }, { passive: false });
 
+        video.addEventListener('dblclick', handleDblTap);
+
+        // 全屏进入后恢复播放状态
         function restoreState() {
             if (isFS() && pendingPlayState !== null) {
-                if (video.paused && pendingPlayState) {
-                    video.play().catch(() => {});
-                } else if (!video.paused && !pendingPlayState) {
-                    video.pause();
-                }
-                pendingPlayState = null;
+                setTimeout(() => {
+                    if (video.paused && pendingPlayState) {
+                        video.play().catch(() => {});
+                    } else if (!video.paused && !pendingPlayState) {
+                        video.pause();
+                    }
+                    pendingPlayState = null;
+                }, 100);
             }
             if (!isFS()) {
                 tryUnlock();
@@ -118,49 +158,32 @@
             }
         }
 
-        // === 左右滑动控制进度 ===
+        document.addEventListener('fullscreenchange', restoreState);
+        document.addEventListener('webkitfullscreenchange', restoreState);
+
+        // === 左右滑动进度 ===
         let touchStartX = 0;
         let touchStartY = 0;
-        let touchStartTime = 0;
         let isSwiping = false;
-        let swipeIndicator = null;
+        let hasMoved = false;
 
-        function createIndicator() {
-            if (swipeIndicator) return swipeIndicator;
-            swipeIndicator = document.createElement('div');
-            Object.assign(swipeIndicator.style, {
-                position: 'fixed',
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
-                background: 'rgba(0,0,0,0.75)',
-                color: '#fff',
-                padding: '12px 24px',
-                borderRadius: '8px',
-                fontSize: '16px',
-                zIndex: '999999',
-                pointerEvents: 'none',
-                display: 'none',
-                fontFamily: 'sans-serif'
-            });
-            document.body.appendChild(swipeIndicator);
-            return swipeIndicator;
-        }
-
-        fsTarget.addEventListener('touchstart', function(e) {
+        video.addEventListener('touchstart', function(e) {
             if (e.touches.length !== 1) return;
-            const touch = e.touches[0];
-            touchStartX = touch.clientX;
-            touchStartY = touch.clientY;
-            touchStartTime = Date.now();
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
             isSwiping = false;
+            hasMoved = false;
         }, { passive: true });
 
-        fsTarget.addEventListener('touchmove', function(e) {
+        video.addEventListener('touchmove', function(e) {
             if (e.touches.length !== 1) return;
             const touch = e.touches[0];
             const dx = touch.clientX - touchStartX;
             const dy = touch.clientY - touchStartY;
+
+            if (!hasMoved && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
+                hasMoved = true;
+            }
 
             if (!isSwiping && Math.abs(dx) > 15 && Math.abs(dx) > Math.abs(dy) * 1.5) {
                 isSwiping = true;
@@ -173,18 +196,17 @@
                 if (!duration) return;
 
                 const seekDelta = (dx / window.innerWidth) * duration * 0.5;
-                const currentTime = video.currentTime;
-                const targetTime = Math.max(0, Math.min(duration, currentTime + seekDelta));
+                const targetTime = Math.max(0, Math.min(duration, video.currentTime + seekDelta));
 
                 const ind = createIndicator();
                 ind.style.display = 'block';
-                const diff = targetTime - currentTime;
+                const diff = targetTime - video.currentTime;
                 const sign = diff >= 0 ? '+' : '';
-                ind.textContent = formatTime(currentTime) + ' → ' + formatTime(targetTime) + ' (' + sign + formatTime(Math.abs(diff)) + ')';
+                ind.textContent = formatTime(video.currentTime) + ' → ' + formatTime(targetTime) + ' (' + sign + formatTime(Math.abs(diff)) + ')';
             }
         }, { passive: false });
 
-        fsTarget.addEventListener('touchend', function(e) {
+        video.addEventListener('touchend', function(e) {
             if (isSwiping) {
                 const touch = e.changedTouches[0];
                 const dx = touch.clientX - touchStartX;
@@ -195,24 +217,30 @@
                 }
                 isSwiping = false;
                 if (swipeIndicator) {
-                    setTimeout(() => { swipeIndicator.style.display = 'none'; }, 500);
+                    setTimeout(() => { swipeIndicator.style.display = 'none'; }, 600);
                 }
             }
         }, { passive: true });
 
-        function formatTime(s) {
-            const m = Math.floor(s / 60);
-            const sec = Math.floor(s % 60);
-            return m + ':' + (sec < 10 ? '0' : '') + sec;
-        }
-
-        bound = true;
-        log('已绑定双击全屏+滑动进度');
+        log('绑定完成');
     }
 
-    setTimeout(setup, 3000);
+    // 定期检查新视频（SPA路由变化）
+    setInterval(() => {
+        const video = document.querySelector('#player-container video')
+                   || document.querySelector('.player-container video');
+        if (video && video !== lastBoundVideo) {
+            log('检测到新视频，重新绑定');
+            setup();
+        }
+    }, 2000);
 
-    const obs = new MutationObserver(() => { if (!bound) setup(); });
+    setTimeout(setup, 2000);
+
+    const obs = new MutationObserver(() => {
+        const video = document.querySelector('#player-container video');
+        if (video && video !== lastBoundVideo) setup();
+    });
     obs.observe(document.body || document.documentElement, { childList: true, subtree: true });
 
     log('脚本已加载', location.href);
