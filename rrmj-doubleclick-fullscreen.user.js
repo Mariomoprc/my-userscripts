@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         人人视频双击全屏
 // @namespace    http://tampermonkey.net/
-// @version      7.0
+// @version      8.0
 // @description  双击全屏+滑动进度+弹幕保留，支持安卓手机
 // @author       You
 // @match        *://mh.yichengwlkj.com/*
@@ -14,31 +14,53 @@
 (function() {
     'use strict';
 
-    const LOG = '[人人视频v7]';
+    const LOG = '[人人视频v8]';
     function log(...a) { console.log(LOG, ...a); }
 
-    // 注入样式：让播放器覆盖层不拦截双击事件
+    // ====== 样式注入 ======
     function injectStyles() {
         const style = document.createElement('style');
+        style.id = 'rrmj-fs-style';
         style.textContent = `
-            /* 让播放器中间的按钮覆盖层不拦截触摸，让事件穿透到容器 */
+            /* 移除播放按钮覆盖层的触摸拦截 */
             #player-container > div.absolute.inset-x-0.inset-y-\\[96px\\] {
                 pointer-events: none !important;
             }
-            /* 保留顶部栏的 pointer-events（返回按钮需要点击） */
+            /* 全屏时保持弹幕层在播放器内部可见 */
+            #player-container:fullscreen,
+            #player-container:-webkit-full-screen {
+                display: flex !important;
+                align-items: center;
+                justify-content: center;
+                background: #000;
+            }
+            /* 全屏时让 ve-player 内的弹幕层保持正确层级 */
+            #player-container:fullscreen #ve-player,
+            #player-container:-webkit-full-screen #ve-player {
+                position: relative !important;
+                width: 100% !important;
+                height: 100% !important;
+                z-index: 1 !important;
+            }
         `;
         document.head.appendChild(style);
-        log('已注入样式');
+        log('样式已注入');
     }
 
+    // ====== 全屏相关 ======
     function requestFS(el) {
         const fn = el.requestFullscreen || el.webkitRequestFullscreen || el.mozRequestFullScreen || el.msRequestFullscreen;
-        if (fn) fn.call(el);
+        if (fn) {
+            try { fn.call(el); log('requestFS 调用成功'); }
+            catch(e) { log('requestFS 失败:', e); }
+        }
     }
 
     function exitFS() {
         const fn = document.exitFullscreen || document.webkitExitFullscreen || document.mozCancelFullScreen || document.msExitFullscreen;
-        if (fn) fn.call(document);
+        if (fn) {
+            try { fn.call(document); } catch(e) {}
+        }
     }
 
     function isFS() {
@@ -53,11 +75,38 @@
         try { screen.orientation && screen.orientation.unlock && screen.orientation.unlock(); } catch(e) {}
     }
 
+    // ====== 查找元素 ======
+    function getVideo() {
+        return document.querySelector('#player-container video')
+            || document.querySelector('.player-container video')
+            || document.querySelector('#ve-player video')
+            || document.querySelector('video');
+    }
+
+    function getContainer() {
+        const video = getVideo();
+        if (!video) return null;
+        // 优先 #player-container，它是播放器的最合理全屏目标
+        const pc = video.closest('#player-container');
+        if (pc) return pc;
+        const pp = video.closest('.player-container');
+        if (pp) return pp;
+        // 向上找，找到第一个宽度匹配视频的容器
+        let el = video.parentElement;
+        while (el && el !== document.body) {
+            if (el.offsetWidth >= video.offsetWidth * 0.9) return el;
+            el = el.parentElement;
+        }
+        return video.parentElement;
+    }
+
+    // ====== 状态管理 ======
     let boundContainer = null;
     let pendingPlayState = null;
     let swipeIndicator = null;
 
     function formatTime(s) {
+        if (!s || !isFinite(s)) return '0:00';
         const m = Math.floor(s / 60);
         const sec = Math.floor(s % 60);
         return m + ':' + (sec < 10 ? '0' : '') + sec;
@@ -71,7 +120,7 @@
             top: '50%',
             left: '50%',
             transform: 'translate(-50%, -50%)',
-            background: 'rgba(0,0,0,0.8)',
+            background: 'rgba(0,0,0,0.85)',
             color: '#fff',
             padding: '14px 28px',
             borderRadius: '10px',
@@ -86,33 +135,44 @@
         return swipeIndicator;
     }
 
-    function getVideo() {
-        return document.querySelector('#player-container video')
-            || document.querySelector('.player-container video')
-            || document.querySelector('video');
-    }
-
-    function getContainer() {
-        const video = getVideo();
-        if (!video) return null;
-        return video.closest('#player-container')
-            || video.closest('.player-container')
-            || video.parentElement;
-    }
-
+    // ====== 核心绑定 ======
     function setup() {
         const video = getVideo();
         const container = getContainer();
-        if (!video || !container) { setTimeout(setup, 1000); return; }
+        if (!video || !container) {
+            setTimeout(setup, 1000);
+            return;
+        }
 
         if (container === boundContainer) return;
         boundContainer = container;
-        log('绑定到容器');
+        log('绑定事件, 容器:', container.id || container.className?.substring(0, 40));
 
-        // === 双击全屏（capture 阶段，优先于覆盖层事件） ===
+        // === 1. 双击全屏 ===
         let lastTap = 0;
 
-        function onDblTap(e) {
+        container.addEventListener('touchend', function(e) {
+            const now = Date.now();
+            if (now - lastTap < 300) {
+                e.preventDefault();
+                e.stopPropagation();
+                lastTap = 0;
+
+                if (isFS()) {
+                    exitFS();
+                } else {
+                    // 保存播放状态
+                    pendingPlayState = !video.paused;
+                    log('双击 -> 全屏, 播放状态:', pendingPlayState);
+                    requestFS(container);
+                    tryLock();
+                }
+            } else {
+                lastTap = now;
+            }
+        }, { passive: false, capture: true });
+
+        container.addEventListener('dblclick', function(e) {
             e.preventDefault();
             e.stopPropagation();
             if (isFS()) {
@@ -120,26 +180,13 @@
             } else {
                 pendingPlayState = !video.paused;
                 requestFS(container);
-                tryLock();
             }
-        }
-
-        container.addEventListener('touchend', function(e) {
-            const now = Date.now();
-            if (now - lastTap < 300) {
-                onDblTap(e);
-            } else {
-                lastTap = now;
-            }
-        }, { passive: false, capture: true });
-
-        container.addEventListener('dblclick', function(e) {
-            onDblTap(e);
         }, { capture: true });
 
-        // === 全屏进入后恢复播放状态 ===
-        function restoreState() {
+        // === 2. 全屏状态恢复 ===
+        function onFSChange() {
             if (isFS() && pendingPlayState !== null) {
+                // 全屏进入：恢复播放状态
                 setTimeout(() => {
                     if (video.paused && pendingPlayState) {
                         video.play().catch(() => {});
@@ -155,10 +202,10 @@
             }
         }
 
-        document.addEventListener('fullscreenchange', restoreState);
-        document.addEventListener('webkitfullscreenchange', restoreState);
+        document.addEventListener('fullscreenchange', onFSChange);
+        document.addEventListener('webkitfullscreenchange', onFSChange);
 
-        // === 左右滑动进度 ===
+        // === 3. 左右滑动进度 ===
         let touchStartX = 0;
         let touchStartY = 0;
         let isSwiping = false;
@@ -214,20 +261,21 @@
         log('绑定完成');
     }
 
+    // ====== 初始化 ======
     injectStyles();
+    setTimeout(setup, 2000);
 
     // SPA 路由变化检测
     setInterval(() => {
         const container = getContainer();
         if (container && container !== boundContainer) {
-            log('检测到新容器，重新绑定');
+            log('SPA 切换检测到新容器');
             boundContainer = null;
             setup();
         }
     }, 2000);
 
-    setTimeout(setup, 2000);
-
+    // DOM 变化检测
     const obs = new MutationObserver(() => {
         const container = getContainer();
         if (container && container !== boundContainer) {
