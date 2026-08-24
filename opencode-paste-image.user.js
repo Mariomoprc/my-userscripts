@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode Web 粘贴图片
 // @namespace    http://tampermonkey.net/
-// @version      1.5
+// @version      1.6
 // @description  让 OpenCode Web 页面支持 Ctrl+V 粘贴图片到输入框
 // @author       pass
 // @include      /^https?://localhost:\d+/
@@ -41,43 +41,33 @@
             canvas.toBlob(function(blob) {
               var pasteFile = new File([blob], file.name || 'paste.png', { type: 'image/png' });
 
-              var targets = [
-                document.querySelector('.xterm-screen'),
-                document.querySelector('.terminal'),
-                document.querySelector('[class*="chat"]'),
-                document.querySelector('[class*="input"]'),
-                document.querySelector('[class*="editor"]'),
-                document.querySelector('[contenteditable]'),
-                document.querySelector('textarea'),
-                document.body
-              ];
+              // 查找输入框 - 优先找 textarea 或 contenteditable
+              var inputBox = document.querySelector('textarea') ||
+                            document.querySelector('[contenteditable="true"]') ||
+                            document.querySelector('input[type="text"]');
 
-              var dropTarget = null;
-              for (var j = 0; j < targets.length; j++) {
-                if (targets[j]) {
-                  dropTarget = targets[j];
-                  break;
-                }
+              if (inputBox) {
+                // 找到了输入框，往里面 drop
+                var dt = new DataTransfer();
+                dt.items.add(pasteFile);
+                var dropEvent = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt });
+                inputBox.dispatchEvent(dropEvent);
+
+                var dragoverEvent = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt });
+                inputBox.dispatchEvent(dragoverEvent);
+
+                var div = document.createElement('div');
+                div.style.cssText = 'position:fixed;top:10px;right:10px;z-index:99999;background:rgba(0,0,0,0.9);color:#0f0;padding:15px;border-radius:8px;font-size:12px;font-family:monospace;max-width:400px;white-space:pre-wrap;';
+                div.textContent = '已粘贴 (' + w + 'x' + h + ')\n\ntarget: ' + inputBox.tagName + '.' + inputBox.className.substring(0, 50);
+                document.body.appendChild(div);
+                setTimeout(function() { if (div.parentNode) div.remove(); }, 5000);
+              } else {
+                // 没找到，显示所有可能的元素
+                var allTextareas = document.querySelectorAll('textarea');
+                var allEditable = document.querySelectorAll('[contenteditable]');
+                var info = '未找到输入框\n\ntextarea: ' + allTextareas.length + '\ncontenteditable: ' + allEditable.length;
+                alert(info);
               }
-
-              if (!dropTarget) {
-                alert('未找到 drop target');
-                return;
-              }
-
-              var dt = new DataTransfer();
-              dt.items.add(pasteFile);
-              var dropEvent = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt });
-              dropTarget.dispatchEvent(dropEvent);
-
-              var dragoverEvent = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt });
-              dropTarget.dispatchEvent(dragoverEvent);
-
-              var div = document.createElement('div');
-              div.style.cssText = 'position:fixed;top:10px;right:10px;z-index:99999;background:rgba(0,0,0,0.9);color:#0f0;padding:15px;border-radius:8px;font-size:12px;font-family:monospace;max-width:400px;white-space:pre-wrap;';
-              div.textContent = '已粘贴 (' + w + 'x' + h + ')\n\ndrop target: ' + dropTarget.tagName + '.' + dropTarget.className;
-              document.body.appendChild(div);
-              setTimeout(function() { if (div.parentNode) div.remove(); }, 5000);
             }, 'image/png', 0.85);
           };
           img.src = ev.target.result;
