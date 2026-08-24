@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode Web 粘贴图片
 // @namespace    http://tampermonkey.net/
-// @version      1.3
+// @version      1.4
 // @description  让 OpenCode Web 页面支持 Ctrl+V 粘贴图片到输入框
 // @author       pass
 // @match        http://localhost:*/*
@@ -43,17 +43,48 @@
 
             canvas.toBlob(function(blob) {
               var pasteFile = new File([blob], file.name || 'paste.png', { type: 'image/png' });
-              var dropTarget = document.querySelector('.xterm-screen') || document.querySelector('.terminal') || document.body;
+
+              // 尝试多种 drop target
+              var targets = [
+                document.querySelector('.xterm-screen'),
+                document.querySelector('.terminal'),
+                document.querySelector('[class*="chat"]'),
+                document.querySelector('[class*="input"]'),
+                document.querySelector('[class*="editor"]'),
+                document.querySelector('[contenteditable]'),
+                document.querySelector('textarea'),
+                document.body
+              ];
+
+              var dropTarget = null;
+              for (var j = 0; j < targets.length; j++) {
+                if (targets[j]) {
+                  dropTarget = targets[j];
+                  break;
+                }
+              }
+
+              if (!dropTarget) {
+                alert('未找到 drop target');
+                return;
+              }
+
+              // 模拟 drop 事件
               var dt = new DataTransfer();
               dt.items.add(pasteFile);
               var dropEvent = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt });
               dropTarget.dispatchEvent(dropEvent);
 
+              // 同时尝试 dragover 事件
+              var dragoverEvent = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt });
+              dropTarget.dispatchEvent(dragoverEvent);
+
+              // 显示调试信息
               var div = document.createElement('div');
-              div.style.cssText = 'position:fixed;top:10px;right:10px;z-index:99999;background:rgba(0,0,0,0.8);color:#fff;padding:10px 16px;border-radius:8px;font-size:13px;font-family:system-ui;';
-              div.textContent = '图片已粘贴 (' + w + 'x' + h + ')';
+              div.style.cssText = 'position:fixed;top:10px;right:10px;z-index:99999;background:rgba(0,0,0,0.9);color:#0f0;padding:15px;border-radius:8px;font-size:12px;font-family:monospace;max-width:400px;white-space:pre-wrap;';
+              div.textContent = '已粘贴 (' + w + 'x' + h + ')\n\ndrop target: ' + dropTarget.tagName + '.' + dropTarget.className;
               document.body.appendChild(div);
-              setTimeout(function() { if (div.parentNode) div.remove(); }, 2000);
+              setTimeout(function() { if (div.parentNode) div.remove(); }, 5000);
             }, 'image/png', 0.85);
           };
           img.src = ev.target.result;
