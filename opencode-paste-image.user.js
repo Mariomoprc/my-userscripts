@@ -1,15 +1,12 @@
 // ==UserScript==
 // @name         OpenCode Web 粘贴图片
 // @namespace    http://tampermonkey.net/
-// @version      1.4
+// @version      1.5
 // @description  让 OpenCode Web 页面支持 Ctrl+V 粘贴图片到输入框
 // @author       pass
-// @match        http://localhost:*/*
-// @match        http://127.0.0.1:*/*
-// @match        http://192.168.*.*/*
-// @match        https://localhost:*/*
-// @match        https://127.0.0.1:*/*
-// @match        https://192.168.*.*/*
+// @include      /^https?://localhost:\d+/
+// @include      /^https?://127\.0\.0\.1:\d+/
+// @include      /^https?://192\.168\.\d+\.\d+:\d+/
 // @run-at       document-start
 // ==/UserScript==
 
@@ -44,7 +41,6 @@
             canvas.toBlob(function(blob) {
               var pasteFile = new File([blob], file.name || 'paste.png', { type: 'image/png' });
 
-              // 尝试多种 drop target
               var targets = [
                 document.querySelector('.xterm-screen'),
                 document.querySelector('.terminal'),
@@ -69,17 +65,14 @@
                 return;
               }
 
-              // 模拟 drop 事件
               var dt = new DataTransfer();
               dt.items.add(pasteFile);
               var dropEvent = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt });
               dropTarget.dispatchEvent(dropEvent);
 
-              // 同时尝试 dragover 事件
               var dragoverEvent = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt });
               dropTarget.dispatchEvent(dragoverEvent);
 
-              // 显示调试信息
               var div = document.createElement('div');
               div.style.cssText = 'position:fixed;top:10px;right:10px;z-index:99999;background:rgba(0,0,0,0.9);color:#0f0;padding:15px;border-radius:8px;font-size:12px;font-family:monospace;max-width:400px;white-space:pre-wrap;';
               div.textContent = '已粘贴 (' + w + 'x' + h + ')\n\ndrop target: ' + dropTarget.tagName + '.' + dropTarget.className;
