@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode Web 粘贴图片
 // @namespace    http://tampermonkey.net/
-// @version      1.6
+// @version      1.7
 // @description  让 OpenCode Web 页面支持 Ctrl+V 粘贴图片到输入框
 // @author       pass
 // @include      /^https?://localhost:\d+/
@@ -39,35 +39,25 @@
             ctx.drawImage(img, 0, 0, w, h);
 
             canvas.toBlob(function(blob) {
-              var pasteFile = new File([blob], file.name || 'paste.png', { type: 'image/png' });
-
-              // 查找输入框 - 优先找 textarea 或 contenteditable
-              var inputBox = document.querySelector('textarea') ||
-                            document.querySelector('[contenteditable="true"]') ||
-                            document.querySelector('input[type="text"]');
-
-              if (inputBox) {
-                // 找到了输入框，往里面 drop
-                var dt = new DataTransfer();
-                dt.items.add(pasteFile);
-                var dropEvent = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt });
-                inputBox.dispatchEvent(dropEvent);
-
-                var dragoverEvent = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt });
-                inputBox.dispatchEvent(dragoverEvent);
+              // 方法1: 写入剪贴板，让页面自己处理
+              var item = new ClipboardItem({ 'image/png': blob });
+              navigator.clipboard.write([item]).then(function() {
+                // 已写入剪贴板，模拟 Ctrl+V
+                document.dispatchEvent(new KeyboardEvent('keydown', {
+                  key: 'v',
+                  code: 'KeyV',
+                  ctrlKey: true,
+                  bubbles: true
+                }));
 
                 var div = document.createElement('div');
-                div.style.cssText = 'position:fixed;top:10px;right:10px;z-index:99999;background:rgba(0,0,0,0.9);color:#0f0;padding:15px;border-radius:8px;font-size:12px;font-family:monospace;max-width:400px;white-space:pre-wrap;';
-                div.textContent = '已粘贴 (' + w + 'x' + h + ')\n\ntarget: ' + inputBox.tagName + '.' + inputBox.className.substring(0, 50);
+                div.style.cssText = 'position:fixed;top:10px;right:10px;z-index:99999;background:rgba(0,0,0,0.9);color:#0f0;padding:15px;border-radius:8px;font-size:12px;font-family:monospace;';
+                div.textContent = '图片已写入剪贴板，请手动 Ctrl+V';
                 document.body.appendChild(div);
-                setTimeout(function() { if (div.parentNode) div.remove(); }, 5000);
-              } else {
-                // 没找到，显示所有可能的元素
-                var allTextareas = document.querySelectorAll('textarea');
-                var allEditable = document.querySelectorAll('[contenteditable]');
-                var info = '未找到输入框\n\ntextarea: ' + allTextareas.length + '\ncontenteditable: ' + allEditable.length;
-                alert(info);
-              }
+                setTimeout(function() { if (div.parentNode) div.remove(); }, 3000);
+              }).catch(function(err) {
+                alert('剪贴板写入失败: ' + err.message);
+              });
             }, 'image/png', 0.85);
           };
           img.src = ev.target.result;
