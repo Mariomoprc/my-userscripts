@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         人人视频增强包（优化版）
 // @namespace    http://tampermonkey.net/
-// @version      2.5
+// @version      2.6
 // @description  反调试绕过 + 隐藏滚动条 + 无感去广告 + 豆瓣跳转 + 唤醒/刷新后暂停 | 菜单可开关 | 优化版
 // @author       opencode
 // @match        *://*.yichengwlkj.com/*
@@ -247,27 +247,49 @@
         '[class*="prism-ad"],',
         '[class*="ad-overlay"],',
         '[class*="ad-mask"],',
-        '[data-rrmv-ad="hide"] {',
+        '[data-rrmv-ad="hide"],',
+        '[class*="member-modal"],',
+        '[class*="vip-modal"],',
+        '[class*="membership-modal"],',
+        '[class*="pay-modal"],',
+        '[class*="upgrade-modal"],',
+        '[class*="subscribe-modal"],',
+        '[class*="union-member"],',
+        '[class*="joint-vip"],',
+        '[class*="promo-modal"],',
+        '[class*="promotion-modal"],',
+        '[class*="open-window-ad"],',
+        '[class*="float-ad"],',
+        '[class*="pop-ad"],',
+        '[class*="modal-mask"][data-rrmv-ad="hide"],',
+        '[class*="dialog-mask"][data-rrmv-ad="hide"] {',
         '  opacity: 0 !important;',
         '  pointer-events: none !important;',
         '  visibility: hidden !important;',
+        '  display: none !important;',
         '}'
       ].join('\n');
       (document.head || document.documentElement).appendChild(adCSS);
 
       // --- Phase B: 动态隐藏广告提示文案 ---
+      var AD_TIP_KEYWORDS = ['秒后展示广告', '开通VIP免广告', '联合会员', '立即前往', '开通会员', 'VIP特惠', '免广告'];
       function hideAdTips(node) {
         if (node.nodeType !== 1) return;
         var text = node.textContent || '';
-        if (text.includes('秒后展示广告') || text.includes('开通VIP免广告')) {
-          node.setAttribute('data-rrmv-ad', 'hide');
-          return;
+        for (var k = 0; k < AD_TIP_KEYWORDS.length; k++) {
+          if (text.includes(AD_TIP_KEYWORDS[k])) {
+            node.setAttribute('data-rrmv-ad', 'hide');
+            return;
+          }
         }
         var children = node.querySelectorAll('*');
         for (var i = 0; i < children.length; i++) {
           var t = children[i].textContent || '';
-          if (t.includes('秒后展示广告') && children[i].children.length < 5) {
-            children[i].setAttribute('data-rrmv-ad', 'hide');
+          for (var k2 = 0; k2 < AD_TIP_KEYWORDS.length; k2++) {
+            if (t.includes(AD_TIP_KEYWORDS[k2]) && children[i].children.length < 5) {
+              children[i].setAttribute('data-rrmv-ad', 'hide');
+              break;
+            }
           }
         }
       }
@@ -459,7 +481,13 @@
           cls.indexOf('closeAdSign') !== -1 || cls.indexOf('sssdk-ad') !== -1 ||
           cls.indexOf('xgplayer-ads') !== -1 || id === 'QH_SSP_AD_WINDOW_MAX' ||
           id.indexOf('ssp_ad') !== -1 || id.indexOf('QH_SSP') !== -1 ||
-          el.tagName === 'XG-AD' || el.tagName === 'XG-AD-STUB'
+          el.tagName === 'XG-AD' || el.tagName === 'XG-AD-STUB' ||
+          cls.indexOf('member-modal') !== -1 || cls.indexOf('vip-modal') !== -1 ||
+          cls.indexOf('membership-modal') !== -1 || cls.indexOf('pay-modal') !== -1 ||
+          cls.indexOf('upgrade-modal') !== -1 || cls.indexOf('subscribe-modal') !== -1 ||
+          cls.indexOf('union-member') !== -1 || cls.indexOf('joint-vip') !== -1 ||
+          cls.indexOf('promo-modal') !== -1 || cls.indexOf('promotion-modal') !== -1 ||
+          cls.indexOf('float-ad') !== -1 || cls.indexOf('pop-ad') !== -1
         );
       }
 
@@ -610,8 +638,19 @@
           '[class*="openWindowAd"], [class*="popupAd"], [class*="bannerAd"],' +
           '[class*="iconAdContainer"], [class*="textLinkAd"], [class*="adSignWrapper"],' +
           '[class*="closeAdSign"], #QH_SSP_AD_WINDOW_MAX, [class*="sssdk-ad"],' +
-          '[id*="ssp_ad"], [id*="QH_SSP"], .xgplayer-ads, xg-ad, xg-ad-stub'
+          '[id*="ssp_ad"], [id*="QH_SSP"], .xgplayer-ads, xg-ad, xg-ad-stub,' +
+          '[class*="member-modal"], [class*="vip-modal"], [class*="membership-modal"],' +
+          '[class*="pay-modal"], [class*="upgrade-modal"], [class*="subscribe-modal"],' +
+          '[class*="union-member"], [class*="joint-vip"], [class*="promo-modal"],' +
+          '[class*="promotion-modal"], [class*="float-ad"], [class*="pop-ad"]'
         ).forEach(hideElement);
+
+        // 自动关闭会员/VIP推广弹窗
+        document.querySelectorAll('[data-rrmv-ad="hide"]').forEach(function (el) {
+          if (el.offsetParent !== null) {
+            tryClosePopup(el);
+          }
+        });
 
         document.querySelectorAll('video').forEach(function (v) {
           if (v !== video) {
@@ -687,6 +726,90 @@
         });
       }
 
+      // --- Phase G: 全页面弹窗自动隐藏（会员/VIP 推广弹窗） ---
+      var POPUP_KEYWORDS = ['联合会员', '立即前往', '开通VIP', '开通会员', 'VIP特惠', '免广告', '附赠', '不限量'];
+      var CLOSE_BTN_SELECTORS = [
+        '[class*="close"]', '[class*="Close"]', '[aria-label="close"]', '[aria-label="Close"]',
+        'button svg', '.modal-close', '.dialog-close', '.popup-close'
+      ];
+
+      function isPopupAd(el) {
+        if (!el || el.nodeType !== 1) return false;
+        var cls = (el.className && el.className.toString()) || '';
+        var id = el.id || '';
+        // 已知广告 class
+        if (cls.indexOf('member-modal') !== -1 || cls.indexOf('vip-modal') !== -1 ||
+            cls.indexOf('membership-modal') !== -1 || cls.indexOf('pay-modal') !== -1 ||
+            cls.indexOf('upgrade-modal') !== -1 || cls.indexOf('subscribe-modal') !== -1 ||
+            cls.indexOf('union-member') !== -1 || cls.indexOf('joint-vip') !== -1 ||
+            cls.indexOf('promo-modal') !== -1 || cls.indexOf('promotion-modal') !== -1 ||
+            cls.indexOf('popupAd') !== -1 || cls.indexOf('openWindowAd') !== -1) {
+          return true;
+        }
+        // 检查文本内容是否包含推广关键词
+        var text = el.textContent || '';
+        for (var k = 0; k < POPUP_KEYWORDS.length; k++) {
+          if (text.includes(POPUP_KEYWORDS[k])) {
+            // 再检查是否是模态框/弹窗样式（固定定位 + 高 z-index）
+            var style = window.getComputedStyle(el);
+            if (style && (style.position === 'fixed' || style.position === 'absolute') &&
+                parseInt(style.zIndex, 10) > 100) {
+              return true;
+            }
+          }
+        }
+        return false;
+      }
+
+      function tryClosePopup(el) {
+        // 尝试点击关闭按钮
+        for (var s = 0; s < CLOSE_BTN_SELECTORS.length; s++) {
+          var btn = el.querySelector(CLOSE_BTN_SELECTORS[s]);
+          if (btn && btn.offsetParent !== null) {
+            btn.click();
+            return true;
+          }
+        }
+        return false;
+      }
+
+      function hidePopupAd(el) {
+        if (tryClosePopup(el)) return;
+        el.setAttribute('data-rrmv-ad', 'hide');
+      }
+
+      var fullPageObserver = new MutationObserver(function (mutations) {
+        for (var i = 0; i < mutations.length; i++) {
+          var m = mutations[i];
+          for (var j = 0; j < m.addedNodes.length; j++) {
+            var node = m.addedNodes[j];
+            if (node.nodeType !== 1) continue;
+            if (isPopupAd(node)) {
+              hidePopupAd(node);
+              continue;
+            }
+            // 检查子元素中的弹窗
+            if (node.querySelectorAll) {
+              var popups = node.querySelectorAll(
+                '[class*="member-modal"], [class*="vip-modal"], [class*="membership-modal"],' +
+                '[class*="pay-modal"], [class*="upgrade-modal"], [class*="subscribe-modal"],' +
+                '[class*="union-member"], [class*="joint-vip"], [class*="promo-modal"],' +
+                '[class*="promotion-modal"], [class*="popupAd"], [class*="openWindowAd"]'
+              );
+              popups.forEach(function (p) { hidePopupAd(p); });
+            }
+          }
+        }
+      });
+
+      if (document.body) {
+        fullPageObserver.observe(document.body, { childList: true, subtree: true });
+      } else {
+        document.addEventListener('DOMContentLoaded', function () {
+          fullPageObserver.observe(document.body, { childList: true, subtree: true });
+        });
+      }
+
       // 初始 hook + 巡检定时器（带清理保护）
       document.querySelectorAll('video').forEach(function (v) { hookVideo(v); });
 
@@ -712,6 +835,7 @@
         clearInterval(cleanupTimer);
         clearInterval(stuckTimer);
         if (observer) observer.disconnect();
+        if (fullPageObserver) fullPageObserver.disconnect();
       }, { passive: true });
     });
   }
