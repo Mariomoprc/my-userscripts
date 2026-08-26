@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode Web 粘贴图片
 // @namespace    http://tampermonkey.net/
-// @version      2.0
+// @version      2.1
 // @description  Ctrl+V 粘贴图片到 OpenCode Web：优先伪造 drop 走原生附件通道（等同桌面客户端体验），失败自动回退 base64 内联；油猴菜单可切换模式
 // @author       pass
 // @include      /^https?://localhost:\d+/
@@ -46,6 +46,31 @@
     return null;
   }
 
+  function findInput() {
+    return document.querySelector('textarea') ||
+           document.querySelector('[contenteditable="true"]') ||
+           document.querySelector('input[type="text"]');
+  }
+
+  // 等待输入框出现（最多 waitMs；opencode V2 输入框是 contenteditable div，可能延迟渲染）
+  function waitForInput(waitMs, cb) {
+    var el = findInput();
+    if (el) { cb(el); return; }
+    var done = false;
+    var obs = new MutationObserver(function() {
+      var el2 = findInput();
+      if (el2) finish(el2);
+    });
+    function finish(result) {
+      if (done) return;
+      done = true;
+      obs.disconnect();
+      cb(result);
+    }
+    obs.observe(document.body, { childList: true, subtree: true });
+    setTimeout(function() { finish(findInput()); }, waitMs);
+  }
+
   // ---------- ① 原生附件通道：伪造 drop 事件 ----------
   function tryNativeDrop(file, allowFallback) {
     var filename = 'paste-' + Date.now() + '.png';
@@ -66,49 +91,63 @@
       return;
     }
 
-    var target = document.querySelector('textarea') ||
-                 document.querySelector('[contenteditable="true"]') ||
-                 document.body;
+    waitForInput(2000, function(target) {
+      if (!target) {
+        fallbackOrReport(allowFallback, file, '未找到输入框');
+        return;
+      }
 
-    var dispatched = false;
-    try {
-      target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
-      dispatched = true;
-    } catch (err) {}
+      var dispatched = false;
+      try {
+        target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+        dispatched = true;
+      } catch (err) {}
 
-    if (!dispatched) {
-      fallbackOrReport(allowFallback, file, 'DragEvent 不受支持');
-      return;
-    }
+      if (!dispatched) {
+        fallbackOrReport(allowFallback, file, 'DragEvent 不受支持');
+        return;
+      }
 
-    // 用唯一文件名探测附件 chip 是否真的渲染出来
-    var settled = false;
-    var obs = new MutationObserver(function(muts) {
-      for (var i = 0; i < muts.length; i++) {
-        var nodes = muts[i].addedNodes;
-        for (var j = 0; j < nodes.length; j++) {
-          var n = nodes[j];
-          if (n.nodeType === 1 && n.textContent && n.textContent.indexOf(filename) !== -1) {
-            settle(true);
-            return;
+      // 用唯一文件名探测附件是否真的渲染出来（textContent + 属性）
+      var settled = false;
+      var obs = new MutationObserver(function(muts) {
+        for (var i = 0; i < muts.length; i++) {
+          var m = muts[i];
+          if (m.type === 'attributes') {
+            var t = m.target;
+            if (t.getAttribute && t.getAttribute(m.attributeName) &&
+                t.getAttribute(m.attributeName).indexOf(filename) !== -1) {
+              settle(true);
+              return;
+            }
+          }
+          if (m.type === 'childList') {
+            for (var j = 0; j < m.addedNodes.length; j++) {
+              var n = m.addedNodes[j];
+              if (n.nodeType !== 1) continue;
+              if (n.textContent && n.textContent.indexOf(filename) !== -1) { settle(true); return; }
+              for (var a = 0; a < n.attributes.length; a++) {
+                if (n.attributes[a].value.indexOf(filename) !== -1) { settle(true); return; }
+              }
+            }
           }
         }
+      });
+
+      function settle(success) {
+        if (settled) return;
+        settled = true;
+        obs.disconnect();
+        if (success) {
+          toast('✓ 已附加为原生附件（provider-native 图片输入）');
+        } else {
+          fallbackOrReport(allowFallback, file, '前端未响应 drop');
+        }
       }
+
+      obs.observe(document.body, { childList: true, subtree: true, attributes: true });
+      setTimeout(function() { settle(false); }, 1500);
     });
-
-    function settle(success) {
-      if (settled) return;
-      settled = true;
-      obs.disconnect();
-      if (success) {
-        toast('✓ 已附加为原生附件（provider-native 图片输入）');
-      } else {
-        fallbackOrReport(allowFallback, file, '前端未响应 drop');
-      }
-    }
-
-    obs.observe(document.body, { childList: true, subtree: true });
-    setTimeout(function() { settle(false); }, 800);
   }
 
   function fallbackOrReport(allowFallback, file, reason) {
@@ -139,10 +178,7 @@
         var base64 = canvas.toDataURL('image/png').split(',')[1];
         var markdown = '![paste.png](data:image/png;base64,' + base64 + ')';
 
-        var inputBox = document.querySelector('textarea') ||
-                      document.querySelector('[contenteditable="true"]') ||
-                      document.querySelector('input[type="text"]');
-
+        var inputBox = findInput();
         if (!inputBox) { toast('✗ 未找到输入框', '#f55'); return; }
 
         if (inputBox.tagName === 'TEXTAREA') {
