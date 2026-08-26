@@ -2,7 +2,7 @@
 // @name         人人视频增强包
 // @namespace    http://tampermonkey.net/
 // @version      2.7
-// @description  反调试绕过 + 隐藏滚动条 + 无感去广告 + 豆瓣跳转 + 唤醒后暂停(点播放即恢复) + 播放卡死自愈 | 菜单可开关
+// @description  反调试绕过 + 隐藏滚动条 + 无感去广告 + 豆瓣跳转 + 唤醒后暂停(点播放即恢复) + 播放卡死自愈(智能判定不误伤正常缓冲) | 菜单可开关
 // @author       opencode
 // @match        *://*.yichengwlkj.com/*
 // @match        *://*.rrmj.plus/*
@@ -217,7 +217,9 @@
   }
 
   // ============================================================
-  //  6. 播放卡死自愈（waiting 转圈不恢复 → 软重载 → 刷新页面）
+  //  6. 播放卡死自愈（currentTime 零进展才判定真卡死 → play重试 → 软重载 → 刷新页面）
+  //     不再用固定超时触发 video.load()：暂停恢复/seek 后的正常缓冲
+  //     （currentTime 几秒内恢复推进）不会被误判，避免短等待被放大成全量重载
   // ============================================================
   if (S.get('stallHeal', true)) {
     (function () {
@@ -225,7 +227,6 @@
       var HEAL_TIME_KEY = 'rrmv_heal_time';
       var stallTimer = null;
       var softTried = false;
-      var lastResumeAt = 0; // 最近一次从暂停恢复播放的时刻
 
       function healCountOk() {
         var now = Date.now();
@@ -245,57 +246,75 @@
       }
 
       function clearStallTimer() {
-        if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
+        if (stallTimer) { clearInterval(stallTimer); stallTimer = null; }
+      }
+
+      // 监控 currentTime 推进：连续 noProgressSec 秒零进展且未暂停 → 判定真卡死
+      function armStallWatch(video, noProgressSec) {
+        clearStallTimer();
+        var lastTime = -1;
+        var still = 0;
+        stallTimer = setInterval(function () {
+          if (!video.isConnected || video.paused) { clearStallTimer(); return; }
+          if (video.seeking) { still = 0; return; } // seek 等数据不算卡死
+          if (Math.abs(video.currentTime - lastTime) > 0.01) {
+            lastTime = video.currentTime;
+            still = 0;
+            // 完全恢复（时间在走且数据充足）→ 停止监控
+            if (video.readyState >= 3) clearStallTimer();
+            return;
+          }
+          still++;
+          if (still >= noProgressSec) {
+            clearStallTimer();
+            onStallTimeout(video);
+          }
+        }, 1000);
       }
 
       function onStallTimeout(video) {
-        // 已恢复、已暂停或数据充足则不处理
-        if (!video.isConnected || video.paused || video.readyState >= 3) return;
-        if (!softTried && healCountOk()) {
-          // 软恢复：重新加载当前源
+        if (!video.isConnected || video.paused) return;
+        if (!softTried) {
+          // 第一级：play() 重试（无损，很多卡死只是播放器状态机停住）
           softTried = true;
-          bumpHealCount();
-          console.log('[增强包] 播放卡死，尝试软恢复（重新加载视频源）');
-          var t = video.currentTime;
-          video.load();
-          video.addEventListener('loadedmetadata', function once() {
-            video.removeEventListener('loadedmetadata', once);
-            try { video.currentTime = t; } catch (e) {}
-            video.play().catch(function () {});
-          });
-          armStallTimer(video, true);
+          console.log('[增强包] 播放停滞，尝试 play() 重试');
+          try { video.play().catch(function () {}); } catch (e) {}
+          setTimeout(function () {
+            if (video.isConnected && !video.paused && video.readyState < 3 &&
+                Math.abs(video.currentTime - (video.__rrmvLastCheck || 0)) < 0.01) {
+              // 第二级：软恢复（重新加载源，会丢 buffer，最后手段）
+              if (!healCountOk()) return;
+              bumpHealCount();
+              console.log('[增强包] play() 重试无效，软恢复（重新加载视频源）');
+              var t = video.currentTime;
+              video.load();
+              video.addEventListener('loadedmetadata', function once() {
+                video.removeEventListener('loadedmetadata', once);
+                try { video.currentTime = t; } catch (e) {}
+                video.play().catch(function () {});
+              });
+              armStallWatch(video, 12);
+            }
+          }, 4000);
         } else if (healCountOk()) {
-          // 硬恢复：刷新页面（网站有续播，进度不丢）
+          // 第三级：刷新页面（网站有续播，进度不丢）
           bumpHealCount();
           console.log('[增强包] 软恢复无效，刷新页面');
           location.reload();
         }
       }
 
-      function armStallTimer(video, isRetry) {
-        clearStallTimer();
-        var timeout = isRetry ? 10000 : 8000;
-        // 刚从暂停恢复（<5s）触发的 waiting 多为正常重新缓冲（暂停久了 buffer 被清），
-        // 给双倍宽限，避免误判卡死触发 load() 重载反而更卡
-        if (!isRetry && lastResumeAt && Date.now() - lastResumeAt < 5000) timeout = 16000;
-        stallTimer = setTimeout(function () { onStallTimeout(video); }, timeout);
-      }
-
       onReady(function () {
-        // 记录恢复播放时刻（供 stallHeal 宽限判断）
-        document.addEventListener('play', function (e) {
-          if (e.target && e.target.tagName === 'VIDEO') lastResumeAt = Date.now();
-        }, true);
-
-        // waiting：缓冲不足（转圈出现）
+        // waiting：缓冲不足（转圈出现）→ 开始监控时间推进，而非固定超时
         document.addEventListener('waiting', function (e) {
           if (!e.target || e.target.tagName !== 'VIDEO') return;
           softTried = false;
-          armStallTimer(e.target, false);
+          e.target.__rrmvLastCheck = e.target.currentTime;
+          armStallWatch(e.target, 8);
         }, true);
 
-        // 恢复播放/暂停/换源 → 取消计时
-        ['playing', 'canplay', 'pause', 'emptied', 'error'].forEach(function (ev) {
+        // 暂停/换源/出错 → 取消监控（恢复播放由 currentTime 推进自动判定）
+        ['pause', 'emptied', 'error'].forEach(function (ev) {
           document.addEventListener(ev, function (e) {
             if (e.target && e.target.tagName === 'VIDEO') clearStallTimer();
           }, true);
