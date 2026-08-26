@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode Web 粘贴图片
 // @namespace    http://tampermonkey.net/
-// @version      2.1
+// @version      2.2
 // @description  Ctrl+V 粘贴图片到 OpenCode Web：优先伪造 drop 走原生附件通道（等同桌面客户端体验），失败自动回退 base64 内联；油猴菜单可切换模式
 // @author       pass
 // @include      /^https?://localhost:\d+/
@@ -46,13 +46,14 @@
     return null;
   }
 
+  // opencode V2 输入框是 contenteditable div，优先匹配
   function findInput() {
-    return document.querySelector('textarea') ||
-           document.querySelector('[contenteditable="true"]') ||
+    return document.querySelector('[contenteditable="true"]') ||
+           document.querySelector('textarea') ||
            document.querySelector('input[type="text"]');
   }
 
-  // 等待输入框出现（最多 waitMs；opencode V2 输入框是 contenteditable div，可能延迟渲染）
+  // 等待输入框出现（最多 waitMs）
   function waitForInput(waitMs, cb) {
     var el = findInput();
     if (el) { cb(el); return; }
@@ -108,7 +109,8 @@
         return;
       }
 
-      // 用唯一文件名探测附件是否真的渲染出来（textContent + 属性）
+      // 用唯一文件名探测附件是否真的渲染出来
+      // 覆盖：新增节点 textContent / 新增节点属性 / 已有节点属性变化 / text 节点变化
       var settled = false;
       var obs = new MutationObserver(function(muts) {
         for (var i = 0; i < muts.length; i++) {
@@ -121,9 +123,19 @@
               return;
             }
           }
+          if (m.type === 'characterData') {
+            if (m.target.nodeValue && m.target.nodeValue.indexOf(filename) !== -1) {
+              settle(true);
+              return;
+            }
+          }
           if (m.type === 'childList') {
             for (var j = 0; j < m.addedNodes.length; j++) {
               var n = m.addedNodes[j];
+              if (n.nodeType === 3) {
+                if (n.nodeValue && n.nodeValue.indexOf(filename) !== -1) { settle(true); return; }
+                continue;
+              }
               if (n.nodeType !== 1) continue;
               if (n.textContent && n.textContent.indexOf(filename) !== -1) { settle(true); return; }
               for (var a = 0; a < n.attributes.length; a++) {
@@ -145,8 +157,8 @@
         }
       }
 
-      obs.observe(document.body, { childList: true, subtree: true, attributes: true });
-      setTimeout(function() { settle(false); }, 1500);
+      obs.observe(document.body, { childList: true, subtree: true, attributes: true, characterData: true });
+      setTimeout(function() { settle(false); }, 2000);
     });
   }
 
