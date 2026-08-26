@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode Web 粘贴图片
 // @namespace    http://tampermonkey.net/
-// @version      2.3
-// @description  Ctrl+V 粘贴图片到 OpenCode Web：优先伪造 drop 走原生附件通道（等同桌面客户端体验），失败自动回退 base64 内联；油猴菜单可切换模式
+// @version      2.4
+// @description  Ctrl+V 粘贴图片到 OpenCode Web：伪造 drop 走原生附件通道（等同桌面客户端体验）；drop 失败提示手动拖拽（base64 内联已废弃——模型读不到 base64 文本）
 // @author       pass
 // @include      /^https?://localhost:\d+/
 // @include      /^https?://127\.0\.0\.1:\d+/
@@ -14,8 +14,8 @@
 (function() {
   'use strict';
 
-  var MODES = ['auto', 'drop', 'base64'];
-  var MODE_DESC = { auto: '自动（原生附件→base64 兜底）', drop: '仅原生附件', base64: '仅 base64 内联' };
+  var MODES = ['auto', 'drop'];
+  var MODE_DESC = { auto: '自动（原生附件）', drop: '仅原生附件' };
 
   function S(k, v) {
     if (v === undefined) return localStorage.getItem('ocpaste_' + k);
@@ -90,14 +90,14 @@
     }
   }
 
-  // ---------- ① 原生附件通道：伪造 drop 事件 ----------
-  function tryNativeDrop(file, allowFallback) {
+  // ---------- 原生附件通道：伪造 drop 事件 ----------
+  function tryNativeDrop(file) {
     var filename = 'paste-' + Date.now() + '.png';
     var payload;
     try {
       payload = new File([file], filename, { type: file.type || 'image/png' });
     } catch (err) {
-      fallbackOrReport(allowFallback, file, 'File 构造失败');
+      dropFailed('File 构造失败');
       return;
     }
 
@@ -106,13 +106,13 @@
       dt = new DataTransfer();
       dt.items.add(payload);
     } catch (err) {
-      fallbackOrReport(allowFallback, file, 'DataTransfer 构造失败');
+      dropFailed('DataTransfer 构造失败');
       return;
     }
 
     waitForInput(2000, function(target) {
       if (!target) {
-        fallbackOrReport(allowFallback, file, '未找到输入框');
+        dropFailed('未找到输入框');
         return;
       }
 
@@ -125,12 +125,12 @@
       } catch (err) {}
 
       if (!dispatched) {
-        fallbackOrReport(allowFallback, file, 'DragEvent 不受支持');
+        dropFailed('DragEvent 不受支持');
         return;
       }
 
       // 检测：输入框组件容器（含 shadow DOM）新增元素 = 附件 chip 添加成功
-      // 排除输入框自身内容变化（target 内部）
+      // 排除输入框自身内容变化（打字）
       var settled = false;
       var obs = new MutationObserver(function(muts) {
         for (var i = 0; i < muts.length; i++) {
@@ -144,20 +144,6 @@
               return;
             }
           }
-          if (m.type === 'attributes') {
-            var t = m.target;
-            if (t.getAttribute && t.getAttribute(m.attributeName) &&
-                t.getAttribute(m.attributeName).indexOf(filename) !== -1) {
-              settle(true);
-              return;
-            }
-          }
-          if (m.type === 'characterData') {
-            if (m.target.nodeValue && m.target.nodeValue.indexOf(filename) !== -1) {
-              settle(true);
-              return;
-            }
-          }
         }
       });
 
@@ -168,7 +154,7 @@
         if (success) {
           toast('✓ 已附加为原生附件（provider-native 图片输入）');
         } else {
-          fallbackOrReport(allowFallback, file, '前端未响应 drop');
+          dropFailed('前端未响应 drop');
         }
       }
 
@@ -179,52 +165,8 @@
     });
   }
 
-  function fallbackOrReport(allowFallback, file, reason) {
-    if (allowFallback) {
-      toast('⚠ 原生附件通道无效（' + reason + '），回退 base64', '#fa0');
-      insertBase64(file);
-    } else {
-      toast('✗ drop 未生效：' + reason, '#f55');
-    }
-  }
-
-  // ---------- ② base64 兜底通道 ----------
-  function insertBase64(file) {
-    var reader = new FileReader();
-    reader.onload = function(ev) {
-      var img = new Image();
-      img.onload = function() {
-        var canvas = document.createElement('canvas');
-        var ctx = canvas.getContext('2d');
-        var w = img.width, h = img.height;
-        if (w > 1024 || h > 1024) {
-          if (w > h) { h = Math.round(h * 1024 / w); w = 1024; }
-          else { w = Math.round(w * 1024 / h); h = 1024; }
-        }
-        canvas.width = w; canvas.height = h;
-        ctx.drawImage(img, 0, 0, w, h);
-
-        var base64 = canvas.toDataURL('image/png').split(',')[1];
-        var markdown = '![paste.png](data:image/png;base64,' + base64 + ')';
-
-        var inputBox = findInput();
-        if (!inputBox) { toast('✗ 未找到输入框', '#f55'); return; }
-
-        if (inputBox.tagName === 'TEXTAREA') {
-          var start = inputBox.selectionStart;
-          var end = inputBox.selectionEnd;
-          inputBox.value = inputBox.value.substring(0, start) + markdown + inputBox.value.substring(end);
-          inputBox.selectionStart = inputBox.selectionEnd = start + markdown.length;
-          inputBox.dispatchEvent(new Event('input', { bubbles: true }));
-        } else {
-          inputBox.focus();
-          document.execCommand('insertText', false, markdown);
-        }
-        toast('✓ base64 已插入 (' + w + 'x' + h + ')');
-      };
-      img.src = ev.target.result;
-    };
-    reader.readAsDataURL(file);
+  function dropFailed(reason) {
+    toast('✗ drop 未生效（' + reason + '）。请手动拖拽图片到输入框，或使用附件按钮', '#f55');
   }
 
   // ---------- 主入口 ----------
@@ -234,9 +176,6 @@
     e.preventDefault();
     e.stopPropagation();
 
-    var mode = getMode();
-    if (mode === 'base64') { insertBase64(file); return; }
-    if (mode === 'drop')   { tryNativeDrop(file, false); return; }
-    tryNativeDrop(file, true); // auto
+    tryNativeDrop(file);
   }, true);
 })();
