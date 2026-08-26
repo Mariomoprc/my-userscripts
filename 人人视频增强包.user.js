@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         人人视频增强包
 // @namespace    http://tampermonkey.net/
-// @version      2.5
-// @description  反调试绕过 + 隐藏滚动条 + 无感去广告 + 豆瓣跳转 + 唤醒/刷新后暂停 | 菜单可开关
+// @version      2.6
+// @description  反调试绕过 + 隐藏滚动条 + 无感去广告 + 豆瓣跳转 + 唤醒后暂停(点播放即恢复) + 播放卡死自愈 | 菜单可开关
 // @author       opencode
 // @match        *://*.yichengwlkj.com/*
 // @match        *://*.rrmj.plus/*
@@ -40,6 +40,7 @@
   buildMenu('去广告（无感）',    'adBlock',     true);
   buildMenu('豆瓣跳转',          'douban',      true);
   buildMenu('唤醒/刷新后暂停',   'pauseOnWake', true);
+  buildMenu('播放卡死自愈',      'stallHeal',   true);
 
   // ============================================================
   //  1. 反调试自动绕过
@@ -200,11 +201,7 @@
         document.addEventListener('play', function (e) {
           if (e.target && e.target.tagName === 'VIDEO') {
             sessionStorage.setItem(WATCHING_KEY, '1');
-            if (needPause && pauseTime > 0 && Date.now() - pauseTime < 2000) {
-              e.target.pause();
-              e.target.setAttribute('data-rrmv-paused', '1');
-              return;
-            }
+            // 用户点播放立即恢复（不再二次按停），只清除本次唤醒暂停状态
             needPause = false;
             sessionStorage.removeItem(PAUSE_ONCE_KEY);
             cleanupWake();
@@ -216,6 +213,84 @@
         sessionStorage.removeItem(PAUSE_ONCE_KEY);
         cleanupWake();
       }, { passive: true });
+    })();
+  }
+
+  // ============================================================
+  //  6. 播放卡死自愈（waiting 转圈不恢复 → 软重载 → 刷新页面）
+  // ============================================================
+  if (S.get('stallHeal', true)) {
+    (function () {
+      var HEAL_COUNT_KEY = 'rrmv_heal_count';
+      var HEAL_TIME_KEY = 'rrmv_heal_time';
+      var stallTimer = null;
+      var softTried = false;
+
+      function healCountOk() {
+        var now = Date.now();
+        var last = parseInt(sessionStorage.getItem(HEAL_TIME_KEY) || '0', 10);
+        if (now - last > 10 * 60 * 1000) {
+          sessionStorage.setItem(HEAL_TIME_KEY, String(now));
+          sessionStorage.setItem(HEAL_COUNT_KEY, '0');
+          return true;
+        }
+        var n = parseInt(sessionStorage.getItem(HEAL_COUNT_KEY) || '0', 10);
+        return n < 2;
+      }
+
+      function bumpHealCount() {
+        var n = parseInt(sessionStorage.getItem(HEAL_COUNT_KEY) || '0', 10);
+        sessionStorage.setItem(HEAL_COUNT_KEY, String(n + 1));
+      }
+
+      function clearStallTimer() {
+        if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
+      }
+
+      function onStallTimeout(video) {
+        // 已恢复、已暂停或数据充足则不处理
+        if (!video.isConnected || video.paused || video.readyState >= 3) return;
+        if (!softTried && healCountOk()) {
+          // 软恢复：重新加载当前源
+          softTried = true;
+          bumpHealCount();
+          console.log('[增强包] 播放卡死，尝试软恢复（重新加载视频源）');
+          var t = video.currentTime;
+          video.load();
+          video.addEventListener('loadedmetadata', function once() {
+            video.removeEventListener('loadedmetadata', once);
+            try { video.currentTime = t; } catch (e) {}
+            video.play().catch(function () {});
+          });
+          armStallTimer(video, true);
+        } else if (healCountOk()) {
+          // 硬恢复：刷新页面（网站有续播，进度不丢）
+          bumpHealCount();
+          console.log('[增强包] 软恢复无效，刷新页面');
+          location.reload();
+        }
+      }
+
+      function armStallTimer(video, isRetry) {
+        clearStallTimer();
+        stallTimer = setTimeout(function () { onStallTimeout(video); }, isRetry ? 10000 : 8000);
+      }
+
+      onReady(function () {
+        // waiting：缓冲不足（转圈出现）
+        document.addEventListener('waiting', function (e) {
+          if (!e.target || e.target.tagName !== 'VIDEO') return;
+          softTried = false;
+          armStallTimer(e.target, false);
+        }, true);
+
+        // 恢复播放/暂停/换源 → 取消计时
+        ['playing', 'canplay', 'pause', 'emptied', 'error'].forEach(function (ev) {
+          document.addEventListener(ev, function (e) {
+            if (e.target && e.target.tagName === 'VIDEO') clearStallTimer();
+          }, true);
+        });
+      });
     })();
   }
 
