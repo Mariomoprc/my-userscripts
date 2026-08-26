@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode Web 粘贴图片
 // @namespace    http://tampermonkey.net/
-// @version      2.2
+// @version      2.3
 // @description  Ctrl+V 粘贴图片到 OpenCode Web：优先伪造 drop 走原生附件通道（等同桌面客户端体验），失败自动回退 base64 内联；油猴菜单可切换模式
 // @author       pass
 // @include      /^https?://localhost:\d+/
@@ -46,7 +46,6 @@
     return null;
   }
 
-  // opencode V2 输入框是 contenteditable div，优先匹配
   function findInput() {
     return document.querySelector('[contenteditable="true"]') ||
            document.querySelector('textarea') ||
@@ -70,6 +69,25 @@
     }
     obs.observe(document.body, { childList: true, subtree: true });
     setTimeout(function() { finish(findInput()); }, waitMs);
+  }
+
+  // 向上找输入框组件容器（附件 chip 渲染区域）
+  function findComposer(input) {
+    var el = input;
+    for (var i = 0; i < 5 && el; i++) {
+      var cls = el.className || '';
+      if (typeof cls === 'string' && /prompt|composer|input|chat|message/i.test(cls)) return el;
+      el = el.parentElement;
+    }
+    return input.parentElement || input;
+  }
+
+  // 观察容器内所有 shadow root
+  function observeShadowRoots(root, obs, opts) {
+    var hosts = root.querySelectorAll('*');
+    for (var i = 0; i < hosts.length; i++) {
+      if (hosts[i].shadowRoot) obs.observe(hosts[i].shadowRoot, opts);
+    }
   }
 
   // ---------- ① 原生附件通道：伪造 drop 事件 ----------
@@ -98,6 +116,8 @@
         return;
       }
 
+      var composer = findComposer(target);
+
       var dispatched = false;
       try {
         target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
@@ -109,12 +129,21 @@
         return;
       }
 
-      // 用唯一文件名探测附件是否真的渲染出来
-      // 覆盖：新增节点 textContent / 新增节点属性 / 已有节点属性变化 / text 节点变化
+      // 检测：输入框组件容器（含 shadow DOM）新增元素 = 附件 chip 添加成功
+      // 排除输入框自身内容变化（target 内部）
       var settled = false;
       var obs = new MutationObserver(function(muts) {
         for (var i = 0; i < muts.length; i++) {
           var m = muts[i];
+          if (m.type === 'childList') {
+            for (var j = 0; j < m.addedNodes.length; j++) {
+              var n = m.addedNodes[j];
+              if (n.nodeType !== 1) continue;
+              if (n === target || target.contains(n)) continue; // 输入框内部变化，跳过
+              settle(true); // 输入框外部新增元素 = 附件 chip
+              return;
+            }
+          }
           if (m.type === 'attributes') {
             var t = m.target;
             if (t.getAttribute && t.getAttribute(m.attributeName) &&
@@ -127,20 +156,6 @@
             if (m.target.nodeValue && m.target.nodeValue.indexOf(filename) !== -1) {
               settle(true);
               return;
-            }
-          }
-          if (m.type === 'childList') {
-            for (var j = 0; j < m.addedNodes.length; j++) {
-              var n = m.addedNodes[j];
-              if (n.nodeType === 3) {
-                if (n.nodeValue && n.nodeValue.indexOf(filename) !== -1) { settle(true); return; }
-                continue;
-              }
-              if (n.nodeType !== 1) continue;
-              if (n.textContent && n.textContent.indexOf(filename) !== -1) { settle(true); return; }
-              for (var a = 0; a < n.attributes.length; a++) {
-                if (n.attributes[a].value.indexOf(filename) !== -1) { settle(true); return; }
-              }
             }
           }
         }
@@ -157,8 +172,10 @@
         }
       }
 
-      obs.observe(document.body, { childList: true, subtree: true, attributes: true, characterData: true });
-      setTimeout(function() { settle(false); }, 2000);
+      var obsOpts = { childList: true, subtree: true, attributes: true, characterData: true };
+      obs.observe(composer, obsOpts);
+      observeShadowRoots(composer, obs, obsOpts);
+      setTimeout(function() { settle(false); }, 3000);
     });
   }
 
