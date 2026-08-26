@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         人人视频双击全屏
+// @name         视频双击全屏
 // @namespace    http://tampermonkey.net/
-// @version      8.0
+// @version      8.1
 // @description  双击全屏+滑动进度+弹幕保留，支持安卓手机
 // @author       You
 // @match        *://mh.yichengwlkj.com/*

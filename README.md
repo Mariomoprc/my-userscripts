@@ -7,7 +7,7 @@
 | # | 脚本 | 用途 | 安装 |
 |---|------|------|------|
 | 1 | [OpenCode Web 粘贴图片](https://github.com/Mariomoprc/my-userscripts/blob/main/opencode-paste-image.user.js) | Ctrl+V 贴图：优先伪造 drop 走 opencode 原生附件通道（等同桌面客户端），失败自动回退 base64；菜单可切模式 | [🔗](https://raw.githubusercontent.com/Mariomoprc/my-userscripts/main/opencode-paste-image.user.js) |
-| 2 | [人人视频双击全屏](https://github.com/Mariomoprc/my-userscripts/blob/main/rrmj-doubleclick-fullscreen.user.js) | 双击视频自动全屏横屏播放，支持安卓手机 | [🔗](https://raw.githubusercontent.com/Mariomoprc/my-userscripts/main/rrmj-doubleclick-fullscreen.user.js) |
+| 2 | [视频双击全屏](https://github.com/Mariomoprc/my-userscripts/blob/main/rrmj-doubleclick-fullscreen.user.js) | 双击视频自动全屏横屏播放，支持安卓手机 | [🔗](https://raw.githubusercontent.com/Mariomoprc/my-userscripts/main/rrmj-doubleclick-fullscreen.user.js) |
 | 3 | [Discord Token 获取器](https://greasyfork.org/zh-CN/scripts/587500-discord-token-获取器) | 通过菜单获取 Discord Token | [🔗](https://greasyfork.org/scripts/587500/code/script.user.js) |
 | 4 | [禁用 Google 语音搜索](https://greasyfork.org/zh-CN/scripts/587507-禁用-google-语音搜索-解决-ctrl-shift-与-copilot-冲突) | 解决 Ctrl+Shift+. 与 Copilot 冲突 | [🔗](https://greasyfork.org/scripts/587507/code/script.user.js) |
 | 5 | [Bing 深色模式](https://greasyfork.org/zh-CN/scripts/587496-bing-深色模式) | Bing 搜索深色模式 | [🔗](https://greasyfork.org/scripts/587496/code/script.user.js) |

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         人人视频增强包
 // @namespace    http://tampermonkey.net/
-// @version      2.6
+// @version      2.7
 // @description  反调试绕过 + 隐藏滚动条 + 无感去广告 + 豆瓣跳转 + 唤醒后暂停(点播放即恢复) + 播放卡死自愈 | 菜单可开关
 // @author       opencode
 // @match        *://*.yichengwlkj.com/*
@@ -225,6 +225,7 @@
       var HEAL_TIME_KEY = 'rrmv_heal_time';
       var stallTimer = null;
       var softTried = false;
+      var lastResumeAt = 0; // 最近一次从暂停恢复播放的时刻
 
       function healCountOk() {
         var now = Date.now();
@@ -273,10 +274,19 @@
 
       function armStallTimer(video, isRetry) {
         clearStallTimer();
-        stallTimer = setTimeout(function () { onStallTimeout(video); }, isRetry ? 10000 : 8000);
+        var timeout = isRetry ? 10000 : 8000;
+        // 刚从暂停恢复（<5s）触发的 waiting 多为正常重新缓冲（暂停久了 buffer 被清），
+        // 给双倍宽限，避免误判卡死触发 load() 重载反而更卡
+        if (!isRetry && lastResumeAt && Date.now() - lastResumeAt < 5000) timeout = 16000;
+        stallTimer = setTimeout(function () { onStallTimeout(video); }, timeout);
       }
 
       onReady(function () {
+        // 记录恢复播放时刻（供 stallHeal 宽限判断）
+        document.addEventListener('play', function (e) {
+          if (e.target && e.target.tagName === 'VIDEO') lastResumeAt = Date.now();
+        }, true);
+
         // waiting：缓冲不足（转圈出现）
         document.addEventListener('waiting', function (e) {
           if (!e.target || e.target.tagName !== 'VIDEO') return;
