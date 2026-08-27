@@ -1,12 +1,13 @@
 // ==UserScript==
 // @name         OpenCode Web 粘贴图片
 // @namespace    http://tampermonkey.net/
-// @version      2.4
-// @description  Ctrl+V 粘贴图片到 OpenCode Web：伪造 drop 走原生附件通道（等同桌面客户端体验）；drop 失败提示手动拖拽（base64 内联已废弃——模型读不到 base64 文本）
+// @version      2.5
+// @description  Ctrl+V 粘贴图片到 OpenCode Web：伪造 dragover+drop 直接派发到 document（OpenCode v1/v2 的 drop 监听均在 document 上），走原生附件通道，兼容 /server/ 多服务器路由；不落地 base64 文本（识图模型读不到）
 // @author       pass
 // @include      /^https?://localhost:\d+/
 // @include      /^https?://127\.0\.0\.1:\d+/
 // @include      /^https?://192\.168\.\d+\.\d+:\d+/
+// @include      /^https?://\d+\.\d+\.\d+\.\d+:\d+/
 // @grant        GM_registerMenuCommand
 // @run-at       document-start
 // ==/UserScript==
@@ -52,7 +53,7 @@
            document.querySelector('input[type="text"]');
   }
 
-  // 等待输入框出现（最多 waitMs）
+  // 等待输入框出现（最多 waitMs）——输入框出现即组件已挂载、document 上的 drop 监听已绑定
   function waitForInput(waitMs, cb) {
     var el = findInput();
     if (el) { cb(el); return; }
@@ -90,47 +91,43 @@
     }
   }
 
-  // ---------- 原生附件通道：伪造 drop 事件 ----------
+  // 构造带 dataTransfer 的 DragEvent，老浏览器 fallback 手动注入
+  function makeDragEvent(type, dt) {
+    try {
+      return new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: dt });
+    } catch (err) {
+      var ev = new DragEvent(type, { bubbles: true, cancelable: true });
+      try { Object.defineProperty(ev, 'dataTransfer', { value: dt }); } catch (e) {}
+      return ev;
+    }
+  }
+
+  // ---------- 原生附件通道：伪造 dragover + drop 直接派发到 document ----------
   function tryNativeDrop(file) {
     var filename = 'paste-' + Date.now() + '.png';
-    var payload;
+    var payload, dt;
     try {
       payload = new File([file], filename, { type: file.type || 'image/png' });
-    } catch (err) {
-      dropFailed('File 构造失败');
-      return;
-    }
-
-    var dt;
-    try {
       dt = new DataTransfer();
       dt.items.add(payload);
     } catch (err) {
-      dropFailed('DataTransfer 构造失败');
+      dropFailed('文件/DataTransfer 构造失败');
       return;
     }
 
-    waitForInput(2000, function(target) {
+    waitForInput(4000, function(target) {
       if (!target) {
         dropFailed('未找到输入框');
         return;
       }
 
-      var composer = findComposer(target);
-
-      var dispatched = false;
-      try {
-        target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
-        dispatched = true;
-      } catch (err) {}
-
-      if (!dispatched) {
-        dropFailed('DragEvent 不受支持');
-        return;
-      }
+      // OpenCode v1/v2 的 drop 监听器都绑定在 document 上并读取
+      // event.dataTransfer.files。直接向 document 派发完整拖拽序列，
+      // 不依赖冒泡、不依赖组件 DOM 位置，兼容 /、/server/... 所有路由。
+      document.dispatchEvent(makeDragEvent('dragover', dt));
+      document.dispatchEvent(makeDragEvent('drop', dt));
 
       // 检测：输入框组件容器（含 shadow DOM）新增元素 = 附件 chip 添加成功
-      // 排除输入框自身内容变化（打字）
       var settled = false;
       var obs = new MutationObserver(function(muts) {
         for (var i = 0; i < muts.length; i++) {
@@ -152,21 +149,22 @@
         settled = true;
         obs.disconnect();
         if (success) {
-          toast('✓ 已附加为原生附件（provider-native 图片输入）');
+          toast('✓ 已附加为原生附件（识图模型可读）');
         } else {
-          dropFailed('前端未响应 drop');
+          dropFailed('前端未响应 drop。请手动拖拽图片或使用附件按钮');
         }
       }
 
       var obsOpts = { childList: true, subtree: true, attributes: true, characterData: true };
+      var composer = findComposer(target);
       obs.observe(composer, obsOpts);
       observeShadowRoots(composer, obs, obsOpts);
-      setTimeout(function() { settle(false); }, 3000);
+      setTimeout(function() { settle(false); }, 4000);
     });
   }
 
   function dropFailed(reason) {
-    toast('✗ drop 未生效（' + reason + '）。请手动拖拽图片到输入框，或使用附件按钮', '#f55');
+    toast('✗ drop 未生效（' + reason + '）。请手动拖拽图片到输入框，或长按输入框左侧使用附件按钮', '#f55');
   }
 
   // ---------- 主入口 ----------
