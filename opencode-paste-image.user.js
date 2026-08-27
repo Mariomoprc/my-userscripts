@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode Web 粘贴图片
 // @namespace    http://tampermonkey.net/
-// @version      2.5
-// @description  Ctrl+V 粘贴图片到 OpenCode Web：伪造 dragover+drop 直接派发到 document（OpenCode v1/v2 的 drop 监听均在 document 上），走原生附件通道，兼容 /server/ 多服务器路由；不落地 base64 文本（识图模型读不到）
+// @version      2.6
+// @description  Ctrl+V 粘贴图片到 OpenCode Web：注入 crypto.subtle polyfill（修复局域网 HTTP 非安全上下文下 putBlob 崩溃），伪造 dragover+drop 派发到 document 走原生附件通道；不落地 base64 文本（识图模型读不到）
 // @author       pass
 // @include      /^https?://localhost:\d+/
 // @include      /^https?://127\.0\.0\.1:\d+/
@@ -14,6 +14,45 @@
 
 (function() {
   'use strict';
+
+  // ---------- crypto.subtle polyfill ----------
+  // 浏览器只在安全上下文（HTTPS/localhost）暴露 Web Crypto（crypto.subtle）。
+  // 通过局域网 IP + HTTP 访问 OpenCode Web（如 http://192.168.3.100:4096）时，
+  // crypto.subtle 为 undefined，前端 putBlob 调用 crypto.subtle.digest 崩溃，图片附件无法添加。
+  // 这里在 document-start 注入非加密哈希替代（OpenCode 仅用作 IndexedDB 唯一键，无需加密强度）。
+  if (typeof crypto !== 'undefined' && !crypto.subtle) {
+    try {
+      Object.defineProperty(crypto, 'subtle', {
+        configurable: true,
+        value: {
+          digest: async function(algo, data) {
+            var ab = data instanceof ArrayBuffer ? data : await data.arrayBuffer();
+            var bytes = new Uint8Array(ab);
+            // FNV-1a 128-bit 变体，返回 32 字节（与 SHA-256 输出等长）
+            var h1 = 0x811c9dc5, h2 = 0x01000193, h3 = 0x811c9dc5, h4 = 0x01000193;
+            for (var i = 0; i < bytes.length; i++) {
+              var b = bytes[i];
+              h1 = Math.imul(h1 ^ b, 0x01000193) >>> 0;
+              h2 = Math.imul(h2 ^ b, 0x01000193) >>> 0;
+              h3 = Math.imul(h3 ^ b, 0x01000193) >>> 0;
+              h4 = Math.imul(h4 ^ b, 0x01000193) >>> 0;
+            }
+            var out = new Uint8Array(32);
+            var dv = new DataView(out.buffer);
+            dv.setUint32(0, h1, true);
+            dv.setUint32(4, h2, true);
+            dv.setUint32(8, h3, true);
+            dv.setUint32(12, h4, true);
+            dv.setUint32(16, h1 ^ 0x9e3779b9, true);
+            dv.setUint32(20, h2 ^ 0x85ebca6b, true);
+            dv.setUint32(24, bytes.length, true);
+            dv.setUint32(28, (h1 ^ bytes.length) >>> 0, true);
+            return out;
+          }
+        }
+      });
+    } catch (err) {}
+  }
 
   var MODES = ['auto', 'drop'];
   var MODE_DESC = { auto: '自动（原生附件）', drop: '仅原生附件' };
