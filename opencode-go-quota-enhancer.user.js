@@ -576,7 +576,13 @@
 
   function init() {
     injectToggleButton();
-    setTimeout(function () { loadAndInject(false); }, 500);
+
+    // Only auto-load if user previously opened the panel
+    var wantVisible = false;
+    try { wantVisible = localStorage.getItem(PANEL_KEY) === '1'; } catch (e) {}
+    if (wantVisible) {
+      setTimeout(function () { loadAndInject(false); }, 500);
+    }
   }
 
   if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', function () { setTimeout(init, 300); }); } else { setTimeout(init, 300); }
