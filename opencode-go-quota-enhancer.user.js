@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode Go 额度增强面板
 // @namespace    http://tampermonkey.net/
-// @version      1.4.2
-// @description  在 opencode.ai 全站注入 Go 模型额度性价比榜（评分/模态/上下文），数据来自 docs/go
+// @version      1.5
+// @description  在 opencode.ai 全站注入 Go 模型额度性价比榜（评分/模态/上下文/建议），数据来自 docs/go
 // @author       pass
 // @match        https://opencode.ai/*
 // @grant        GM_setValue
@@ -18,33 +18,33 @@
   var DOCS_URL = 'https://opencode.ai/docs/go/';
   var MODELS_API = 'https://opencode.ai/zen/go/v1/models';
 
-  console.log(TAG, 'v1.4.2 loaded, pathname:', location.pathname);
+  console.log(TAG, 'v1.5 loaded, pathname:', location.pathname);
 
   var MODEL_META = {
-    'grok-4.6':                { context: 200000, modalities: ['text'],                reasoning: true },
-    'gpt-5.6-luna':            { context: 272000, modalities: ['text'],                reasoning: false },
-    'glm-5.3-flash':           { context: 1000000, modalities: ['text', 'image'],      reasoning: false },
-    'glm-5.3':                 { context: 128000, modalities: ['text'],                reasoning: true },
-    'glm-5.2':                 { context: 128000, modalities: ['text'],                reasoning: true },
-    'glm-5.1':                 { context: 128000, modalities: ['text'],                reasoning: true },
-    'kimi-k3':                 { context: 256000, modalities: ['text'],                reasoning: true },
-    'kimi-k2.7-code':          { context: 128000, modalities: ['text'],                reasoning: true },
-    'kimi-k2.6':               { context: 128000, modalities: ['text'],                reasoning: true },
-    'longcat-2.0':             { context: 1000000, modalities: ['text'],               reasoning: false },
-    'mimo-v2.5':               { context: 1000000, modalities: ['text', 'image', 'audio', 'video'], reasoning: true },
-    'mimo-v2.5-pro':           { context: 256000, modalities: ['text'],                reasoning: true },
-    'minimax-m3':              { context: 128000, modalities: ['text', 'image'],       reasoning: false },
-    'minimax-m2.7':            { context: 128000, modalities: ['text', 'image'],       reasoning: false },
-    'muse-spark-1.2-contributor': { context: 1000000, modalities: ['text', 'image'],   reasoning: false },
-    'qwen3.8-max':             { context: 128000, modalities: ['text'],                reasoning: true },
-    'qwen3.8-flash':           { context: 128000, modalities: ['text'],                reasoning: true },
-    'qwen3.7-max':             { context: 128000, modalities: ['text'],                reasoning: true },
-    'qwen3.7-plus':            { context: 128000, modalities: ['text'],                reasoning: true },
-    'qwen3.6-plus':            { context: 128000, modalities: ['text'],                reasoning: true },
-    'deepseek-v4-pro':         { context: 128000, modalities: ['text'],                reasoning: true },
-    'deepseek-v4-flash':       { context: 128000, modalities: ['text'],                reasoning: true },
-    'deepseek-v4-flash-vision-exp': { context: 128000, modalities: ['text', 'image'],  reasoning: true },
-    'hy3':                     { context: 128000, modalities: ['text'],                reasoning: true }
+    'grok-4.6':                { context: 200000, modalities: ['text'],                reasoning: true,  country: '美国' },
+    'gpt-5.6-luna':            { context: 272000, modalities: ['text'],                reasoning: false, country: '美国' },
+    'glm-5.3-flash':           { context: 1000000, modalities: ['text', 'image'],      reasoning: false, country: '中国' },
+    'glm-5.3':                 { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国' },
+    'glm-5.2':                 { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国' },
+    'glm-5.1':                 { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国' },
+    'kimi-k3':                 { context: 256000, modalities: ['text'],                reasoning: true,  country: '中国' },
+    'kimi-k2.7-code':          { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国' },
+    'kimi-k2.6':               { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国' },
+    'longcat-2.0':             { context: 1000000, modalities: ['text'],               reasoning: false, country: '待确认' },
+    'mimo-v2.5':               { context: 1000000, modalities: ['text', 'image', 'audio', 'video'], reasoning: true, country: '中国' },
+    'mimo-v2.5-pro':           { context: 256000, modalities: ['text'],                reasoning: true,  country: '中国' },
+    'minimax-m3':              { context: 128000, modalities: ['text', 'image'],       reasoning: false, country: '中国' },
+    'minimax-m2.7':            { context: 128000, modalities: ['text', 'image'],       reasoning: false, country: '中国' },
+    'muse-spark-1.2-contributor': { context: 1000000, modalities: ['text', 'image'],   reasoning: false, country: '美国' },
+    'qwen3.8-max':             { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国' },
+    'qwen3.8-flash':           { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国' },
+    'qwen3.7-max':             { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国' },
+    'qwen3.7-plus':            { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国' },
+    'qwen3.6-plus':            { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国' },
+    'deepseek-v4-pro':         { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国' },
+    'deepseek-v4-flash':       { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国' },
+    'deepseek-v4-flash-vision-exp': { context: 128000, modalities: ['text', 'image'],  reasoning: true,  country: '中国' },
+    'hy3':                     { context: 128000, modalities: ['text'],                reasoning: true,  country: '待确认' }
   };
 
   var SNAPSHOT = {
@@ -171,6 +171,18 @@
     return Math.round(reqScore * 0.35 + ctxScore * 0.25 + priceScore * 0.25 + modScore * 0.15);
   }
 
+  function computeSuggest(model) {
+    var contextBonus = model.context >= 1000000 ? 15 : (model.context >= 256000 ? 10 : (model.context >= 128000 ? 5 : 0));
+    var planScore = model.score * 0.5 + (model.reasoning ? 20 : 0) + contextBonus;
+    var reqBonus = model.req5h >= 10000 ? 15 : (model.req5h >= 5000 ? 10 : (model.req5h >= 1000 ? 5 : 0));
+    var priceBonus = model.input > 0 && model.input <= 0.2 ? 15 : (model.input > 0 && model.input <= 0.5 ? 10 : (model.input > 0 && model.input <= 1 ? 5 : 0));
+    var buildScore = model.score * 0.6 + reqBonus + priceBonus;
+    if (planScore >= 60 && buildScore >= 60) return '通用';
+    if (planScore >= 60 && planScore > buildScore) return 'Plan';
+    if (buildScore >= 60 && buildScore > planScore) return 'Build';
+    return '-';
+  }
+
   function parseTables(html) {
     var tables = html.match(/<table[\s\S]*?<\/table>/g) || [];
     function rows(tableHtml) {
@@ -213,7 +225,8 @@
         name: name, modelId: '',
         req5h: parseNum(r[1]), reqWeek: parseNum(r[2]), reqMonth: parseNum(r[3]),
         input: 0, output: 0, usage: 0,
-        context: 128000, modalities: ['text'], reasoning: false, score: 0
+        context: 128000, modalities: ['text'], reasoning: false,
+        country: '', score: 0, suggest: ''
       };
     });
     tables.prices.forEach(function (r) {
@@ -236,8 +249,14 @@
     Object.keys(map).forEach(function (k) {
       var m = map[k];
       var meta = MODEL_META[m.modelId];
-      if (meta) { m.context = meta.context; m.modalities = meta.modalities; m.reasoning = meta.reasoning; }
+      if (meta) {
+        m.context = meta.context;
+        m.modalities = meta.modalities;
+        m.reasoning = meta.reasoning;
+        m.country = meta.country || '';
+      }
       m.score = computeScore(m);
+      m.suggest = computeSuggest(m);
     });
     if (apiModels && apiModels.length) {
       var docsIds = {};
@@ -246,12 +265,17 @@
         if (m.id && !docsIds[m.id]) {
           var meta = MODEL_META[m.id] || {};
           var entry = {
-            name: m.id, modelId: m.id, req5h: 0, reqWeek: 0, reqMonth: 0,
+            name: m.id, modelId: m.id,
+            req5h: 0, reqWeek: 0, reqMonth: 0,
             input: 0, output: 0, usage: 0,
-            context: meta.context || 128000, modalities: meta.modalities || ['text'],
-            reasoning: meta.reasoning || false, score: 0, isNew: true
+            context: meta.context || 128000,
+            modalities: meta.modalities || ['text'],
+            reasoning: meta.reasoning || false,
+            country: meta.country || '',
+            score: 0, suggest: '', isNew: true
           };
           entry.score = computeScore(entry);
+          entry.suggest = computeSuggest(entry);
           map[m.id] = entry;
         }
       });
@@ -270,6 +294,13 @@
 
   function scoreColor(score) {
     return '#888';
+  }
+
+  function suggestBadge(suggest) {
+    if (suggest === 'Plan') return '<span style="display:inline-block;padding:2px 6px;border-radius:3px;font-size:10px;font-weight:600;color:#fff;background:#555;">Plan</span>';
+    if (suggest === 'Build') return '<span style="display:inline-block;padding:2px 6px;border-radius:3px;font-size:10px;font-weight:600;color:#111;background:#ccc;">Build</span>';
+    if (suggest === '通用') return '<span style="display:inline-block;padding:2px 6px;border-radius:3px;font-size:10px;font-weight:600;color:#111;background:#eee;">通用</span>';
+    return '<span style="color:#555;font-size:10px;">-</span>';
   }
 
   function renderPanel(data) {
@@ -322,6 +353,7 @@
           '<th style="padding:6px 6px;text-align:right;">5h</th>' +
           '<th style="padding:6px 6px;text-align:right;">\u8F93\u5165\u4EF7</th>' +
           '<th style="padding:6px 6px;text-align:center;">\u500D\u6570</th>' +
+          '<th style="padding:6px 6px;text-align:center;">\u5EFA\u8BAE</th>' +
           '<th style="padding:6px 6px;">\u64CD\u4F5C</th>' +
         '</tr></thead>';
       var tbody = document.createElement('tbody');
@@ -331,12 +363,13 @@
         var nameStyle = d.isNew ? 'color:#e0e0e0;font-weight:600;' : (d.score >= 80 ? 'font-weight:600;color:#fff;' : 'color:#bbb;');
         var idTip = d.modelId ? ' title="opencode-go/' + d.modelId + '"' : '';
         tr.innerHTML =
-          '<td style="padding:6px 6px;' + nameStyle + '"' + idTip + '>' + d.name + ' <span style="color:#888;font-weight:600;font-size:11px;">' + d.score + '\u5206</span> <span style="font-size:10px;color:#666;">' + stars(d.score) + '</span>' + (d.isNew ? ' <span style="font-size:10px;color:#aaa;">NEW</span>' : '') + '</td>' +
+          '<td style="padding:6px 6px;' + nameStyle + '"' + idTip + '>' + d.name + (d.country ? ' <span style="font-size:10px;color:#777;">(' + d.country + ')</span>' : '') + ' <span style="color:#888;font-weight:600;font-size:11px;">' + d.score + '\u5206</span> <span style="font-size:10px;color:#666;">' + stars(d.score) + '</span>' + (d.isNew ? ' <span style="font-size:10px;color:#aaa;">NEW</span>' : '') + '</td>' +
           '<td style="padding:6px 6px;text-align:center;font-size:11px;">' + modalitiesText(d.modalities) + (d.reasoning ? ' <span style="color:#aaa;">\u63A8\u7406</span>' : '') + '</td>' +
           '<td style="padding:6px 6px;text-align:right;font-size:11px;">' + formatContext(d.context) + '</td>' +
           '<td style="padding:6px 6px;text-align:right;">' + d.req5h.toLocaleString() + '</td>' +
           '<td style="padding:6px 6px;text-align:right;">' + (d.input ? '$' + d.input.toFixed(2) : '-') + '</td>' +
           '<td style="padding:6px 6px;text-align:center;"><span style="display:inline-block;padding:2px 6px;border-radius:3px;font-size:11px;font-weight:600;color:#e0e0e0;background:#333;">' + (d.usage ? d.usage + 'x' : '-') + '</span></td>' +
+          '<td style="padding:6px 6px;text-align:center;">' + suggestBadge(d.suggest) + '</td>' +
           '<td style="padding:6px 6px;"><button class="oc-go-copy" data-id="' + (d.modelId || '') + '" style="padding:2px 8px;cursor:pointer;border:1px solid #555;border-radius:3px;background:transparent;color:#aaa;font-size:11px;' + (d.modelId ? '' : 'opacity:0.3;cursor:default;') + '">\u590D\u5236</button></td>';
         tbody.appendChild(tr);
       });
@@ -350,7 +383,7 @@
     footer.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid #333;font-size:11px;display:flex;justify-content:space-between;align-items:center;';
     footer.innerHTML =
       '<span style="opacity:0.5;">\u8BC4\u5206 = \u989D\u5EA635% + \u4E0A\u4E0B\u658725% + \u4EF7\u683C25% + \u6A21\u600115% \u00B7 \u6570\u636E\u6765\u81EA <a href="' + DOCS_URL + '" target="_blank" style="color:#aaa;">docs/go</a></span>' +
-      '<span style="opacity:0.5;">v1.4.2</span>';
+      '<span style="opacity:0.5;">v1.5</span>';
     panel.appendChild(footer);
 
     var contentEls = [stats, controls, tableWrap, footer];
@@ -427,7 +460,12 @@
 
       document.body.appendChild(backdrop);
       document.body.appendChild(panel);
-    } catch (e) { console.error(TAG, 'Inject failed:', e); }
+      console.log(TAG, 'Panel injected (' + source + ')');
+      toast('\u2713 Go \u989D\u5EA6\u9762\u677F\u5DF2\u52A0\u8F7D', '#ccc');
+    } catch (e) {
+      console.error(TAG, 'Inject failed:', e);
+      toast('\u2717 \u9762\u677F\u6CE8\u5165\u5931\u8D25: ' + (e.message || e), '#f85149');
+    }
   }
 
   function loadAndInject(forceRefresh) {
@@ -435,12 +473,21 @@
     var wantVisible = false;
     try { wantVisible = localStorage.getItem(PANEL_KEY) === '1'; } catch (e) {}
     if (!wantVisible && !forceRefresh) return;
+    console.log(TAG, 'loadAndInject, force:', forceRefresh);
     Promise.all([
       fetch(DOCS_URL, { credentials: 'omit' }).then(function (r) { return r.ok ? r.text() : null; }).catch(function () { return null; }),
       fetch(MODELS_API, { credentials: 'omit' }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; })
     ]).then(function (results) {
       var html = results[0]; var apiData = results[1];
-      if (html) { var tables = parseTables(html); if (tables.requests && tables.requests.length > 0) { var apiModels = (apiData && apiData.data) ? apiData.data : []; injectPanel(mergeData(tables, apiModels), 'live'); return; } }
+      if (html) {
+        var tables = parseTables(html);
+        if (tables.requests && tables.requests.length > 0) {
+          var apiModels = (apiData && apiData.data) ? apiData.data : [];
+          injectPanel(mergeData(tables, apiModels), 'live');
+          return;
+        }
+      }
+      console.log(TAG, 'Using snapshot fallback');
       injectPanel(mergeData(SNAPSHOT, []), 'snapshot');
     });
   }
