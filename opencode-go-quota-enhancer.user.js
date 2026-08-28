@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         OpenCode Go 额度增强面板
 // @namespace    http://tampermonkey.net/
-// @version      1.3
-// @description  在 workspace/go 页面注入模型额度表 + 性价比排名，数据来自 docs/go
+// @version      1.4
+// @description  在 opencode.ai 全站注入 Go 模型额度性价比榜（评分/模态/上下文），数据来自 docs/go
 // @author       pass
-// @match        https://opencode.ai/workspace/*/go*
+// @match        https://opencode.ai/*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @run-at       document-idle
@@ -14,15 +14,41 @@
   'use strict';
 
   var TAG = '[Go Enhancer]';
-  var CACHE_KEY = 'go_quota_cache_v2';
-  var CACHE_TTL = 6 * 60 * 60 * 1000;
+  var PANEL_KEY = 'go_panel_visible';
   var DOCS_URL = 'https://opencode.ai/docs/go/';
   var MODELS_API = 'https://opencode.ai/zen/go/v1/models';
 
-  console.log(TAG, 'v1.3 loaded, pathname:', location.pathname);
+  console.log(TAG, 'v1.4 loaded, pathname:', location.pathname);
 
-  // ─── Built-in snapshot (2026-08-28) ────────────────────────
-  // Used as fallback when fetch fails (CORS, network, etc.)
+  // ─── Model metadata (hardcoded from public info) ────────────
+  var MODEL_META = {
+    'grok-4.6':                { context: 200000, modalities: ['text'],                reasoning: true },
+    'gpt-5.6-luna':            { context: 272000, modalities: ['text'],                reasoning: false },
+    'glm-5.3-flash':           { context: 1000000, modalities: ['text', 'image'],      reasoning: false },
+    'glm-5.3':                 { context: 128000, modalities: ['text'],                reasoning: true },
+    'glm-5.2':                 { context: 128000, modalities: ['text'],                reasoning: true },
+    'glm-5.1':                 { context: 128000, modalities: ['text'],                reasoning: true },
+    'kimi-k3':                 { context: 256000, modalities: ['text'],                reasoning: true },
+    'kimi-k2.7-code':          { context: 128000, modalities: ['text'],                reasoning: true },
+    'kimi-k2.6':               { context: 128000, modalities: ['text'],                reasoning: true },
+    'longcat-2.0':             { context: 1000000, modalities: ['text'],               reasoning: false },
+    'mimo-v2.5':               { context: 128000, modalities: ['text'],                reasoning: true },
+    'mimo-v2.5-pro':           { context: 256000, modalities: ['text'],                reasoning: true },
+    'minimax-m3':              { context: 128000, modalities: ['text', 'image'],       reasoning: false },
+    'minimax-m2.7':            { context: 128000, modalities: ['text', 'image'],       reasoning: false },
+    'muse-spark-1.2-contributor': { context: 1000000, modalities: ['text', 'image'],   reasoning: false },
+    'qwen3.8-max':             { context: 128000, modalities: ['text'],                reasoning: true },
+    'qwen3.8-flash':           { context: 128000, modalities: ['text'],                reasoning: true },
+    'qwen3.7-max':             { context: 128000, modalities: ['text'],                reasoning: true },
+    'qwen3.7-plus':            { context: 128000, modalities: ['text'],                reasoning: true },
+    'qwen3.6-plus':            { context: 128000, modalities: ['text'],                reasoning: true },
+    'deepseek-v4-pro':         { context: 128000, modalities: ['text'],                reasoning: true },
+    'deepseek-v4-flash':       { context: 128000, modalities: ['text'],                reasoning: true },
+    'deepseek-v4-flash-vision-exp': { context: 128000, modalities: ['text', 'image'],  reasoning: true },
+    'hy3':                     { context: 128000, modalities: ['text'],                reasoning: true }
+  };
+
+  // ─── Snapshot data (2026-08-28) ─────────────────────────────
   var SNAPSHOT = {
     requests: [
       ["Grok 4.6","169","423","845"],
@@ -51,8 +77,8 @@
       ["Hy3","4,300","10,750","21,500"]
     ],
     prices: [
-      ["Grok 4.6 (≤ 200K tokens)","$2.00","$6.00","$0.50","-","$15"],
-      ["GPT 5.6 Luna (≤ 272K tokens)","$0.20","$1.20","$0.02","$0.25","$15"],
+      ["Grok 4.6","$2.00","$6.00","$0.50","-","$15"],
+      ["GPT 5.6 Luna","$0.20","$1.20","$0.02","$0.25","$15"],
       ["GLM-5.3-Flash","$0.15","$0.50","$0.03","-","$15"],
       ["GLM-5.3","$1.40","$4.40","$0.26","-","$15"],
       ["GLM-5.2","$1.40","$4.40","$0.26","-","$60"],
@@ -69,40 +95,39 @@
       ["Qwen3.8 Max","$2.00","$6.00","$0.25","$2.50","$15"],
       ["Qwen3.8 Flash","$0.15","$0.47","$0.016","$0.20","$30"],
       ["Qwen3.7 Max","$2.50","$7.50","$0.50","$3.125","$60"],
-      ["Qwen3.7 Plus (≤ 256K tokens)","$0.40","$1.60","$0.04","$0.50","$60"],
-      ["Qwen3.6 Plus (≤ 256K tokens)","$0.50","$3.00","$0.05","$0.625","$60"],
+      ["Qwen3.7 Plus","$0.40","$1.60","$0.04","$0.50","$60"],
+      ["Qwen3.6 Plus","$0.50","$3.00","$0.05","$0.625","$60"],
       ["DeepSeek V4 Pro (Off-Peak)","$0.66","$1.98","$0.022","-","$15"],
       ["DeepSeek V4 Flash (Off-Peak)","$0.22","$0.66","$0.007","-","$30"],
       ["DeepSeek V4 Flash Vision Exp (Off-Peak)","$0.22","$0.66","$0.007","-","$15"],
       ["Hy3","$0.14","$0.58","$0.035","-","$60"]
     ],
     endpoints: [
-      ["Grok 4.6","grok-4.6","https://opencode.ai/zen/go/v1/responses","@ai-sdk/openai"],
-      ["GPT 5.6 Luna","gpt-5.6-luna","https://opencode.ai/zen/go/v1/responses","@ai-sdk/openai"],
-      ["GLM-5.3-Flash","glm-5.3-flash","https://opencode.ai/zen/go/v1/chat/completions","@ai-sdk/openai-compatible"],
-      ["GLM-5.3","glm-5.3","https://opencode.ai/zen/go/v1/chat/completions","@ai-sdk/openai-compatible"],
-      ["GLM-5.2","glm-5.2","https://opencode.ai/zen/go/v1/chat/completions","@ai-sdk/openai-compatible"],
-      ["GLM-5.1","glm-5.1","https://opencode.ai/zen/go/v1/chat/completions","@ai-sdk/openai-compatible"],
-      ["Kimi K3","kimi-k3","https://opencode.ai/zen/go/v1/chat/completions","@ai-sdk/openai-compatible"],
-      ["Kimi K2.7 Code","kimi-k2.7-code","https://opencode.ai/zen/go/v1/chat/completions","@ai-sdk/openai-compatible"],
-      ["Kimi K2.6","kimi-k2.6","https://opencode.ai/zen/go/v1/chat/completions","@ai-sdk/openai-compatible"],
-      ["LongCat-2.0","longcat-2.0","https://opencode.ai/zen/go/v1/chat/completions","@ai-sdk/openai-compatible"],
-      ["DeepSeek V4 Pro","deepseek-v4-pro","https://opencode.ai/zen/go/v1/chat/completions","@ai-sdk/openai-compatible"],
-      ["DeepSeek V4 Flash","deepseek-v4-flash","https://opencode.ai/zen/go/v1/chat/completions","@ai-sdk/openai-compatible"],
-      ["DeepSeek V4 Flash Vision Exp","deepseek-v4-flash-vision-exp","https://opencode.ai/zen/go/v1/chat/completions","@ai-sdk/openai-compatible"],
-      ["MiMo-V2.5","mimo-v2.5","https://opencode.ai/zen/go/v1/chat/completions","@ai-sdk/openai-compatible"],
-      ["MiMo-V2.5-Pro","mimo-v2.5-pro","https://opencode.ai/zen/go/v1/chat/completions","@ai-sdk/openai-compatible"],
-      ["MiniMax M3","minimax-m3","https://opencode.ai/zen/go/v1/messages","@ai-sdk/anthropic"],
-      ["MiniMax M2.7","minimax-m2.7","https://opencode.ai/zen/go/v1/messages","@ai-sdk/anthropic"],
-      ["Muse Spark 1.2 Contributor","muse-spark-1.2-contributor","https://opencode.ai/zen/go/v1/responses","@ai-sdk/openai"],
-      ["Qwen3.8 Max","qwen3.8-max","https://opencode.ai/zen/go/v1/messages","@ai-sdk/anthropic"],
-      ["Qwen3.8 Flash","qwen3.8-flash","https://opencode.ai/zen/go/v1/messages","@ai-sdk/anthropic"],
-      ["Qwen3.7 Max","qwen3.7-max","https://opencode.ai/zen/go/v1/messages","@ai-sdk/anthropic"],
-      ["Qwen3.7 Plus","qwen3.7-plus","https://opencode.ai/zen/go/v1/messages","@ai-sdk/anthropic"],
-      ["Qwen3.6 Plus","qwen3.6-plus","https://opencode.ai/zen/go/v1/messages","@ai-sdk/anthropic"],
-      ["Hy3","hy3","https://opencode.ai/zen/go/v1/chat/completions","@ai-sdk/openai-compatible"]
-    ],
-    timestamp: 1756396800000 // 2026-08-28
+      ["Grok 4.6","grok-4.6"],
+      ["GPT 5.6 Luna","gpt-5.6-luna"],
+      ["GLM-5.3-Flash","glm-5.3-flash"],
+      ["GLM-5.3","glm-5.3"],
+      ["GLM-5.2","glm-5.2"],
+      ["GLM-5.1","glm-5.1"],
+      ["Kimi K3","kimi-k3"],
+      ["Kimi K2.7 Code","kimi-k2.7-code"],
+      ["Kimi K2.6","kimi-k2.6"],
+      ["LongCat-2.0","longcat-2.0"],
+      ["DeepSeek V4 Pro","deepseek-v4-pro"],
+      ["DeepSeek V4 Flash","deepseek-v4-flash"],
+      ["DeepSeek V4 Flash Vision Exp","deepseek-v4-flash-vision-exp"],
+      ["MiMo-V2.5","mimo-v2.5"],
+      ["MiMo-V2.5-Pro","mimo-v2.5-pro"],
+      ["MiniMax M3","minimax-m3"],
+      ["MiniMax M2.7","minimax-m2.7"],
+      ["Muse Spark 1.2 Contributor","muse-spark-1.2-contributor"],
+      ["Qwen3.8 Max","qwen3.8-max"],
+      ["Qwen3.8 Flash","qwen3.8-flash"],
+      ["Qwen3.7 Max","qwen3.7-max"],
+      ["Qwen3.7 Plus","qwen3.7-plus"],
+      ["Qwen3.6 Plus","qwen3.6-plus"],
+      ["Hy3","hy3"]
+    ]
   };
 
   // ─── Utilities ──────────────────────────────────────────────
@@ -121,23 +146,41 @@
     d.style.cssText = 'position:fixed;top:10px;right:10px;z-index:2147483647;background:rgba(0,0,0,.9);color:' + (color || '#0f0') + ';padding:10px 14px;border-radius:8px;font-size:12px;font-family:monospace;max-width:360px;line-height:1.5;box-shadow:0 2px 8px rgba(0,0,0,.3);';
     d.textContent = text;
     document.body.appendChild(d);
-    setTimeout(function () { if (d.parentNode) d.remove(); }, 4000);
+    setTimeout(function () { if (d.parentNode) d.remove(); }, 3500);
   }
 
-  function timeAgo(ts) {
-    var diff = Date.now() - ts;
-    if (diff < 60000) return '刚刚';
-    if (diff < 3600000) return Math.floor(diff / 60000) + ' 分钟前';
-    if (diff < 86400000) return Math.floor(diff / 3600000) + ' 小时前';
-    return Math.floor(diff / 86400000) + ' 天前';
+  function formatContext(n) {
+    if (!n) return '-';
+    if (n >= 1000000) return (n / 1000000).toFixed(0) + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(0) + 'K';
+    return String(n);
+  }
+
+  function modalitiesText(mods) {
+    if (!mods || !mods.length) return '-';
+    var icons = { text: '\u{1F4DD}', image: '\u{1F5BC}\uFE0F', video: '\u{1F3AC}', audio: '\u{1F50A}', pdf: '\u{1F4C4}' };
+    return mods.map(function (m) { return icons[m] || m; }).join(' ');
+  }
+
+  function stars(score) {
+    var s = Math.round(score / 20);
+    return '\u2605'.repeat(s) + '\u2606'.repeat(5 - s);
+  }
+
+  // ─── Scoring ────────────────────────────────────────────────
+
+  function computeScore(model) {
+    var reqScore = Math.min(model.req5h / 45300 * 100, 100);
+    var ctxScore = Math.min(Math.log10(model.context || 128000) / Math.log10(1000000) * 100, 100);
+    var priceScore = model.input > 0 ? Math.min((1 - model.input / 3.0) * 100, 100) : 50;
+    var modScore = Math.min((model.modalities || []).length / 3 * 100, 100);
+    return Math.round(reqScore * 0.35 + ctxScore * 0.25 + priceScore * 0.25 + modScore * 0.15);
   }
 
   // ─── Parse tables from HTML ─────────────────────────────────
 
   function parseTables(html) {
     var tables = html.match(/<table[\s\S]*?<\/table>/g) || [];
-    console.log(TAG, 'Found', tables.length, 'tables in HTML');
-
     function rows(tableHtml) {
       var result = [];
       var trRe = /<tr>([\s\S]*?)<\/tr>/g;
@@ -155,87 +198,76 @@
       }
       return result;
     }
-
-    var requests = [], prices = [], endpoints = [], privacy = [];
-    tables.forEach(function (t, idx) {
+    var requests = [], prices = [], endpoints = [];
+    tables.forEach(function (t) {
       var header = (t.match(/<thead>([\s\S]*?)<\/thead>/) || ['', ''])[1];
       var ths = (header.match(/<th[^>]*>([\s\S]*?)<\/th>/g) || [])
         .map(function (h) { return h.replace(/<[^>]+>/g, '').trim().toLowerCase(); });
       var joined = ths.join('|');
-      console.log(TAG, 'Table', idx, ':', joined.substring(0, 60));
       if (joined.indexOf('requests per 5') !== -1) requests = rows(t);
       else if (joined.indexOf('input') !== -1 && joined.indexOf('output') !== -1 && joined.indexOf('usage') !== -1) prices = rows(t);
       else if (joined.indexOf('model id') !== -1) endpoints = rows(t);
-      else if (joined.indexOf('data retention') !== -1) privacy = rows(t);
     });
-
-    console.log(TAG, 'Parsed:', requests.length, 'requests,', prices.length, 'prices,', endpoints.length, 'endpoints');
-    return { requests: requests, prices: prices, endpoints: endpoints, privacy: privacy };
+    return { requests: requests, prices: prices, endpoints: endpoints };
   }
 
   // ─── Merge data ─────────────────────────────────────────────
 
   function mergeData(tables, apiModels) {
     var map = {};
-
     tables.requests.forEach(function (r) {
       var name = r[0] || '';
       var n = norm(name);
       if (!n) return;
       map[n] = {
-        name: name,
-        req5h: parseNum(r[1]),
-        reqWeek: parseNum(r[2]),
-        reqMonth: parseNum(r[3]),
-        input: 0, output: 0, cachedRead: 0, cachedWrite: 0, usage: 0,
-        modelId: '', endpoint: '', sdk: '',
-        isTiered: false, isNew: false
+        name: name, modelId: '',
+        req5h: parseNum(r[1]), reqWeek: parseNum(r[2]), reqMonth: parseNum(r[3]),
+        input: 0, output: 0, usage: 0,
+        context: 128000, modalities: ['text'], reasoning: false, score: 0
       };
     });
-
     tables.prices.forEach(function (r) {
       var rawName = r[0] || '';
       var baseName = rawName.replace(/\s*[\(（].*$/, '').trim();
       var n = norm(baseName);
-      var isUpperTier = rawName.indexOf('>') !== -1 || rawName.indexOf('＞') !== -1;
+      var isUpperTier = rawName.indexOf('>') !== -1;
       if (!n || !map[n]) return;
       if (isUpperTier && map[n].input > 0) return;
-      if (isUpperTier) map[n].isTiered = true;
       map[n].input = parseNum(r[1]);
       map[n].output = parseNum(r[2]);
-      map[n].cachedRead = parseNum(r[3]);
-      map[n].cachedWrite = parseNum(r[4]);
       map[n].usage = parseNum(r[5]);
     });
-
     tables.endpoints.forEach(function (r) {
       var name = r[0] || '';
       var n = norm(name);
       if (!n || !map[n]) return;
       map[n].modelId = r[1] || '';
-      map[n].endpoint = r[2] || '';
-      map[n].sdk = r[3] || '';
     });
-
+    Object.keys(map).forEach(function (k) {
+      var m = map[k];
+      var meta = MODEL_META[m.modelId];
+      if (meta) { m.context = meta.context; m.modalities = meta.modalities; m.reasoning = meta.reasoning; }
+      m.score = computeScore(m);
+    });
     if (apiModels && apiModels.length) {
       var docsIds = {};
       Object.keys(map).forEach(function (k) { docsIds[map[k].modelId] = true; });
       apiModels.forEach(function (m) {
         if (m.id && !docsIds[m.id]) {
-          map[m.id] = {
-            name: m.id,
-            req5h: 0, reqWeek: 0, reqMonth: 0,
-            input: 0, output: 0, cachedRead: 0, cachedWrite: 0, usage: 0,
-            modelId: m.id, endpoint: '', sdk: '',
-            isTiered: false, isNew: true
+          var meta = MODEL_META[m.id] || {};
+          var entry = {
+            name: m.id, modelId: m.id, req5h: 0, reqWeek: 0, reqMonth: 0,
+            input: 0, output: 0, usage: 0,
+            context: meta.context || 128000, modalities: meta.modalities || ['text'],
+            reasoning: meta.reasoning || false, score: 0, isNew: true
           };
+          entry.score = computeScore(entry);
+          map[m.id] = entry;
         }
       });
     }
-
     var arr = Object.keys(map).map(function (k) { return map[k]; });
-    arr.sort(function (a, b) { return b.req5h - a.req5h; });
-    console.log(TAG, 'Merged', arr.length, 'models, top:', arr[0] ? arr[0].name : 'none');
+    arr.sort(function (a, b) { return b.score - a.score; });
     return arr;
   }
 
@@ -248,363 +280,187 @@
     return '#f85149';
   }
 
-  function badgeForRank(i) {
-    if (i === 0) return '<span title="性价比王" style="margin-right:4px">🏆</span>';
-    if (i === 1) return '<span title="均衡之选" style="margin-right:4px">⚖️</span>';
-    if (i === 2) return '<span title="预算友好" style="margin-right:4px">💰</span>';
-    return '';
+  function scoreColor(score) {
+    if (score >= 80) return '#2ea043';
+    if (score >= 60) return '#1f6feb';
+    if (score >= 40) return '#d29922';
+    return '#f85149';
   }
 
-  function renderPanel(data, cacheTime, source) {
+  function renderPanel(data) {
     var existing = document.getElementById('oc-go-panel');
     if (existing) existing.remove();
-
     var panel = document.createElement('div');
     panel.id = 'oc-go-panel';
-    panel.style.cssText = 'margin:16px 0;padding:16px;border:1px solid var(--sl-color-border,#333);border-radius:8px;background:var(--sl-color-bg,#1a1a2e);color:var(--sl-color-text,#e0e0e0);font-size:13px;font-family:var(--sl-font-body,system-ui);';
-
-    var sorted = data.filter(function (d) { return d.req5h > 0; });
+    panel.style.cssText = 'margin:0;padding:16px;border:1px solid #333;border-radius:8px;background:#1a1a2e;color:#e0e0e0;font-size:13px;font-family:system-ui,sans-serif;';
+    var sorted = data.filter(function (d) { return d.req5h > 0 || d.isNew; });
     var totalModels = sorted.length;
     var topModel = sorted[0] || {};
-    var sourceLabel = source === 'snapshot' ? '内置快照' : 'docs/go';
 
     var header = document.createElement('div');
     header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;';
     header.innerHTML =
-      '<div>' +
-        '<strong style="font-size:15px;">Go 模型额度 · 性价比榜</strong>' +
-        '<span style="margin-left:8px;font-size:11px;opacity:0.6;">' + totalModels + ' 个模型 · 数据来自 ' + sourceLabel + ' · ' + timeAgo(cacheTime) + '更新</span>' +
-      '</div>' +
-      '<div>' +
-        '<button id="oc-go-refresh" style="padding:4px 10px;margin-right:6px;cursor:pointer;border:1px solid var(--sl-color-border,#555);border-radius:4px;background:var(--sl-color-bg,#222);color:var(--sl-color-text,#ccc);font-size:11px;">刷新</button>' +
-        '<button id="oc-go-toggle" style="padding:4px 10px;margin-right:6px;cursor:pointer;border:1px solid var(--sl-color-border,#555);border-radius:4px;background:var(--sl-color-bg,#222);color:var(--sl-color-text,#ccc);font-size:11px;">折叠</button>' +
-        '<button id="oc-go-close" title="关闭面板" style="padding:4px 10px;cursor:pointer;border:1px solid var(--sl-color-border,#555);border-radius:4px;background:var(--sl-color-bg,#222);color:var(--sl-color-text,#ccc);font-size:11px;">✕</button>' +
-      '</div>';
-
+      '<div><strong style="font-size:15px;">Go \u6A21\u578B\u989D\u5EA6 \u00B7 \u7EFC\u5408\u8BC4\u5206\u699C</strong><span style="margin-left:8px;font-size:11px;opacity:0.6;">' + totalModels + ' \u4E2A\u6A21\u578B \u00B7 ' + new Date().toLocaleDateString('zh-CN') + ' \u66F4\u65B0</span></div>' +
+      '<div><button id="oc-go-refresh" style="padding:4px 10px;margin-right:6px;cursor:pointer;border:1px solid #555;border-radius:4px;background:#222;color:#ccc;font-size:11px;">\u5237\u65B0</button><button id="oc-go-toggle" style="padding:4px 10px;margin-right:6px;cursor:pointer;border:1px solid #555;border-radius:4px;background:#222;color:#ccc;font-size:11px;">\u6298\u53E0</button><button id="oc-go-close" title="\u5173\u95ED\u9762\u677F" style="padding:4px 10px;cursor:pointer;border:1px solid #555;border-radius:4px;background:#222;color:#ccc;font-size:11px;">\u2715</button></div>';
     panel.appendChild(header);
 
     var stats = document.createElement('div');
-    stats.style.cssText = 'display:flex;gap:12px;margin-bottom:12px;font-size:12px;flex-wrap:wrap;';
-    var highMult = sorted.filter(function (d) { return d.usage >= 60; }).length;
-    var lowMult = sorted.filter(function (d) { return d.usage > 0 && d.usage < 15; }).length;
-    var newModels = data.filter(function (d) { return d.isNew; });
+    stats.style.cssText = 'display:flex;gap:10px;margin-bottom:12px;font-size:12px;flex-wrap:wrap;';
+    var highScore = sorted.filter(function (d) { return d.score >= 80; }).length;
+    var imgModels = sorted.filter(function (d) { return d.modalities && d.modalities.indexOf('image') !== -1; }).length;
     stats.innerHTML =
-      '<span style="background:rgba(46,160,67,.15);padding:3px 8px;border-radius:4px;color:#2ea043;">🏆 性价比王: ' + (topModel.name || '-') + ' (' + (topModel.req5h || 0).toLocaleString() + '/5h)</span>' +
-      '<span style="background:rgba(31,111,235,.15);padding:3px 8px;border-radius:4px;color:#1f6feb;">6x 高倍率: ' + highMult + ' 个</span>' +
-      '<span style="background:rgba(210,153,34,.15);padding:3px 8px;border-radius:4px;color:#d29922;"><15x 低倍率: ' + lowMult + ' 个</span>' +
-      (newModels.length ? '<span style="background:rgba(248,81,73,.15);padding:3px 8px;border-radius:4px;color:#f85149;">🆕 新模型: ' + newModels.length + '</span>' : '');
+      '<span style="background:rgba(46,160,67,.15);padding:3px 8px;border-radius:4px;color:#2ea043;">\uD83C\uDFC6 Top: ' + (topModel.name || '-') + ' (' + (topModel.score || 0) + '\u5206)</span>' +
+      '<span style="background:rgba(31,111,235,.15);padding:3px 8px;border-radius:4px;color:#1f6feb;">\u226580\u5206: ' + highScore + ' \u4E2A</span>' +
+      '<span style="background:rgba(210,153,34,.15);padding:3px 8px;border-radius:4px;color:#d29922;">\uD83D\uDDBC\uFE0F \u652F\u6301\u8BC6\u56FE: ' + imgModels + ' \u4E2A</span>';
     panel.appendChild(stats);
 
     var controls = document.createElement('div');
     controls.style.cssText = 'display:flex;gap:8px;margin-bottom:10px;align-items:center;';
     controls.innerHTML =
-      '<input id="oc-go-search" type="text" placeholder="搜索模型..." style="flex:1;max-width:200px;padding:5px 8px;border:1px solid var(--sl-color-border,#555);border-radius:4px;background:var(--sl-color-bg,#222);color:var(--sl-color-text,#ccc);font-size:12px;" />' +
-      '<select id="oc-go-sort" style="padding:5px 8px;border:1px solid var(--sl-color-border,#555);border-radius:4px;background:var(--sl-color-bg,#222);color:var(--sl-color-text,#ccc);font-size:12px;">' +
-        '<option value="req5h">按 5h 次数</option>' +
-        '<option value="reqWeek">按周次数</option>' +
-        '<option value="reqMonth">按月次数</option>' +
-        '<option value="input">按输入价（低→高）</option>' +
-        '<option value="usage">按倍数（高→低）</option>' +
-      '</select>';
+      '<input id="oc-go-search" type="text" placeholder="\u641C\u7D22\u6A21\u578B..." style="flex:1;max-width:180px;padding:5px 8px;border:1px solid #555;border-radius:4px;background:#222;color:#ccc;font-size:12px;" />' +
+      '<select id="oc-go-sort" style="padding:5px 8px;border:1px solid #555;border-radius:4px;background:#222;color:#ccc;font-size:12px;"><option value="score">\u6309\u7EFC\u5408\u8BC4\u5206</option><option value="req5h">\u6309 5h \u6B21\u6570</option><option value="context">\u6309\u4E0A\u4E0B\u6587\u5927\u5C0F</option><option value="input">\u6309\u8F93\u5165\u4EF7\uFF08\u4F4E\u2192\u9AD8\uFF09</option><option value="usage">\u6309\u500D\u6570\uFF08\u9AD8\u2192\u4F4E\uFF09</option></select>';
     panel.appendChild(controls);
 
     var tableWrap = document.createElement('div');
     tableWrap.id = 'oc-go-table-wrap';
-    tableWrap.style.cssText = 'overflow-x:auto;max-height:500px;overflow-y:auto;';
+    tableWrap.style.cssText = 'overflow-x:auto;max-height:60vh;overflow-y:auto;';
     panel.appendChild(tableWrap);
 
     function renderTable(items) {
       var t = document.createElement('table');
       t.style.cssText = 'width:100%;border-collapse:collapse;font-size:12px;';
       t.innerHTML =
-        '<thead><tr style="border-bottom:1px solid var(--sl-color-border,#444);text-align:left;">' +
-          '<th style="padding:6px 8px;">模型</th>' +
-          '<th style="padding:6px 8px;text-align:right;">5h 次数</th>' +
-          '<th style="padding:6px 8px;text-align:right;">周次数</th>' +
-          '<th style="padding:6px 8px;text-align:right;">月次数</th>' +
-          '<th style="padding:6px 8px;text-align:right;">输入价</th>' +
-          '<th style="padding:6px 8px;text-align:right;">输出价</th>' +
-          '<th style="padding:6px 8px;text-align:center;">倍数</th>' +
-          '<th style="padding:6px 8px;">操作</th>' +
-        '</tr></thead>';
+        '<thead><tr style="border-bottom:1px solid #444;text-align:left;position:sticky;top:0;background:#1a1a2e;"><th style="padding:6px 6px;">\u8BC4\u5206</th><th style="padding:6px 6px;">\u6A21\u578B</th><th style="padding:6px 6px;text-align:center;">\u6A21\u6001</th><th style="padding:6px 6px;text-align:right;">\u4E0A\u4E0B\u6587</th><th style="padding:6px 6px;text-align:right;">5h</th><th style="padding:6px 6px;text-align:right;">\u8F93\u5165\u4EF7</th><th style="padding:6px 6px;text-align:center;">\u500D\u6570</th><th style="padding:6px 6px;">\u64CD\u4F5C</th></tr></thead>';
       var tbody = document.createElement('tbody');
       items.forEach(function (d, i) {
         var tr = document.createElement('tr');
-        tr.style.cssText = 'border-bottom:1px solid var(--sl-color-border,#333);cursor:pointer;' + (i % 2 === 0 ? '' : 'background:rgba(255,255,255,.02);');
-        var nameStyle = d.isNew
-          ? 'padding:6px 8px;color:#f85149;font-weight:600;'
-          : (i < 3 ? 'padding:6px 8px;font-weight:600;color:#e0e0e0;' : 'padding:6px 8px;color:var(--sl-color-text,#ccc);');
+        tr.style.cssText = 'border-bottom:1px solid #333;' + (i % 2 === 0 ? '' : 'background:rgba(255,255,255,.02);');
+        var nameStyle = d.isNew ? 'color:#f85149;font-weight:600;' : (d.score >= 80 ? 'font-weight:600;color:#e0e0e0;' : 'color:#ccc;');
         var idTip = d.modelId ? ' title="opencode-go/' + d.modelId + '"' : '';
         tr.innerHTML =
-          '<td' + nameStyle + '>' + badgeForRank(i) + '<span' + idTip + '>' + d.name + '</span>' + (d.isNew ? ' <span style="font-size:10px;color:#f85149;">NEW</span>' : '') + '</td>' +
-          '<td style="padding:6px 8px;text-align:right;">' + d.req5h.toLocaleString() + '</td>' +
-          '<td style="padding:6px 8px;text-align:right;">' + d.reqWeek.toLocaleString() + '</td>' +
-          '<td style="padding:6px 8px;text-align:right;">' + d.reqMonth.toLocaleString() + '</td>' +
-          '<td style="padding:6px 8px;text-align:right;">' + (d.input ? '$' + d.input.toFixed(2) : '-') + '</td>' +
-          '<td style="padding:6px 8px;text-align:right;">' + (d.output ? '$' + d.output.toFixed(2) : '-') + '</td>' +
-          '<td style="padding:6px 8px;text-align:center;"><span style="display:inline-block;padding:2px 6px;border-radius:3px;font-size:11px;font-weight:600;color:#fff;background:' + usageColor(d.usage) + ';">' + (d.usage ? d.usage + 'x' : '-') + '</span></td>' +
-          '<td style="padding:6px 8px;"><button class="oc-go-copy" data-id="' + (d.modelId || '') + '" style="padding:2px 8px;cursor:pointer;border:1px solid var(--sl-color-border,#555);border-radius:3px;background:transparent;color:var(--sl-color-text,#aaa);font-size:11px;' + (d.modelId ? '' : 'opacity:0.3;cursor:default;') + '">复制</button></td>';
+          '<td style="padding:6px 6px;"><span style="color:' + scoreColor(d.score) + ';font-weight:600;font-size:11px;">' + d.score + '</span> <span style="font-size:10px;color:' + scoreColor(d.score) + ';">' + stars(d.score) + '</span></td>' +
+          '<td style="padding:6px 6px;' + nameStyle + '"' + idTip + '>' + d.name + (d.isNew ? ' <span style="font-size:10px;color:#f85149;">NEW</span>' : '') + '</td>' +
+          '<td style="padding:6px 6px;text-align:center;font-size:11px;">' + modalitiesText(d.modalities) + (d.reasoning ? ' \uD83E\uDDE0' : '') + '</td>' +
+          '<td style="padding:6px 6px;text-align:right;font-size:11px;">' + formatContext(d.context) + '</td>' +
+          '<td style="padding:6px 6px;text-align:right;">' + d.req5h.toLocaleString() + '</td>' +
+          '<td style="padding:6px 6px;text-align:right;">' + (d.input ? '$' + d.input.toFixed(2) : '-') + '</td>' +
+          '<td style="padding:6px 6px;text-align:center;"><span style="display:inline-block;padding:2px 6px;border-radius:3px;font-size:11px;font-weight:600;color:#fff;background:' + usageColor(d.usage) + ';">' + (d.usage ? d.usage + 'x' : '-') + '</span></td>' +
+          '<td style="padding:6px 6px;"><button class="oc-go-copy" data-id="' + (d.modelId || '') + '" style="padding:2px 8px;cursor:pointer;border:1px solid #555;border-radius:3px;background:transparent;color:#aaa;font-size:11px;' + (d.modelId ? '' : 'opacity:0.3;cursor:default;') + '">\u590D\u5236</button></td>';
         tbody.appendChild(tr);
       });
       t.appendChild(tbody);
       tableWrap.innerHTML = '';
       tableWrap.appendChild(t);
     }
-
     renderTable(sorted);
 
     var footer = document.createElement('div');
-    footer.style.cssText = 'margin-top:12px;padding-top:8px;border-top:1px solid var(--sl-color-border,#333);font-size:11px;display:flex;justify-content:space-between;align-items:center;';
-    footer.innerHTML =
-      '<span style="opacity:0.5;">倍数 = 模型月额度 / $10 月费 · 数据来自 <a href="' + DOCS_URL + '" target="_blank" style="color:#1f6feb;">docs/go</a></span>' +
-      '<span style="opacity:0.5;">v1.3</span>';
+    footer.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid #333;font-size:11px;display:flex;justify-content:space-between;align-items:center;';
+    footer.innerHTML = '<span style="opacity:0.5;">\u8BC4\u5206 = \u989D\u5EA635% + \u4E0A\u4E0B\u658725% + \u4EF7\u683C25% + \u6A21\u600115% \u00B7 \u6570\u636E\u6765\u81EA <a href="' + DOCS_URL + '" target="_blank" style="color:#1f6feb;">docs/go</a></span><span style="opacity:0.5;">v1.4</span>';
     panel.appendChild(footer);
 
-    // Event handlers (use panel.querySelector since panel not yet in DOM)
     var contentEls = [stats, controls, tableWrap, footer];
-    panel.querySelector('#oc-go-toggle').addEventListener('click', function () {
-      var hidden = tableWrap.style.display === 'none';
-      contentEls.forEach(function (el) { el.style.display = hidden ? '' : 'none'; });
-      this.textContent = hidden ? '折叠' : '展开';
-    });
-
-    panel.querySelector('#oc-go-refresh').addEventListener('click', function () {
-      GM_setValue(CACHE_KEY, null);
-      location.reload();
-    });
-
-    panel.querySelector('#oc-go-close').addEventListener('click', function () {
-      var p = document.getElementById('oc-go-panel');
-      if (p) p.remove();
-      toast('面板已关闭（刷新页面可重新显示）', '#aaa');
-    });
-
-    panel.querySelector('#oc-go-search').addEventListener('input', function () {
-      var q = this.value.toLowerCase();
-      var filtered = sorted.filter(function (d) {
-        return d.name.toLowerCase().indexOf(q) !== -1 || (d.modelId && d.modelId.indexOf(q) !== -1);
-      });
-      renderTable(filtered);
-      bindCopy();
-    });
-
-    panel.querySelector('#oc-go-sort').addEventListener('change', function () {
-      var key = this.value;
-      var asc = key === 'input';
-      var arr = sorted.slice();
-      arr.sort(function (a, b) { return asc ? (a[key] - b[key]) : (b[key] - a[key]); });
-      renderTable(arr);
-      bindCopy();
-    });
-
-    function bindCopy() {
-      panel.querySelectorAll('.oc-go-copy').forEach(function (btn) {
-        btn.addEventListener('click', function (e) {
-          e.stopPropagation();
-          var id = this.getAttribute('data-id');
-          if (!id) return;
-          var text = 'opencode-go/' + id;
-          if (navigator.clipboard) {
-            navigator.clipboard.writeText(text).then(function () { toast('已复制: ' + text); });
-          } else {
-            var ta = document.createElement('textarea');
-            ta.value = text;
-            document.body.appendChild(ta);
-            ta.select();
-            document.execCommand('copy');
-            ta.remove();
-            toast('已复制: ' + text);
-          }
-        });
-      });
-    }
+    panel.querySelector('#oc-go-close').addEventListener('click', function () { panel.remove(); try { localStorage.setItem(PANEL_KEY, '0'); } catch (e) {} toast('\u9762\u677F\u5DF2\u5173\u95ED', '#aaa'); });
+    panel.querySelector('#oc-go-toggle').addEventListener('click', function () { var hidden = tableWrap.style.display === 'none'; contentEls.forEach(function (el) { el.style.display = hidden ? '' : 'none'; }); this.textContent = hidden ? '\u6298\u53E0' : '\u5C55\u5F00'; });
+    panel.querySelector('#oc-go-refresh').addEventListener('click', function () { loadAndInject(true); });
+    panel.querySelector('#oc-go-search').addEventListener('input', function () { var q = this.value.toLowerCase(); var filtered = sorted.filter(function (d) { return d.name.toLowerCase().indexOf(q) !== -1 || (d.modelId && d.modelId.indexOf(q) !== -1); }); renderTable(filtered); bindCopy(); });
+    panel.querySelector('#oc-go-sort').addEventListener('change', function () { var key = this.value; var asc = key === 'input'; var arr = sorted.slice(); arr.sort(function (a, b) { return asc ? (a[key] - b[key]) : (b[key] - a[key]); }); renderTable(arr); bindCopy(); });
+    function bindCopy() { panel.querySelectorAll('.oc-go-copy').forEach(function (btn) { btn.addEventListener('click', function (e) { e.stopPropagation(); var id = this.getAttribute('data-id'); if (!id) return; var text = 'opencode-go/' + id; if (navigator.clipboard) { navigator.clipboard.writeText(text).then(function () { toast('\u5DF2\u590D\u5236: ' + text); }); } else { var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); toast('\u5DF2\u590D\u5236: ' + text); } }); }); }
     bindCopy();
-
     return panel;
   }
 
-  // ─── Inject ─────────────────────────────────────────────────
+  // ─── Toggle button (global) ─────────────────────────────────
 
-  function inject(data, cacheTime, source) {
-    if (document.getElementById('oc-go-panel')) return;
+  function injectToggleButton() {
+    if (document.getElementById('oc-go-btn')) return;
+    var btn = document.createElement('div');
+    btn.id = 'oc-go-btn';
+    btn.textContent = 'Go';
+    btn.title = 'Go \u6A21\u578B\u989D\u5EA6\u7EFC\u5408\u8BC4\u5206\u699C';
+    btn.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:2147483646;width:44px;height:44px;border-radius:50%;background:#1f6feb;color:#fff;font-size:14px;font-weight:700;font-family:system-ui;cursor:pointer;box-shadow:0 2px 12px rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;transition:transform .15s;';
+    btn.addEventListener('mouseenter', function () { btn.style.transform = 'scale(1.1)'; });
+    btn.addEventListener('mouseleave', function () { btn.style.transform = 'scale(1)'; });
+    btn.addEventListener('click', function () {
+      var panel = document.getElementById('oc-go-panel');
+      if (panel) { panel.remove(); try { localStorage.setItem(PANEL_KEY, '0'); } catch (e) {} }
+      else { try { localStorage.setItem(PANEL_KEY, '1'); } catch (e) {} loadAndInject(false); }
+    });
+    document.body.appendChild(btn);
+    console.log(TAG, 'Toggle button injected');
+  }
 
+  // ─── Inject panel ───────────────────────────────────────────
+
+  function injectPanel(data, source) {
+    var existing = document.getElementById('oc-go-panel');
+    if (existing) existing.remove();
     try {
-      var panel = renderPanel(data, cacheTime, source);
-
-      // Fixed floating panel - always visible regardless of page DOM structure
+      var panel = renderPanel(data);
       panel.style.position = 'fixed';
       panel.style.top = '16px';
       panel.style.right = '16px';
-      panel.style.width = '640px';
+      panel.style.width = '680px';
       panel.style.maxWidth = 'calc(100vw - 32px)';
-      panel.style.maxHeight = '80vh';
+      panel.style.maxHeight = '85vh';
       panel.style.overflowY = 'auto';
       panel.style.zIndex = '2147483647';
       panel.style.boxShadow = '0 4px 24px rgba(0,0,0,.5)';
       panel.style.margin = '0';
-
       document.body.appendChild(panel);
-
-      console.log(TAG, 'Panel injected successfully (fixed floating)');
-      toast('✓ Go 额度面板已加载（' + source + '）', '#2ea043');
+      console.log(TAG, 'Panel injected (' + source + ')');
+      toast('\u2713 Go \u989D\u5EA6\u9762\u677F\u5DF2\u52A0\u8F7D', '#2ea043');
     } catch (e) {
       console.error(TAG, 'Inject failed:', e);
-      toast('✗ 面板注入失败: ' + (e.message || e), '#f85149');
+      toast('\u2717 \u9762\u677F\u6CE8\u5165\u5931\u8D25: ' + (e.message || e), '#f85149');
     }
   }
 
   // ─── Main flow ──────────────────────────────────────────────
 
-  function isGoPage() {
-    var result = /\/workspace\/[^/]+\/go/.test(location.pathname);
-    console.log(TAG, 'isGoPage:', result, 'path:', location.pathname);
-    return result;
-  }
-
-  function useSnapshot() {
-    console.log(TAG, 'Using built-in snapshot data');
-    var data = mergeData(SNAPSHOT, []);
-    inject(data, SNAPSHOT.timestamp, 'snapshot');
-  }
-
-  function loadAndInject() {
-    if (!isGoPage()) return;
+  function loadAndInject(forceRefresh) {
     if (document.getElementById('oc-go-panel')) return;
-
-    console.log(TAG, 'loadAndInject called');
-
-    // 1. Try cache first
-    try {
-      var cached = GM_getValue(CACHE_KEY);
-      if (cached) {
-        var obj = typeof cached === 'string' ? JSON.parse(cached) : cached;
-        if (obj && obj.timestamp && (Date.now() - obj.timestamp) < CACHE_TTL && obj.requests && obj.requests.length > 0) {
-          console.log(TAG, 'Using cache, age:', Math.floor((Date.now() - obj.timestamp) / 60000) + 'min');
-          inject(mergeData(obj, obj.apiModels), obj.timestamp, 'cache');
-          return;
-        }
-      }
-    } catch (e) {
-      console.log(TAG, 'Cache read error:', e);
-    }
-
-    // 2. Fetch fresh data
+    var wantVisible = false;
+    try { wantVisible = localStorage.getItem(PANEL_KEY) === '1'; } catch (e) {}
+    if (!wantVisible && !forceRefresh) return;
+    console.log(TAG, 'loadAndInject, force:', forceRefresh);
     console.log(TAG, 'Fetching fresh data...');
     Promise.all([
-      fetch(DOCS_URL, { credentials: 'omit' })
-        .then(function (r) {
-          console.log(TAG, 'Docs response:', r.status, r.statusText);
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          return r.text();
-        })
-        .catch(function (e) {
-          console.log(TAG, 'Docs fetch failed:', e.message || e);
-          return null;
-        }),
-      fetch(MODELS_API, { credentials: 'omit' })
-        .then(function (r) {
-          console.log(TAG, 'Models API response:', r.status, r.statusText);
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          return r.json();
-        })
-        .catch(function (e) {
-          console.log(TAG, 'Models API fetch failed:', e.message || e);
-          return null;
-        })
+      fetch(DOCS_URL, { credentials: 'omit' }).then(function (r) { return r.ok ? r.text() : null; }).catch(function () { return null; }),
+      fetch(MODELS_API, { credentials: 'omit' }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; })
     ]).then(function (results) {
       var html = results[0];
       var apiData = results[1];
-
-      if (!html) {
-        console.log(TAG, 'No HTML fetched, falling back to snapshot');
-        toast('⚠️ 无法获取 docs/go，使用内置数据', '#d29922');
-        useSnapshot();
-        return;
+      if (html) {
+        var tables = parseTables(html);
+        if (tables.requests && tables.requests.length > 0) {
+          var apiModels = (apiData && apiData.data) ? apiData.data : [];
+          injectPanel(mergeData(tables, apiModels), 'live');
+          return;
+        }
       }
-
-      var tables = parseTables(html);
-
-      // Validate: if requests table is empty, snapshot is better
-      if (!tables.requests || tables.requests.length === 0) {
-        console.log(TAG, 'Parsed 0 requests rows, falling back to snapshot');
-        toast('⚠️ 解析失败，使用内置数据', '#d29922');
-        useSnapshot();
-        return;
-      }
-
-      var apiModels = (apiData && apiData.data) ? apiData.data : [];
-      var data = mergeData(tables, apiModels);
-      var cacheTime = Date.now();
-
-      // Save cache
-      try {
-        var toCache = {
-          requests: tables.requests,
-          prices: tables.prices,
-          endpoints: tables.endpoints,
-          privacy: tables.privacy,
-          apiModels: apiModels,
-          timestamp: cacheTime
-        };
-        GM_setValue(CACHE_KEY, JSON.stringify(toCache));
-        console.log(TAG, 'Cache saved');
-      } catch (e) {
-        console.log(TAG, 'Cache save error:', e);
-      }
-
-      inject(data, cacheTime, 'live');
+      console.log(TAG, 'Using snapshot fallback');
+      injectPanel(mergeData(SNAPSHOT, []), 'snapshot');
     });
   }
 
-  // ─── SPA monitoring ─────────────────────────────────────────
+  // ─── Init ───────────────────────────────────────────────────
 
-  // Initial load with multiple attempts
-  function tryLoad(attempt) {
-    console.log(TAG, 'tryLoad attempt', attempt);
-    if (document.getElementById('oc-go-panel')) return;
-    loadAndInject();
+  function init() {
+    injectToggleButton();
+    var wantVisible = false;
+    try { wantVisible = localStorage.getItem(PANEL_KEY) === '1'; } catch (e) {}
+    if (wantVisible) { setTimeout(function () { loadAndInject(false); }, 500); }
   }
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function () {
-      setTimeout(function () { tryLoad(1); }, 300);
-      setTimeout(function () { tryLoad(2); }, 1000);
-      setTimeout(function () { tryLoad(3); }, 3000);
-    });
-  } else {
-    setTimeout(function () { tryLoad(1); }, 300);
-    setTimeout(function () { tryLoad(2); }, 1000);
-    setTimeout(function () { tryLoad(3); }, 3000);
-  }
+    document.addEventListener('DOMContentLoaded', function () { setTimeout(init, 300); });
+  } else { setTimeout(init, 300); }
 
-  // Watch for SPA navigation
   var lastPath = location.pathname;
   setInterval(function () {
-    if (location.pathname !== lastPath) {
-      lastPath = location.pathname;
-      console.log(TAG, 'SPA navigation detected:', location.pathname);
-      var old = document.getElementById('oc-go-panel');
-      if (old) old.remove();
-      setTimeout(loadAndInject, 800);
-    }
-  }, 1000);
+    if (location.pathname !== lastPath) { lastPath = location.pathname; injectToggleButton(); }
+  }, 2000);
 
-  window.addEventListener('popstate', function () {
-    console.log(TAG, 'popstate fired');
-    setTimeout(loadAndInject, 500);
-  });
-
-  // MutationObserver: watch for DOM changes that indicate page load
-  var observer = new MutationObserver(function (mutations) {
-    if (document.getElementById('oc-go-panel')) return;
-    if (!isGoPage()) return;
-    // If h1 appears (SPA loaded), try inject
-    if (document.querySelector('h1')) {
-      console.log(TAG, 'h1 detected via MutationObserver');
-      setTimeout(loadAndInject, 200);
-    }
-  });
-  observer.observe(document.body, { childList: true, subtree: true });
-
-  console.log(TAG, 'SPA monitoring active');
+  console.log(TAG, 'Ready');
 })();
