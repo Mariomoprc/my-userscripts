@@ -6,7 +6,7 @@
 
 | # | 脚本 | 用途 | 安装 |
 |---|------|------|------|
-| 1 | [OpenCode Web 粘贴图片](https://github.com/Mariomoprc/my-userscripts/blob/main/opencode-paste-image.user.js) | Ctrl+V 贴图：伪造 drop 走原生附件通道（等待输入框渲染 + 属性级附件检测），失败自动回退 base64；菜单可切模式 | [🔗](https://raw.githubusercontent.com/Mariomoprc/my-userscripts/main/opencode-paste-image.user.js) |
+| 1 | [OpenCode Web 增强](https://github.com/Mariomoprc/my-userscripts/blob/main/opencode-enhancer.user.js) | Tab 键切换 plan/build 代理 + Ctrl+V 贴图（伪造 drop 走原生附件通道，识图模型可读）；菜单可切模式；兼容软路由和笔记本 OC Web | [🔗](https://raw.githubusercontent.com/Mariomoprc/my-userscripts/main/opencode-enhancer.user.js) |
 | 2 | [视频双击全屏](https://github.com/Mariomoprc/my-userscripts/blob/main/视频双击全屏.user.js) | 双击视频自动全屏横屏播放，支持安卓手机 | [🔗](https://raw.githubusercontent.com/Mariomoprc/my-userscripts/main/视频双击全屏.user.js) |
 | 3 | [Discord Token 获取器](https://greasyfork.org/zh-CN/scripts/587500-discord-token-获取器) | 通过菜单获取 Discord Token | [🔗](https://greasyfork.org/scripts/587500/code/script.user.js) |
 | 4 | [禁用 Google 语音搜索](https://greasyfork.org/zh-CN/scripts/587507-禁用-google-语音搜索-解决-ctrl-shift-与-copilot-冲突) | 解决 Ctrl+Shift+. 与 Copilot 冲突 | [🔗](https://greasyfork.org/scripts/587507/code/script.user.js) |
