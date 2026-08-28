@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode Go 额度增强面板
 // @namespace    http://tampermonkey.net/
-// @version      1.1
+// @version      1.2
 // @description  在 workspace/go 页面注入模型额度表 + 性价比排名，数据来自 docs/go
 // @author       pass
 // @match        https://opencode.ai/workspace/*/go*
@@ -19,7 +19,7 @@
   var DOCS_URL = 'https://opencode.ai/docs/go/';
   var MODELS_API = 'https://opencode.ai/zen/go/v1/models';
 
-  console.log(TAG, 'v1.1 loaded, pathname:', location.pathname);
+  console.log(TAG, 'v1.2 loaded, pathname:', location.pathname);
 
   // ─── Built-in snapshot (2026-08-28) ────────────────────────
   // Used as fallback when fetch fails (CORS, network, etc.)
@@ -356,23 +356,23 @@
     footer.style.cssText = 'margin-top:12px;padding-top:8px;border-top:1px solid var(--sl-color-border,#333);font-size:11px;display:flex;justify-content:space-between;align-items:center;';
     footer.innerHTML =
       '<span style="opacity:0.5;">倍数 = 模型月额度 / $10 月费 · 数据来自 <a href="' + DOCS_URL + '" target="_blank" style="color:#1f6feb;">docs/go</a></span>' +
-      '<span style="opacity:0.5;">v1.1</span>';
+      '<span style="opacity:0.5;">v1.2</span>';
     panel.appendChild(footer);
 
-    // Event handlers
+    // Event handlers (use panel.querySelector since panel not yet in DOM)
     var contentEls = [stats, controls, tableWrap, footer];
-    document.getElementById('oc-go-toggle').addEventListener('click', function () {
+    panel.querySelector('#oc-go-toggle').addEventListener('click', function () {
       var hidden = tableWrap.style.display === 'none';
       contentEls.forEach(function (el) { el.style.display = hidden ? '' : 'none'; });
       this.textContent = hidden ? '折叠' : '展开';
     });
 
-    document.getElementById('oc-go-refresh').addEventListener('click', function () {
+    panel.querySelector('#oc-go-refresh').addEventListener('click', function () {
       GM_setValue(CACHE_KEY, null);
       location.reload();
     });
 
-    document.getElementById('oc-go-search').addEventListener('input', function () {
+    panel.querySelector('#oc-go-search').addEventListener('input', function () {
       var q = this.value.toLowerCase();
       var filtered = sorted.filter(function (d) {
         return d.name.toLowerCase().indexOf(q) !== -1 || (d.modelId && d.modelId.indexOf(q) !== -1);
@@ -381,7 +381,7 @@
       bindCopy();
     });
 
-    document.getElementById('oc-go-sort').addEventListener('change', function () {
+    panel.querySelector('#oc-go-sort').addEventListener('change', function () {
       var key = this.value;
       var asc = key === 'input';
       var arr = sorted.slice();
@@ -421,29 +421,34 @@
   function inject(data, cacheTime, source) {
     if (document.getElementById('oc-go-panel')) return;
 
-    var target = document.querySelector('h1') ||
-                 document.querySelector('[data-page]') ||
-                 document.querySelector('main') ||
-                 document.body;
+    try {
+      var target = document.querySelector('h1') ||
+                   document.querySelector('[data-page]') ||
+                   document.querySelector('main') ||
+                   document.body;
 
-    console.log(TAG, 'Injecting panel, target:', target ? target.tagName : 'none');
+      console.log(TAG, 'Injecting panel, target:', target ? target.tagName : 'none');
 
-    var panel = renderPanel(data, cacheTime, source);
+      var panel = renderPanel(data, cacheTime, source);
 
-    if (target === document.body) {
-      panel.style.position = 'fixed';
-      panel.style.bottom = '16px';
-      panel.style.right = '16px';
-      panel.style.width = '600px';
-      panel.style.zIndex = '2147483647';
-      panel.style.boxShadow = '0 4px 20px rgba(0,0,0,.5)';
-      document.body.appendChild(panel);
-    } else {
-      target.parentNode.insertBefore(panel, target.nextSibling);
+      if (target === document.body) {
+        panel.style.position = 'fixed';
+        panel.style.bottom = '16px';
+        panel.style.right = '16px';
+        panel.style.width = '600px';
+        panel.style.zIndex = '2147483647';
+        panel.style.boxShadow = '0 4px 20px rgba(0,0,0,.5)';
+        document.body.appendChild(panel);
+      } else {
+        target.parentNode.insertBefore(panel, target.nextSibling);
+      }
+
+      console.log(TAG, 'Panel injected successfully');
+      toast('✓ Go 额度面板已加载（' + source + '）', '#2ea043');
+    } catch (e) {
+      console.error(TAG, 'Inject failed:', e);
+      toast('✗ 面板注入失败: ' + (e.message || e), '#f85149');
     }
-
-    console.log(TAG, 'Panel injected successfully');
-    toast('✓ Go 额度面板已加载（' + source + '）', '#2ea043');
   }
 
   // ─── Main flow ──────────────────────────────────────────────
