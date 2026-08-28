@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode Go 额度增强面板
 // @namespace    http://tampermonkey.net/
-// @version      1.5.1
+// @version      1.6
 // @description  在 opencode.ai 全站注入 Go 模型额度性价比榜（评分/模态/上下文/建议），数据来自 docs/go
 // @author       pass
 // @match        https://opencode.ai/*
@@ -18,33 +18,33 @@
   var DOCS_URL = 'https://opencode.ai/docs/go/';
   var MODELS_API = 'https://opencode.ai/zen/go/v1/models';
 
-  console.log(TAG, 'v1.5.1 loaded, pathname:', location.pathname);
+  console.log(TAG, 'v1.6 loaded, pathname:', location.pathname);
 
   var MODEL_META = {
-    'grok-4.6':                { context: 200000, modalities: ['text'],                reasoning: true,  country: '美国' },
-    'gpt-5.6-luna':            { context: 272000, modalities: ['text'],                reasoning: false, country: '美国' },
-    'glm-5.3-flash':           { context: 1000000, modalities: ['text', 'image'],      reasoning: false, country: '中国' },
-    'glm-5.3':                 { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国' },
-    'glm-5.2':                 { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国' },
-    'glm-5.1':                 { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国' },
-    'kimi-k3':                 { context: 256000, modalities: ['text'],                reasoning: true,  country: '中国' },
-    'kimi-k2.7-code':          { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国' },
-    'kimi-k2.6':               { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国' },
-    'longcat-2.0':             { context: 1000000, modalities: ['text'],               reasoning: false, country: '待确认' },
-    'mimo-v2.5':               { context: 1000000, modalities: ['text', 'image', 'audio', 'video'], reasoning: true, country: '中国' },
-    'mimo-v2.5-pro':           { context: 256000, modalities: ['text'],                reasoning: true,  country: '中国' },
-    'minimax-m3':              { context: 128000, modalities: ['text', 'image'],       reasoning: false, country: '中国' },
-    'minimax-m2.7':            { context: 128000, modalities: ['text', 'image'],       reasoning: false, country: '中国' },
-    'muse-spark-1.2-contributor': { context: 1000000, modalities: ['text', 'image'],   reasoning: false, country: '美国' },
-    'qwen3.8-max':             { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国' },
-    'qwen3.8-flash':           { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国' },
-    'qwen3.7-max':             { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国' },
-    'qwen3.7-plus':            { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国' },
-    'qwen3.6-plus':            { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国' },
-    'deepseek-v4-pro':         { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国' },
-    'deepseek-v4-flash':       { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国' },
-    'deepseek-v4-flash-vision-exp': { context: 128000, modalities: ['text', 'image'],  reasoning: true,  country: '中国' },
-    'hy3':                     { context: 128000, modalities: ['text'],                reasoning: true,  country: '待确认' }
+    'grok-4.6':                { context: 200000, modalities: ['text'],                reasoning: true,  country: '美国', cap: 9 },
+    'gpt-5.6-luna':            { context: 272000, modalities: ['text'],                reasoning: false, country: '美国', cap: 10 },
+    'glm-5.3-flash':           { context: 1000000, modalities: ['text', 'image'],      reasoning: false, country: '中国', cap: 5 },
+    'glm-5.3':                 { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 7 },
+    'glm-5.2':                 { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 6 },
+    'glm-5.1':                 { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 5 },
+    'kimi-k3':                 { context: 256000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 8 },
+    'kimi-k2.7-code':          { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 6 },
+    'kimi-k2.6':               { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 5 },
+    'longcat-2.0':             { context: 1000000, modalities: ['text'],               reasoning: false, country: '待确认', cap: 4 },
+    'mimo-v2.5':               { context: 1000000, modalities: ['text', 'image', 'audio', 'video'], reasoning: true, country: '中国', cap: 7 },
+    'mimo-v2.5-pro':           { context: 256000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 6 },
+    'minimax-m3':              { context: 128000, modalities: ['text', 'image'],       reasoning: false, country: '中国', cap: 6 },
+    'minimax-m2.7':            { context: 128000, modalities: ['text', 'image'],       reasoning: false, country: '中国', cap: 5 },
+    'muse-spark-1.2-contributor': { context: 1000000, modalities: ['text', 'image'],   reasoning: false, country: '美国', cap: 4 },
+    'qwen3.8-max':             { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 8 },
+    'qwen3.8-flash':           { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 6 },
+    'qwen3.7-max':             { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 7 },
+    'qwen3.7-plus':            { context: 256000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 6 },
+    'qwen3.6-plus':            { context: 256000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 6 },
+    'deepseek-v4-pro':         { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 9 },
+    'deepseek-v4-flash':       { context: 128000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 7 },
+    'deepseek-v4-flash-vision-exp': { context: 128000, modalities: ['text', 'image'],  reasoning: true,  country: '中国', cap: 7 },
+    'hy3':                     { context: 128000, modalities: ['text'],                reasoning: true,  country: '待确认', cap: 5 }
   };
 
   var SNAPSHOT = {
@@ -164,16 +164,18 @@
   }
 
   function computeScore(model) {
+    var capScore = (model.cap || 5) / 10 * 100;
     var reqScore = Math.min(model.req5h / 45300 * 100, 100);
-    var ctxScore = Math.min(Math.log10(model.context || 128000) / Math.log10(1000000) * 100, 100);
     var priceScore = model.input > 0 ? Math.min((1 - model.input / 3.0) * 100, 100) : 50;
+    var ctxScore = Math.min(Math.log10(model.context || 128000) / Math.log10(1000000) * 100, 100);
     var modScore = Math.min((model.modalities || []).length / 3 * 100, 100);
-    return Math.round(reqScore * 0.35 + ctxScore * 0.25 + priceScore * 0.25 + modScore * 0.15);
+    return Math.round(capScore * 0.50 + reqScore * 0.20 + priceScore * 0.15 + ctxScore * 0.10 + modScore * 0.05);
   }
 
   function computeSuggest(model) {
     var contextBonus = model.context >= 1000000 ? 15 : (model.context >= 256000 ? 10 : (model.context >= 128000 ? 5 : 0));
-    var planScore = model.score * 0.5 + (model.reasoning ? 20 : 0) + contextBonus;
+    var capBonus = (model.cap || 5) >= 8 ? 20 : ((model.cap || 5) >= 6 ? 10 : 0);
+    var planScore = model.score * 0.5 + (model.reasoning ? 15 : 0) + contextBonus + capBonus;
     var reqBonus = model.req5h >= 10000 ? 15 : (model.req5h >= 5000 ? 10 : (model.req5h >= 1000 ? 5 : 0));
     var priceBonus = model.input > 0 && model.input <= 0.2 ? 15 : (model.input > 0 && model.input <= 0.5 ? 10 : (model.input > 0 && model.input <= 1 ? 5 : 0));
     var buildScore = model.score * 0.6 + reqBonus + priceBonus;
@@ -226,7 +228,7 @@
         req5h: parseNum(r[1]), reqWeek: parseNum(r[2]), reqMonth: parseNum(r[3]),
         input: 0, output: 0, usage: 0,
         context: 128000, modalities: ['text'], reasoning: false,
-        country: '', score: 0, suggest: ''
+        country: '', cap: 5, score: 0, suggest: ''
       };
     });
     tables.prices.forEach(function (r) {
@@ -254,6 +256,7 @@
         m.modalities = meta.modalities;
         m.reasoning = meta.reasoning;
         m.country = meta.country || '';
+        m.cap = meta.cap || 5;
       }
       m.score = computeScore(m);
       m.suggest = computeSuggest(m);
@@ -272,6 +275,7 @@
             modalities: meta.modalities || ['text'],
             reasoning: meta.reasoning || false,
             country: meta.country || '',
+            cap: meta.cap || 5,
             score: 0, suggest: '', isNew: true
           };
           entry.score = computeScore(entry);
@@ -382,8 +386,8 @@
     var footer = document.createElement('div');
     footer.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid #333;font-size:11px;display:flex;justify-content:space-between;align-items:center;';
     footer.innerHTML =
-      '<span style="opacity:0.5;">\u8BC4\u5206 = \u989D\u5EA635% + \u4E0A\u4E0B\u658725% + \u4EF7\u683C25% + \u6A21\u600115% \u00B7 \u6570\u636E\u6765\u81EA <a href="' + DOCS_URL + '" target="_blank" style="color:#aaa;">docs/go</a></span>' +
-      '<span style="opacity:0.5;">v1.5.1</span>';
+      '<span style="opacity:0.5;">\u8BC4\u5206 = \u80FD\u529B50% + \u989D\u5EA620% + \u4EF7\u683C15% + \u4E0A\u4E0B\u658710% + \u6A21\u60015% \u00B7 \u6570\u636E\u6765\u81EA <a href="' + DOCS_URL + '" target="_blank" style="color:#aaa;">docs/go</a></span>' +
+      '<span style="opacity:0.5;">v1.6</span>';
     panel.appendChild(footer);
 
     var contentEls = [stats, controls, tableWrap, footer];
