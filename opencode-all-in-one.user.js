@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.1
 // @description  OpenCode 全站增强：Go 模型额度面板（评分/模态/上下文/建议/Zen免费模型）+ Tab 切换代理 + 粘贴图片
 // @author       pass
 // @match        https://opencode.ai/*
@@ -21,8 +21,6 @@
   var TAG = '[OC All-in-One]';
   var SET_PREFIX = 'ocall_';
   var PANEL_KEY = 'go_panel_visible';
-
-  // ─── Settings ────────────────────────────────────────────────
 
   function S(k, v) {
     if (v === undefined) return localStorage.getItem(SET_PREFIX + k);
@@ -58,13 +56,9 @@
     });
   });
 
-  // ─── Page type detection ─────────────────────────────────────
-
   var host = location.hostname;
   var isOpencodeAi = host === 'opencode.ai';
   var isLocalWeb = /^(localhost|127\.0\.0\.1|192\.168\.|(\d+\.){3}\d+)/.test(host);
-
-  // ─── crypto.subtle polyfill (local web only) ────────────────
 
   if (isLocalWeb && typeof crypto !== 'undefined' && !crypto.subtle) {
     try {
@@ -98,10 +92,6 @@
       });
     } catch (err) {}
   }
-
-  // ════════════════════════════════════════════════════════════
-  //  GO 额度面板模块 (opencode.ai only)
-  // ════════════════════════════════════════════════════════════
 
   var GO_MODULE = (function () {
     var DOCS_URL = 'https://opencode.ai/docs/go/';
@@ -166,13 +156,13 @@
     };
 
     var ZEN_FREE_META = {
-      'mimo-v2.5-free': { context: 200000, modalities: ['text', 'image', 'audio', 'video'], reasoning: true, suggest: '多模态' },
-      'nemotron-3.5-lightning-free': { context: 262144, modalities: ['text'], reasoning: true, suggest: '通用' },
-      'nemotron-3-ultra-free': { context: 1000000, modalities: ['text'], reasoning: true, suggest: '长上下文' },
-      'hy3-free': { context: 190000, modalities: ['text'], reasoning: true, suggest: '通用' },
-      'ling-3.0-flash-fin-free': { context: 262144, modalities: ['text'], reasoning: true, suggest: '金融' },
-      'muse-spark-1.2-contributor-free': { context: 1048576, modalities: ['text', 'image', 'video', 'pdf', 'audio'], reasoning: true, suggest: '多模态' },
-      'big-pickle': { context: 200000, modalities: ['text'], reasoning: true, suggest: '通用' }
+      'muse-spark-1.2-contributor-free': { context: 1048576, modalities: ['text', 'image', 'video', 'pdf', 'audio'], reasoning: true, suggest: '多模态', score: 57, country: '美国' },
+      'nemotron-3-ultra-free': { context: 1000000, modalities: ['text'], reasoning: true, suggest: '长上下文', score: 48, country: '美国' },
+      'hy3-free': { context: 190000, modalities: ['text'], reasoning: true, suggest: '通用', score: 42, country: '中国' },
+      'mimo-v2.5-free': { context: 200000, modalities: ['text', 'image', 'audio', 'video'], reasoning: true, suggest: '多模态', score: 38, country: '中国' },
+      'ling-3.0-flash-fin-free': { context: 262144, modalities: ['text'], reasoning: true, suggest: '金融', score: 38, country: '中国' },
+      'nemotron-3.5-lightning-free': { context: 262144, modalities: ['text'], reasoning: true, suggest: '通用', score: 24, country: '美国' },
+      'big-pickle': { context: 200000, modalities: ['text'], reasoning: true, suggest: '通用', score: 35, country: '中国' }
     };
     var ZEN_DEPRECATED = { 'deepseek-v4-flash-free': true, 'laguna-s-2.1-free': true };
 
@@ -356,15 +346,16 @@
             });
           }
           var list = ids.map(function (id) {
-            var meta = ZEN_FREE_META[id] || { context: 128000, modalities: ['text'], reasoning: true, suggest: '通用' };
-            return { id: id, context: meta.context, modalities: meta.modalities, reasoning: meta.reasoning, suggest: meta.suggest };
+            var meta = ZEN_FREE_META[id] || { context: 128000, modalities: ['text'], reasoning: true, suggest: '通用', score: 30, country: '待确认' };
+            return { id: id, context: meta.context, modalities: meta.modalities, reasoning: meta.reasoning, suggest: meta.suggest, score: meta.score, country: meta.country };
           });
           if (!list.length) {
             list = Object.keys(ZEN_FREE_META).map(function (id) {
               var meta = ZEN_FREE_META[id];
-              return { id: id, context: meta.context, modalities: meta.modalities, reasoning: meta.reasoning, suggest: meta.suggest };
+              return { id: id, context: meta.context, modalities: meta.modalities, reasoning: meta.reasoning, suggest: meta.suggest, score: meta.score, country: meta.country };
             });
           }
+          list.sort(function (a, b) { return (b.score || 0) - (a.score || 0); });
           return list;
         });
     }
@@ -471,13 +462,14 @@
       if (zenFree && zenFree.length) {
         var zt = document.createElement('table');
         zt.style.cssText = 'width:100%;border-collapse:collapse;font-size:12px;';
-        zt.innerHTML = '<thead><tr style="border-bottom:1px solid #2a2a2a;text-align:left;"><th style="padding:4px 6px;">模型</th><th style="padding:4px 6px;text-align:right;">上下文</th><th style="padding:4px 6px;text-align:center;">模态</th><th style="padding:4px 6px;text-align:center;">推理</th><th style="padding:4px 6px;text-align:center;">建议</th><th style="padding:4px 6px;">操作</th></tr></thead>';
+        zt.innerHTML = '<thead><tr style="border-bottom:1px solid #2a2a2a;text-align:left;"><th style="padding:4px 6px;">评分</th><th style="padding:4px 6px;">模型</th><th style="padding:4px 6px;text-align:right;">上下文</th><th style="padding:4px 6px;text-align:center;">模态</th><th style="padding:4px 6px;text-align:center;">推理</th><th style="padding:4px 6px;text-align:center;">建议</th><th style="padding:4px 6px;">操作</th></tr></thead>';
         var ztb = document.createElement('tbody');
         zenFree.forEach(function (f) {
           var tr = document.createElement('tr');
           tr.style.cssText = 'border-bottom:1px solid #2a2a2a;';
           tr.innerHTML =
-            '<td style="padding:4px 6px;color:#e0e0e0;">' + f.id + '</td>' +
+            '<td style="padding:4px 6px;"><span style="color:' + scoreColor(f.score) + ';font-weight:600;font-size:11px;">' + (f.score || '-') + '</span></td>' +
+            '<td style="padding:4px 6px;color:#e0e0e0;">' + f.id + (f.country ? ' <span style="font-size:10px;color:#777;">(' + f.country + ')</span>' : '') + '</td>' +
             '<td style="padding:4px 6px;text-align:right;font-size:11px;">' + formatContext(f.context) + '</td>' +
             '<td style="padding:4px 6px;text-align:center;font-size:11px;">' + modalitiesText(f.modalities) + '</td>' +
             '<td style="padding:4px 6px;text-align:center;">' + (f.reasoning ? '<span style="color:#2ea043;">✓</span>' : '-') + '</td>' +
@@ -502,7 +494,7 @@
       footer.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid #333;font-size:11px;display:flex;justify-content:space-between;align-items:center;';
       footer.innerHTML =
         '<span style="opacity:0.5;">评分 = AA Intelligence Index · 数据来自 <a href="' + DOCS_URL + '" target="_blank" style="color:#1f6feb;">docs/go</a> + <a href="https://openrouter.ai/models" target="_blank" style="color:#1f6feb;">OpenRouter</a></span>' +
-        '<span style="opacity:0.5;">v1.0</span>';
+        '<span style="opacity:0.5;">v1.1</span>';
       panel.appendChild(footer);
 
       var contentEls = [stats, controls, tableWrap, zenSection, footer];
@@ -649,10 +641,6 @@
     return { init: init, loadAndInject: loadAndInject };
   })();
 
-  // ════════════════════════════════════════════════════════════
-  //  Tab 键切换代理模块 (local web only)
-  // ════════════════════════════════════════════════════════════
-
   var TAB_MODULE = (function () {
     function init() {
       var lastCycleTime = 0;
@@ -695,10 +683,6 @@
     }
     return { init: init };
   })();
-
-  // ════════════════════════════════════════════════════════════
-  //  粘贴图片模块 (local web only)
-  // ════════════════════════════════════════════════════════════
 
   var PASTE_MODULE = (function () {
     function extractImage(e) {
@@ -814,10 +798,6 @@
     }
     return { init: init };
   })();
-
-  // ════════════════════════════════════════════════════════════
-  //  Main entry
-  // ════════════════════════════════════════════════════════════
 
   function init() {
     if (isOpencodeAi && getSetting('goPanel', true)) {
