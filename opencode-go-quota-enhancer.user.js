@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode Go 额度增强面板
 // @namespace    http://tampermonkey.net/
-// @version      1.5
+// @version      1.5.1
 // @description  在 opencode.ai 全站注入 Go 模型额度性价比榜（评分/模态/上下文/建议），数据来自 docs/go
 // @author       pass
 // @match        https://opencode.ai/*
@@ -18,7 +18,7 @@
   var DOCS_URL = 'https://opencode.ai/docs/go/';
   var MODELS_API = 'https://opencode.ai/zen/go/v1/models';
 
-  console.log(TAG, 'v1.5 loaded, pathname:', location.pathname);
+  console.log(TAG, 'v1.5.1 loaded, pathname:', location.pathname);
 
   var MODEL_META = {
     'grok-4.6':                { context: 200000, modalities: ['text'],                reasoning: true,  country: '美国' },
@@ -281,7 +281,7 @@
       });
     }
     var arr = Object.keys(map).map(function (k) { return map[k]; });
-    arr.sort(function (a, b) { return b.score - a.score; });
+    arr.sort(function (a, b) { return b.reqMonth - a.reqMonth; });
     return arr;
   }
 
@@ -334,7 +334,7 @@
     controls.style.cssText = 'display:flex;gap:8px;margin-bottom:10px;align-items:center;';
     controls.innerHTML =
       '<input id="oc-go-search" type="text" placeholder="\u641C\u7D22\u6A21\u578B..." style="flex:1;max-width:180px;padding:5px 8px;border:1px solid #555;border-radius:4px;background:#222;color:#ccc;font-size:12px;" />' +
-      '<select id="oc-go-sort" style="padding:5px 8px;border:1px solid #555;border-radius:4px;background:#222;color:#ccc;font-size:12px;"><option value="score">\u6309\u7EFC\u5408\u8BC4\u5206</option><option value="req5h">\u6309 5h \u6B21\u6570</option><option value="context">\u6309\u4E0A\u4E0B\u6587\u5927\u5C0F</option><option value="input">\u6309\u8F93\u5165\u4EF7</option><option value="usage">\u6309\u500D\u6570</option></select>';
+      '<select id="oc-go-sort" style="padding:5px 8px;border:1px solid #555;border-radius:4px;background:#222;color:#ccc;font-size:12px;"><option value="reqMonth">\u6309\u6708\u989D\u5EA6</option><option value="score">\u6309\u7EFC\u5408\u8BC4\u5206</option><option value="req5h">\u6309 5h \u6B21\u6570</option><option value="context">\u6309\u4E0A\u4E0B\u6587\u5927\u5C0F</option><option value="usage">\u6309\u500D\u6570</option></select>';
     panel.appendChild(controls);
 
     var tableWrap = document.createElement('div');
@@ -351,7 +351,7 @@
           '<th style="padding:6px 6px;text-align:center;">\u6A21\u6001</th>' +
           '<th style="padding:6px 6px;text-align:right;">\u4E0A\u4E0B\u6587</th>' +
           '<th style="padding:6px 6px;text-align:right;">5h</th>' +
-          '<th style="padding:6px 6px;text-align:right;">\u8F93\u5165\u4EF7</th>' +
+          '<th style="padding:6px 6px;text-align:right;">\u6708\u989D\u5EA6</th>' +
           '<th style="padding:6px 6px;text-align:center;">\u500D\u6570</th>' +
           '<th style="padding:6px 6px;text-align:center;">\u5EFA\u8BAE</th>' +
           '<th style="padding:6px 6px;">\u64CD\u4F5C</th>' +
@@ -367,7 +367,7 @@
           '<td style="padding:6px 6px;text-align:center;font-size:11px;">' + modalitiesText(d.modalities) + (d.reasoning ? ' <span style="color:#aaa;">\u63A8\u7406</span>' : '') + '</td>' +
           '<td style="padding:6px 6px;text-align:right;font-size:11px;">' + formatContext(d.context) + '</td>' +
           '<td style="padding:6px 6px;text-align:right;">' + d.req5h.toLocaleString() + '</td>' +
-          '<td style="padding:6px 6px;text-align:right;">' + (d.input ? '$' + d.input.toFixed(2) : '-') + '</td>' +
+          '<td style="padding:6px 6px;text-align:right;">' + d.reqMonth.toLocaleString() + '</td>' +
           '<td style="padding:6px 6px;text-align:center;"><span style="display:inline-block;padding:2px 6px;border-radius:3px;font-size:11px;font-weight:600;color:#e0e0e0;background:#333;">' + (d.usage ? d.usage + 'x' : '-') + '</span></td>' +
           '<td style="padding:6px 6px;text-align:center;">' + suggestBadge(d.suggest) + '</td>' +
           '<td style="padding:6px 6px;"><button class="oc-go-copy" data-id="' + (d.modelId || '') + '" style="padding:2px 8px;cursor:pointer;border:1px solid #555;border-radius:3px;background:transparent;color:#aaa;font-size:11px;' + (d.modelId ? '' : 'opacity:0.3;cursor:default;') + '">\u590D\u5236</button></td>';
@@ -383,7 +383,7 @@
     footer.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid #333;font-size:11px;display:flex;justify-content:space-between;align-items:center;';
     footer.innerHTML =
       '<span style="opacity:0.5;">\u8BC4\u5206 = \u989D\u5EA635% + \u4E0A\u4E0B\u658725% + \u4EF7\u683C25% + \u6A21\u600115% \u00B7 \u6570\u636E\u6765\u81EA <a href="' + DOCS_URL + '" target="_blank" style="color:#aaa;">docs/go</a></span>' +
-      '<span style="opacity:0.5;">v1.5</span>';
+      '<span style="opacity:0.5;">v1.5.1</span>';
     panel.appendChild(footer);
 
     var contentEls = [stats, controls, tableWrap, footer];
@@ -397,7 +397,7 @@
     panel.querySelector('#oc-go-toggle').addEventListener('click', function () { var hidden = tableWrap.style.display === 'none'; contentEls.forEach(function (el) { el.style.display = hidden ? '' : 'none'; }); this.textContent = hidden ? '\u6298\u53E0' : '\u5C55\u5F00'; });
     panel.querySelector('#oc-go-refresh').addEventListener('click', function () { loadAndInject(true); });
     panel.querySelector('#oc-go-search').addEventListener('input', function () { var q = this.value.toLowerCase(); var filtered = sorted.filter(function (d) { return d.name.toLowerCase().indexOf(q) !== -1 || (d.modelId && d.modelId.indexOf(q) !== -1); }); renderTable(filtered); bindCopy(); });
-    panel.querySelector('#oc-go-sort').addEventListener('change', function () { var key = this.value; var asc = key === 'input'; var arr = sorted.slice(); arr.sort(function (a, b) { return asc ? (a[key] - b[key]) : (b[key] - a[key]); }); renderTable(arr); bindCopy(); });
+    panel.querySelector('#oc-go-sort').addEventListener('change', function () { var key = this.value; var arr = sorted.slice(); arr.sort(function (a, b) { return (b[key] || 0) - (a[key] || 0); }); renderTable(arr); bindCopy(); });
     function bindCopy() { panel.querySelectorAll('.oc-go-copy').forEach(function (btn) { btn.addEventListener('click', function (e) { e.stopPropagation(); var id = this.getAttribute('data-id'); if (!id) return; var text = 'opencode-go/' + id; if (navigator.clipboard) { navigator.clipboard.writeText(text).then(function () { toast('\u5DF2\u590D\u5236: ' + text); }); } else { var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); toast('\u5DF2\u590D\u5236: ' + text); } }); }); }
     bindCopy();
     return panel;
