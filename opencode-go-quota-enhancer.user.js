@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode Go 额度增强面板
 // @namespace    http://tampermonkey.net/
-// @version      1.7
-// @description  在 opencode.ai 全站注入 Go 模型额度性价比榜（评分/模态/上下文/建议），数据来自 docs/go
+// @version      1.9
+// @description  在 opencode.ai 全站注入 Go 模型额度性价比榜（评分/模态/上下文/建议），数据来自 docs/go + OpenRouter
 // @author       pass
 // @match        https://opencode.ai/*
 // @grant        GM_setValue
@@ -17,8 +17,38 @@
   var PANEL_KEY = 'go_panel_visible';
   var DOCS_URL = 'https://opencode.ai/docs/go/';
   var MODELS_API = 'https://opencode.ai/zen/go/v1/models';
+  var OPENROUTER_API = 'https://openrouter.ai/api/v1/models';
+  var OR_CACHE_KEY = 'go_or_cache';
+  var OR_CACHE_TTL = 6 * 60 * 60 * 1000;
 
-  console.log(TAG, 'v1.7 loaded, pathname:', location.pathname);
+  console.log(TAG, 'v1.9 loaded, pathname:', location.pathname);
+
+  var OR_ID_MAP = {
+    'grok-4.6': 'x-ai/grok-4.6',
+    'gpt-5.6-luna': 'openai/gpt-5.6-luna',
+    'glm-5.3-flash': 'z-ai/glm-5.3-flash',
+    'glm-5.3': 'z-ai/glm-5.3',
+    'glm-5.2': 'z-ai/glm-5.2',
+    'glm-5.1': 'z-ai/glm-5.1',
+    'kimi-k3': 'moonshotai/kimi-k3',
+    'kimi-k2.7-code': 'moonshotai/kimi-k2.7-code',
+    'kimi-k2.6': 'moonshotai/kimi-k2.6',
+    'longcat-2.0': 'meituan/longcat-2.0',
+    'mimo-v2.5': 'xiaomi/mimo-v2.5',
+    'mimo-v2.5-pro': 'xiaomi/mimo-v2.5-pro',
+    'minimax-m3': 'minimax/minimax-m3',
+    'minimax-m2.7': 'minimax/minimax-m2.7',
+    'muse-spark-1.2-contributor': 'meta/muse-spark-1.2-contributor',
+    'qwen3.8-max': 'qwen/qwen3.8-max',
+    'qwen3.8-flash': 'qwen/qwen3.8-flash',
+    'qwen3.7-max': 'qwen/qwen3.7-max',
+    'qwen3.7-plus': 'qwen/qwen3.7-plus',
+    'qwen3.6-plus': 'qwen/qwen3.6-plus',
+    'deepseek-v4-pro': 'deepseek/deepseek-v4-pro-0813',
+    'deepseek-v4-flash': 'deepseek/deepseek-v4-flash-0731',
+    'deepseek-v4-flash-vision-exp': 'deepseek/deepseek-v4-flash-vision-exp',
+    'hy3': 'tencent/hy3'
+  };
 
   var MODEL_META = {
     'grok-4.6':                { context: 500000, modalities: ['text'],                reasoning: true,  country: '美国', cap: 9 },
@@ -180,6 +210,50 @@
     return '-';
   }
 
+  function fetchOpenRouterData() {
+    try {
+      var cached = GM_getValue(OR_CACHE_KEY);
+      if (cached) {
+        var obj = typeof cached === 'string' ? JSON.parse(cached) : cached;
+        if (obj && obj.timestamp && (Date.now() - obj.timestamp) < OR_CACHE_TTL && obj.contextMap) {
+          console.log(TAG, 'OpenRouter cache hit');
+          return Promise.resolve(obj);
+        }
+      }
+    } catch (e) {}
+
+    return fetch(OPENROUTER_API, { credentials: 'omit' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .catch(function () { return null; })
+      .then(function (data) {
+        if (!data || !data.data) return null;
+        var contextMap = {};
+        var scoreMap = {};
+        data.data.forEach(function (m) {
+          var id = m.id;
+          var ctx = m.context_length;
+          var aa = m.benchmarks && m.benchmarks.artificial_analysis
+            ? m.benchmarks.artificial_analysis.intelligence_index : null;
+          if (ctx) contextMap[id] = ctx;
+          if (aa) scoreMap[id] = aa;
+        });
+        var result = { contextMap: contextMap, scoreMap: scoreMap, timestamp: Date.now() };
+        try { GM_setValue(OR_CACHE_KEY, JSON.stringify(result)); } catch (e) {}
+        console.log(TAG, 'OpenRouter fetched:', Object.keys(contextMap).length, 'contexts,', Object.keys(scoreMap).length, 'scores');
+        return result;
+      });
+  }
+
+  function lookupOpenRouter(orData, opencodeId) {
+    if (!orData) return null;
+    var orId = OR_ID_MAP[opencodeId];
+    if (!orId) return null;
+    var ctx = orData.contextMap[orId];
+    var score = orData.scoreMap[orId];
+    if (ctx === undefined && score === undefined) return null;
+    return { context: ctx, score: score };
+  }
+
   function parseTables(html) {
     var tables = html.match(/<table[\s\S]*?<\/table>/g) || [];
     function rows(tableHtml) {
@@ -212,7 +286,7 @@
     return { requests: requests, prices: prices, endpoints: endpoints };
   }
 
-  function mergeData(tables, apiModels) {
+  function mergeData(tables, apiModels, orData) {
     var map = {};
     tables.requests.forEach(function (r) {
       var name = r[0] || '';
@@ -247,13 +321,18 @@
       var m = map[k];
       var meta = MODEL_META[m.modelId];
       if (meta) {
-        m.context = meta.context;
         m.modalities = meta.modalities;
         m.reasoning = meta.reasoning;
         m.country = meta.country || '';
         m.cap = meta.cap || 5;
+        m.context = meta.context || 128000;
       }
-      m.score = computeScore(m);
+      var or = lookupOpenRouter(orData, m.modelId);
+      if (or) {
+        if (or.context) m.context = or.context;
+        if (or.score) m.score = Math.round(or.score);
+      }
+      if (!m.score) m.score = computeScore(m);
       m.suggest = computeSuggest(m);
     });
     if (apiModels && apiModels.length) {
@@ -273,7 +352,12 @@
             cap: meta.cap || 5,
             score: 0, suggest: '', isNew: true
           };
-          entry.score = computeScore(entry);
+          var or = lookupOpenRouter(orData, m.id);
+          if (or) {
+            if (or.context) entry.context = or.context;
+            if (or.score) entry.score = Math.round(or.score);
+          }
+          if (!entry.score) entry.score = computeScore(entry);
           entry.suggest = computeSuggest(entry);
           map[m.id] = entry;
         }
@@ -381,8 +465,8 @@
     var footer = document.createElement('div');
     footer.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid #333;font-size:11px;display:flex;justify-content:space-between;align-items:center;';
     footer.innerHTML =
-      '<span style="opacity:0.5;">\u8BC4\u5206 = \u6A21\u578B\u80FD\u529B\uFF081-10\uFF09 \u00B7 \u6570\u636E\u6765\u81EA <a href="' + DOCS_URL + '" target="_blank" style="color:#aaa;">docs/go</a></span>' +
-      '<span style="opacity:0.5;">v1.7</span>';
+      '<span style="opacity:0.5;">\u8BC4\u5206 = AA Intelligence Index \u00B7 \u6570\u636E\u6765\u81EA <a href="' + DOCS_URL + '" target="_blank" style="color:#aaa;">docs/go</a> + <a href="https://openrouter.ai/models" target="_blank" style="color:#aaa;">OpenRouter</a></span>' +
+      '<span style="opacity:0.5;">v1.9</span>';
     panel.appendChild(footer);
 
     var contentEls = [stats, controls, tableWrap, footer];
@@ -469,33 +553,30 @@
 
   function loadAndInject(forceRefresh) {
     if (document.getElementById('oc-go-panel')) return;
-    var wantVisible = false;
-    try { wantVisible = localStorage.getItem(PANEL_KEY) === '1'; } catch (e) {}
-    if (!wantVisible && !forceRefresh) return;
     console.log(TAG, 'loadAndInject, force:', forceRefresh);
+    console.log(TAG, 'Fetching fresh data...');
     Promise.all([
       fetch(DOCS_URL, { credentials: 'omit' }).then(function (r) { return r.ok ? r.text() : null; }).catch(function () { return null; }),
-      fetch(MODELS_API, { credentials: 'omit' }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; })
+      fetch(MODELS_API, { credentials: 'omit' }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }),
+      fetchOpenRouterData()
     ]).then(function (results) {
-      var html = results[0]; var apiData = results[1];
+      var html = results[0]; var apiData = results[1]; var orData = results[2];
       if (html) {
         var tables = parseTables(html);
         if (tables.requests && tables.requests.length > 0) {
           var apiModels = (apiData && apiData.data) ? apiData.data : [];
-          injectPanel(mergeData(tables, apiModels), 'live');
+          injectPanel(mergeData(tables, apiModels, orData), 'live');
           return;
         }
       }
       console.log(TAG, 'Using snapshot fallback');
-      injectPanel(mergeData(SNAPSHOT, []), 'snapshot');
+      injectPanel(mergeData(SNAPSHOT, [], orData), 'snapshot');
     });
   }
 
   function init() {
     injectToggleButton();
-    var wantVisible = false;
-    try { wantVisible = localStorage.getItem(PANEL_KEY) === '1'; } catch (e) {}
-    if (wantVisible) { setTimeout(function () { loadAndInject(false); }, 500); }
+    setTimeout(function () { loadAndInject(false); }, 500);
   }
 
   if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', function () { setTimeout(init, 300); }); } else { setTimeout(init, 300); }
