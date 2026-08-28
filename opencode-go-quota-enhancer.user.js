@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode Go 额度增强面板
 // @namespace    http://tampermonkey.net/
-// @version      1.2
+// @version      1.3
 // @description  在 workspace/go 页面注入模型额度表 + 性价比排名，数据来自 docs/go
 // @author       pass
 // @match        https://opencode.ai/workspace/*/go*
@@ -19,7 +19,7 @@
   var DOCS_URL = 'https://opencode.ai/docs/go/';
   var MODELS_API = 'https://opencode.ai/zen/go/v1/models';
 
-  console.log(TAG, 'v1.2 loaded, pathname:', location.pathname);
+  console.log(TAG, 'v1.3 loaded, pathname:', location.pathname);
 
   // ─── Built-in snapshot (2026-08-28) ────────────────────────
   // Used as fallback when fetch fails (CORS, network, etc.)
@@ -277,7 +277,8 @@
       '</div>' +
       '<div>' +
         '<button id="oc-go-refresh" style="padding:4px 10px;margin-right:6px;cursor:pointer;border:1px solid var(--sl-color-border,#555);border-radius:4px;background:var(--sl-color-bg,#222);color:var(--sl-color-text,#ccc);font-size:11px;">刷新</button>' +
-        '<button id="oc-go-toggle" style="padding:4px 10px;cursor:pointer;border:1px solid var(--sl-color-border,#555);border-radius:4px;background:var(--sl-color-bg,#222);color:var(--sl-color-text,#ccc);font-size:11px;">折叠</button>' +
+        '<button id="oc-go-toggle" style="padding:4px 10px;margin-right:6px;cursor:pointer;border:1px solid var(--sl-color-border,#555);border-radius:4px;background:var(--sl-color-bg,#222);color:var(--sl-color-text,#ccc);font-size:11px;">折叠</button>' +
+        '<button id="oc-go-close" title="关闭面板" style="padding:4px 10px;cursor:pointer;border:1px solid var(--sl-color-border,#555);border-radius:4px;background:var(--sl-color-bg,#222);color:var(--sl-color-text,#ccc);font-size:11px;">✕</button>' +
       '</div>';
 
     panel.appendChild(header);
@@ -356,7 +357,7 @@
     footer.style.cssText = 'margin-top:12px;padding-top:8px;border-top:1px solid var(--sl-color-border,#333);font-size:11px;display:flex;justify-content:space-between;align-items:center;';
     footer.innerHTML =
       '<span style="opacity:0.5;">倍数 = 模型月额度 / $10 月费 · 数据来自 <a href="' + DOCS_URL + '" target="_blank" style="color:#1f6feb;">docs/go</a></span>' +
-      '<span style="opacity:0.5;">v1.2</span>';
+      '<span style="opacity:0.5;">v1.3</span>';
     panel.appendChild(footer);
 
     // Event handlers (use panel.querySelector since panel not yet in DOM)
@@ -370,6 +371,12 @@
     panel.querySelector('#oc-go-refresh').addEventListener('click', function () {
       GM_setValue(CACHE_KEY, null);
       location.reload();
+    });
+
+    panel.querySelector('#oc-go-close').addEventListener('click', function () {
+      var p = document.getElementById('oc-go-panel');
+      if (p) p.remove();
+      toast('面板已关闭（刷新页面可重新显示）', '#aaa');
     });
 
     panel.querySelector('#oc-go-search').addEventListener('input', function () {
@@ -422,28 +429,23 @@
     if (document.getElementById('oc-go-panel')) return;
 
     try {
-      var target = document.querySelector('h1') ||
-                   document.querySelector('[data-page]') ||
-                   document.querySelector('main') ||
-                   document.body;
-
-      console.log(TAG, 'Injecting panel, target:', target ? target.tagName : 'none');
-
       var panel = renderPanel(data, cacheTime, source);
 
-      if (target === document.body) {
-        panel.style.position = 'fixed';
-        panel.style.bottom = '16px';
-        panel.style.right = '16px';
-        panel.style.width = '600px';
-        panel.style.zIndex = '2147483647';
-        panel.style.boxShadow = '0 4px 20px rgba(0,0,0,.5)';
-        document.body.appendChild(panel);
-      } else {
-        target.parentNode.insertBefore(panel, target.nextSibling);
-      }
+      // Fixed floating panel - always visible regardless of page DOM structure
+      panel.style.position = 'fixed';
+      panel.style.top = '16px';
+      panel.style.right = '16px';
+      panel.style.width = '640px';
+      panel.style.maxWidth = 'calc(100vw - 32px)';
+      panel.style.maxHeight = '80vh';
+      panel.style.overflowY = 'auto';
+      panel.style.zIndex = '2147483647';
+      panel.style.boxShadow = '0 4px 24px rgba(0,0,0,.5)';
+      panel.style.margin = '0';
 
-      console.log(TAG, 'Panel injected successfully');
+      document.body.appendChild(panel);
+
+      console.log(TAG, 'Panel injected successfully (fixed floating)');
       toast('✓ Go 额度面板已加载（' + source + '）', '#2ea043');
     } catch (e) {
       console.error(TAG, 'Inject failed:', e);
