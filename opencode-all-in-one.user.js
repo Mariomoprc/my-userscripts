@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.5
+// @version      1.5.3
 // @description  OpenCode 全站增强：Go 模型额度面板 + 顶部额度开关 + Tab 切换代理 + 粘贴图片 + 选项键盘导航
 // @author       pass
 // @match        https://opencode.ai/*
@@ -506,7 +506,7 @@
       footer.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid #333;font-size:11px;display:flex;justify-content:space-between;align-items:center;';
       footer.innerHTML =
         '<span style="opacity:0.5;">评分 = AA Intelligence Index · 速度 = AA Output Speed · 数据来自 <a href="' + DOCS_URL + '" target="_blank" style="color:#1f6feb;">docs/go</a> + <a href="https://openrouter.ai/models" target="_blank" style="color:#1f6feb;">OpenRouter</a></span>' +
-        '<span style="opacity:0.5;">v1.5</span>';
+        '<span style="opacity:0.5;">v1.5.3</span>';
       panel.appendChild(footer);
 
       var contentEls = [stats, controls, tableWrap, zenSection, footer];
@@ -1009,7 +1009,7 @@
       btn.innerHTML =
         '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#555;" id="oc-go-toggle-dot"></span>' +
         '<span id="oc-go-toggle-model" style="color:#ccc;font-weight:600;font-size:11px;">Go</span>' +
-        '<span id="oc-go-toggle-usage" style="color:#666;font-size:10px;">-</span>' +
+        '<span id="oc-go-toggle-usage" style="color:#666;font-size:10px;">v1.5.3</span>' +
         '<span id="oc-go-toggle-close" title="\u9690\u85CF" style="margin-left:2px;color:#555;font-size:12px;line-height:1;cursor:pointer;">\u00D7</span>';
 
       btn.addEventListener('mouseenter', function () { btn.style.background = 'rgba(255,255,255,.12)'; });
