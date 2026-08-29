@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.3
-// @description  OpenCode 全站增强：Go 模型额度面板（评分/模态/上下文/速度/建议/Zen免费模型）+ Tab 切换代理 + 粘贴图片
+// @version      1.4
+// @description  OpenCode 全站增强：Go 模型额度面板（评分/模态/上下文/速度/建议/Zen免费模型）+ Tab 切换代理 + 粘贴图片 + 选项键盘导航
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?://localhost:\d+/
@@ -37,7 +37,8 @@
   var SETTINGS = [
     { key: 'goPanel', label: 'Go 额度面板', def: true },
     { key: 'tabCycle', label: 'Tab 键切换代理', def: true },
-    { key: 'pasteImg', label: '粘贴图片', def: true }
+    { key: 'pasteImg', label: '粘贴图片', def: true },
+    { key: 'questionKeys', label: '选项键盘导航', def: true }
   ];
 
   function toast(text, color) {
@@ -504,7 +505,7 @@
       footer.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid #333;font-size:11px;display:flex;justify-content:space-between;align-items:center;';
       footer.innerHTML =
         '<span style="opacity:0.5;">评分 = AA Intelligence Index · 速度 = AA Output Speed · 数据来自 <a href="' + DOCS_URL + '" target="_blank" style="color:#1f6feb;">docs/go</a> + <a href="https://openrouter.ai/models" target="_blank" style="color:#1f6feb;">OpenRouter</a></span>' +
-        '<span style="opacity:0.5;">v1.3</span>';
+        '<span style="opacity:0.5;">v1.4</span>';
       panel.appendChild(footer);
 
       var contentEls = [stats, controls, tableWrap, zenSection, footer];
@@ -809,6 +810,69 @@
     return { init: init };
   })();
 
+  var QUESTION_MODULE = (function () {
+    function findDock() {
+      return document.querySelector('[data-component="session-question-dock"]');
+    }
+    function findOptions() {
+      var dock = findDock();
+      if (!dock) return [];
+      return Array.prototype.slice.call(
+        dock.querySelectorAll('[data-slot="question-options"] [data-slot="question-option"]')
+      ).filter(function (el) { return el.getAttribute('data-custom') !== 'true'; });
+    }
+    function findSubmitBtn() {
+      var dock = findDock();
+      if (!dock) return null;
+      return dock.querySelector('[aria-keyshortcuts*="Enter"]') ||
+             dock.querySelector('[data-slot="question-footer-actions"] button:last-child');
+    }
+    function isVisible(el) {
+      return el && el.offsetParent !== null;
+    }
+    function init() {
+      document.addEventListener('keydown', function (e) {
+        var dock = findDock();
+        if (!dock || !isVisible(dock)) return;
+        var options = findOptions();
+        if (!options.length) return;
+
+        if (e.key >= '1' && e.key <= '9') {
+          var idx = parseInt(e.key, 10) - 1;
+          if (idx < options.length) {
+            e.preventDefault();
+            e.stopPropagation();
+            options[idx].click();
+          }
+          return;
+        }
+
+        if (e.key === 'Enter') {
+          var submitBtn = findSubmitBtn();
+          if (submitBtn) {
+            e.preventDefault();
+            e.stopPropagation();
+            submitBtn.click();
+          }
+          return;
+        }
+
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          var active = document.activeElement;
+          var inOptions = active && active.closest('[data-slot="question-options"]');
+          if (!inOptions) {
+            e.preventDefault();
+            e.stopPropagation();
+            var targetIdx = e.key === 'ArrowDown' ? 0 : options.length - 1;
+            options[targetIdx].focus();
+          }
+        }
+      }, true);
+      console.log(TAG, '选项键盘导航已启用');
+    }
+    return { init: init };
+  })();
+
   function init() {
     if (isOpencodeAi && getSetting('goPanel', true)) {
       GO_MODULE.init();
@@ -823,6 +887,9 @@
       }
       if (getSetting('pasteImg', true)) {
         PASTE_MODULE.init();
+      }
+      if (getSetting('questionKeys', true)) {
+        QUESTION_MODULE.init();
       }
     }
   }
