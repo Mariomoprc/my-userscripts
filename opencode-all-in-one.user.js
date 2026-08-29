@@ -968,7 +968,7 @@
     }
 
     function getModelDisplay(models) {
-      if (!models || !models.length) return { names: 'Go', info: '' };
+      if (!models || !models.length) return { names: '...', info: '' };
       var top = models[0];
       var tied = models.filter(function (m) { return m.reqMonth === top.reqMonth; });
       var names = tied.length > 1
