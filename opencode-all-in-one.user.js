@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.4
-// @description  OpenCode 全站增强：Go 模型额度面板（评分/模态/上下文/速度/建议/Zen免费模型）+ Tab 切换代理 + 粘贴图片 + 选项键盘导航
+// @version      1.5
+// @description  OpenCode 全站增强：Go 模型额度面板 + 顶部额度开关 + Tab 切换代理 + 粘贴图片 + 选项键盘导航
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?://localhost:\d+/
@@ -12,6 +12,7 @@
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_registerMenuCommand
+// @grant        GM.xmlhttpRequest
 // @run-at       document-start
 // ==/UserScript==
 
@@ -505,7 +506,7 @@
       footer.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid #333;font-size:11px;display:flex;justify-content:space-between;align-items:center;';
       footer.innerHTML =
         '<span style="opacity:0.5;">评分 = AA Intelligence Index · 速度 = AA Output Speed · 数据来自 <a href="' + DOCS_URL + '" target="_blank" style="color:#1f6feb;">docs/go</a> + <a href="https://openrouter.ai/models" target="_blank" style="color:#1f6feb;">OpenRouter</a></span>' +
-        '<span style="opacity:0.5;">v1.4</span>';
+        '<span style="opacity:0.5;">v1.5</span>';
       panel.appendChild(footer);
 
       var contentEls = [stats, controls, tableWrap, zenSection, footer];
@@ -859,9 +860,12 @@
         }
 
         if (e.key === 'Enter') {
-          // Custom input: Shift+Enter newline, Enter submits custom answer
+          // Custom input: Shift+Enter newline, Enter submits if has text
           if (isCustomInputFocused(e.target)) {
             if (e.shiftKey || e.ctrlKey) return;
+            var customTa = (e.target && e.target.tagName === 'TEXTAREA') ? e.target :
+                           (document.activeElement && document.activeElement.tagName === 'TEXTAREA') ? document.activeElement : null;
+            if (!customTa || !customTa.value.trim()) return;
             var sbCustom = findSubmitBtn();
             if (sbCustom) {
               e.preventDefault();
@@ -928,11 +932,155 @@
     return { init: init };
   })();
 
+  // ════════════════════════════════════════════════════════════
+  //  顶部额度开关模块 (local web only)
+  // ════════════════════════════════════════════════════════════
+
+  var GO_TOGGLE = (function () {
+    var WORKSPACE_ID = 'wrk_01KS7JXXVAPMAHBQDKQYMN9HAW';
+    var WORKSPACE_URL = 'https://opencode.ai/workspace/' + WORKSPACE_ID + '/go';
+    var TOGGLE_KEY = 'oc_toggle_quota';
+    var REFRESH_INTERVAL = 5 * 60 * 1000;
+
+    var lastQuota = null;
+
+    function fetchQuota() {
+      return new Promise(function (resolve) {
+        try {
+          GM.xmlhttpRequest({
+            method: 'GET',
+            url: WORKSPACE_URL,
+            credentials: 'include',
+            onload: function (res) {
+              var text = res.responseText || '';
+              var quota = { model: '-', h5: '-', week: '-', month: '-' };
+
+              var m5 = text.match(/([\d.]+)%[\s\S]{0,200}?5\s*\u5C0F\u65F6/);
+              var mw = text.match(/([\d.]+)%[\s\S]{0,200}?\u6BCF\u5468/);
+              var mm = text.match(/([\d.]+)%[\s\S]{0,200}?\u6BCF\u6708/);
+              if (m5) quota.h5 = m5[1] + '%';
+              if (mw) quota.week = mw[1] + '%';
+              if (mm) quota.month = mm[1] + '%';
+
+              var modelMatch = text.match(/<span[^>]*>(?:opencode-go\/)?([\w.-]+)<\/span>/i) ||
+                               text.match(/Mimo|MiMo|DeepSeek|Qwen|Grok|GLM|MiniMax|Kimi|LongCat|Muse/i);
+              if (modelMatch) quota.model = modelMatch[1] || modelMatch[0];
+
+              console.log(TAG, 'Quota parsed:', quota);
+              resolve(quota);
+            },
+            onerror: function (err) {
+              console.log(TAG, 'Quota fetch failed:', err);
+              resolve(null);
+            }
+          });
+        } catch (e) {
+          console.log(TAG, 'GM.xmlhttpRequest not available:', e);
+          resolve(null);
+        }
+      });
+    }
+
+    function injectToggle() {
+      if (document.getElementById('oc-go-toggle-bar')) return;
+
+      var btn = document.createElement('div');
+      btn.id = 'oc-go-toggle-bar';
+      btn.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:9999;display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:8px;cursor:pointer;transition:all .15s;font-size:12px;color:#888;white-space:nowrap;user-select:none;background:rgba(30,30,30,.85);border:1px solid #333;backdrop-filter:blur(8px);box-shadow:0 2px 8px rgba(0,0,0,.3);';
+      btn.innerHTML =
+        '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#555;" id="oc-go-toggle-dot"></span>' +
+        '<span id="oc-go-toggle-model" style="color:#ccc;font-weight:600;">Go</span>' +
+        '<span id="oc-go-toggle-usage" style="color:#666;font-size:11px;">-</span>' +
+        '<span id="oc-go-toggle-close" title="隐藏" style="margin-left:4px;color:#555;font-size:14px;line-height:1;">\u00D7</span>';
+
+      btn.addEventListener('mouseenter', function () { btn.style.borderColor = '#555'; });
+      btn.addEventListener('mouseleave', function () { btn.style.borderColor = '#333'; });
+
+      // Click main area to open panel
+      btn.addEventListener('click', function (e) {
+        if (e.target.id === 'oc-go-toggle-close') return;
+        var panel = document.getElementById('oc-go-panel');
+        if (panel) {
+          panel.remove();
+          var b = document.getElementById('oc-go-backdrop');
+          if (b) b.remove();
+        } else {
+          GO_MODULE.loadAndInject(false);
+        }
+      });
+
+      // Close button hides toggle bar
+      var closeBtn = btn.querySelector('#oc-go-toggle-close');
+      closeBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        btn.remove();
+        try { sessionStorage.setItem('oc_toggle_hidden', '1'); } catch (ex) {}
+      });
+
+      document.body.appendChild(btn);
+      console.log(TAG, 'Toggle bar injected (fixed)');
+    }
+
+    function updateDisplay(quota) {
+      var modelEl = document.getElementById('oc-go-toggle-model');
+      var usageEl = document.getElementById('oc-go-toggle-usage');
+      if (!modelEl || !usageEl) return;
+
+      if (quota && quota.model && quota.model !== '-') {
+        modelEl.textContent = quota.model;
+      }
+
+      var parts = [];
+      if (quota.h5 && quota.h5 !== '-') parts.push('5h ' + quota.h5);
+      if (quota.month && quota.month !== '-') parts.push('月 ' + quota.month);
+      if (parts.length) {
+        usageEl.textContent = parts.join(' \u00B7 ');
+      } else {
+        usageEl.textContent = '用量未知';
+      }
+
+      var dot = document.querySelector('#oc-go-toggle-bar > span:first-child');
+      if (dot) {
+        var maxUsage = Math.max(parseFloat(quota.h5) || 0, parseFloat(quota.week) || 0, parseFloat(quota.month) || 0);
+        if (maxUsage >= 80) dot.style.background = '#f85149';
+        else if (maxUsage >= 50) dot.style.background = '#d29922';
+        else dot.style.background = '#2ea043';
+      }
+
+      lastQuota = quota;
+    }
+
+    function refreshQuota() {
+      fetchQuota().then(function (quota) {
+        if (quota) updateDisplay(quota);
+      });
+    }
+
+    function init() {
+      // Don't inject if user explicitly hid it this session
+      var hidden = false;
+      try { hidden = sessionStorage.getItem('oc_toggle_hidden') === '1'; } catch (e) {}
+      if (!hidden) injectToggle();
+      refreshQuota();
+      setInterval(refreshQuota, REFRESH_INTERVAL);
+      console.log(TAG, 'GO_TOGGLE initialized');
+    }
+
+    return { init: init, refreshQuota: refreshQuota };
+  })();
+
+  // ════════════════════════════════════════════════════════════
+  //  Main entry
+  // ════════════════════════════════════════════════════════════
+
   function init() {
     if (isOpencodeAi && getSetting('goPanel', true)) {
       GO_MODULE.init();
     }
     if (isLocalWeb) {
+      if (getSetting('goPanel', true)) {
+        GO_TOGGLE.init();
+      }
       if (getSetting('tabCycle', true)) {
         if (document.readyState === 'loading') {
           document.addEventListener('DOMContentLoaded', TAB_MODULE.init);
