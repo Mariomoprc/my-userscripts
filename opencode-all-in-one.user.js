@@ -968,22 +968,15 @@
 
     function getModelLabel(models) {
       if (!models || !models.length) return 'Go';
-      var top = models[0];
-      var tied = models.filter(function (m) { return m.reqMonth === top.reqMonth; });
-      if (tied.length > 1) {
-        return tied[0].name + ' +' + (tied.length - 1);
-      }
-      return top.name;
+      var top2 = models.slice(0, 2);
+      return top2.map(function (m) { return m.name; }).join(' · ');
     }
 
     function getModelTooltip(models) {
       if (!models || !models.length) return '';
-      var top = models[0];
-      var tied = models.filter(function (m) { return m.reqMonth === top.reqMonth; });
-      if (tied.length > 1) {
-        return tied.map(function (m) { return m.name + ' (' + formatNum(m.reqMonth) + '/月)'; }).join('\n');
-      }
-      return top.name + ' ' + formatNum(top.req5h) + '/5h ' + (top.usage ? top.usage + 'x' : '');
+      return models.slice(0, 3).map(function (m) {
+        return m.name + ' (' + formatNum(m.reqMonth) + '/月)';
+      }).join('\n');
     }
 
     function formatNum(n) {
@@ -998,7 +991,7 @@
 
       var btn = document.createElement('div');
       btn.id = 'oc-go-toggle-bar';
-      btn.style.cssText = 'display:flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;cursor:pointer;transition:background .15s;font-size:11px;white-space:nowrap;user-select:none;background:rgba(255,255,255,.06);';
+      btn.style.cssText = 'display:flex;align-items:center;gap:3px;padding:1px 6px;border-radius:4px;cursor:pointer;transition:background .15s;font-size:10px;white-space:nowrap;user-select:none;background:rgba(255,255,255,.04);';
       btn.innerHTML =
         '<span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:#888;"></span>' +
         '<span id="oc-go-toggle-name" style="color:#888;">Go</span>';
