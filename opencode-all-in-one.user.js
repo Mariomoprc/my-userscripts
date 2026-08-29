@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.5.3
+// @version      1.5.5
 // @description  OpenCode 全站增强：Go 模型额度面板 + 顶部额度开关 + Tab 切换代理 + 粘贴图片 + 选项键盘导航
 // @author       pass
 // @match        https://opencode.ai/*
@@ -506,7 +506,7 @@
       footer.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid #333;font-size:11px;display:flex;justify-content:space-between;align-items:center;';
       footer.innerHTML =
         '<span style="opacity:0.5;">评分 = AA Intelligence Index · 速度 = AA Output Speed · 数据来自 <a href="' + DOCS_URL + '" target="_blank" style="color:#1f6feb;">docs/go</a> + <a href="https://openrouter.ai/models" target="_blank" style="color:#1f6feb;">OpenRouter</a></span>' +
-        '<span style="opacity:0.5;">v1.5.3</span>';
+        '<span style="opacity:0.5;">v1.5.5</span>';
       panel.appendChild(footer);
 
       var contentEls = [stats, controls, tableWrap, zenSection, footer];
