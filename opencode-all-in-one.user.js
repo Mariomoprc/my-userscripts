@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.1
+// @version      1.2
 // @description  OpenCode 全站增强：Go 模型额度面板（评分/模态/上下文/建议/Zen免费模型）+ Tab 切换代理 + 粘贴图片
 // @author       pass
 // @match        https://opencode.ai/*
@@ -129,30 +129,30 @@
     };
 
     var MODEL_META = {
-      'grok-4.6':                { context: 500000, modalities: ['text'],                reasoning: true,  country: '美国', cap: 9 },
-      'gpt-5.6-luna':            { context: 1050000, modalities: ['text'],               reasoning: false, country: '美国', cap: 10 },
-      'glm-5.3-flash':           { context: 1000000, modalities: ['text', 'image'],      reasoning: false, country: '中国', cap: 5 },
-      'glm-5.3':                 { context: 1000000, modalities: ['text'],               reasoning: true,  country: '中国', cap: 7 },
-      'glm-5.2':                 { context: 1000000, modalities: ['text'],               reasoning: true,  country: '中国', cap: 6 },
-      'glm-5.1':                 { context: 202000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 5 },
-      'kimi-k3':                 { context: 1000000, modalities: ['text'],               reasoning: true,  country: '中国', cap: 8 },
-      'kimi-k2.7-code':          { context: 256000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 6 },
-      'kimi-k2.6':               { context: 256000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 5 },
-      'longcat-2.0':             { context: 1000000, modalities: ['text'],               reasoning: false, country: '中国', cap: 4 },
-      'mimo-v2.5':               { context: 1000000, modalities: ['text', 'image', 'audio', 'video'], reasoning: true, country: '中国', cap: 7 },
-      'mimo-v2.5-pro':           { context: 256000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 6 },
-      'minimax-m3':              { context: 1000000, modalities: ['text', 'image'],      reasoning: false, country: '中国', cap: 6 },
-      'minimax-m2.7':            { context: 205000, modalities: ['text', 'image'],       reasoning: false, country: '中国', cap: 5 },
-      'muse-spark-1.2-contributor': { context: 1000000, modalities: ['text', 'image'],   reasoning: false, country: '美国', cap: 4 },
-      'qwen3.8-max':             { context: 1000000, modalities: ['text'],               reasoning: true,  country: '中国', cap: 8 },
-      'qwen3.8-flash':           { context: 1000000, modalities: ['text'],               reasoning: true,  country: '中国', cap: 6 },
-      'qwen3.7-max':             { context: 1000000, modalities: ['text'],               reasoning: true,  country: '中国', cap: 7 },
-      'qwen3.7-plus':            { context: 256000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 6 },
-      'qwen3.6-plus':            { context: 256000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 6 },
-      'deepseek-v4-pro':         { context: 1000000, modalities: ['text'],               reasoning: true,  country: '中国', cap: 9 },
-      'deepseek-v4-flash':       { context: 1000000, modalities: ['text'],               reasoning: true,  country: '中国', cap: 7 },
-      'deepseek-v4-flash-vision-exp': { context: 1000000, modalities: ['text', 'image'], reasoning: true,  country: '中国', cap: 7 },
-      'hy3':                     { context: 256000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 5 }
+      'grok-4.6':                { context: 500000, modalities: ['text'],                reasoning: true,  country: '美国', cap: 9, aaScore: 60.9 },
+      'gpt-5.6-luna':            { context: 1050000, modalities: ['text'],               reasoning: false, country: '美国', cap: 10, aaScore: 52.3 },
+      'glm-5.3-flash':           { context: 1000000, modalities: ['text', 'image'],      reasoning: false, country: '中国', cap: 5, aaScore: 57.5 },
+      'glm-5.3':                 { context: 1000000, modalities: ['text'],               reasoning: true,  country: '中国', cap: 7, aaScore: 59.5 },
+      'glm-5.2':                 { context: 1000000, modalities: ['text'],               reasoning: true,  country: '中国', cap: 6, aaScore: 52.6 },
+      'glm-5.1':                 { context: 202000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 5, aaScore: 41.0 },
+      'kimi-k3':                 { context: 1000000, modalities: ['text'],               reasoning: true,  country: '中国', cap: 8, aaScore: 59.7 },
+      'kimi-k2.7-code':          { context: 256000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 6, aaScore: 43.0 },
+      'kimi-k2.6':               { context: 256000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 5, aaScore: 45.1 },
+      'longcat-2.0':             { context: 1000000, modalities: ['text'],               reasoning: false, country: '中国', cap: 4, aaScore: 34.0 },
+      'mimo-v2.5':               { context: 1000000, modalities: ['text', 'image', 'audio', 'video'], reasoning: true, country: '中国', cap: 7, aaScore: 38.0 },
+      'mimo-v2.5-pro':           { context: 256000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 6, aaScore: 42.9 },
+      'minimax-m3':              { context: 1000000, modalities: ['text', 'image'],      reasoning: false, country: '中国', cap: 6, aaScore: 45.4 },
+      'minimax-m2.7':            { context: 205000, modalities: ['text', 'image'],       reasoning: false, country: '中国', cap: 5, aaScore: 38.9 },
+      'muse-spark-1.2-contributor': { context: 1000000, modalities: ['text', 'image'],   reasoning: false, country: '美国', cap: 4, aaScore: 56.8 },
+      'qwen3.8-max':             { context: 1000000, modalities: ['text'],               reasoning: true,  country: '中国', cap: 8, aaScore: 58.1 },
+      'qwen3.8-flash':           { context: 1000000, modalities: ['text'],               reasoning: true,  country: '中国', cap: 6, aaScore: 55.8 },
+      'qwen3.7-max':             { context: 1000000, modalities: ['text'],               reasoning: true,  country: '中国', cap: 7, aaScore: 46.7 },
+      'qwen3.7-plus':            { context: 256000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 6, aaScore: 39.4 },
+      'qwen3.6-plus':            { context: 256000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 6, aaScore: 40.5 },
+      'deepseek-v4-pro':         { context: 1000000, modalities: ['text'],               reasoning: true,  country: '中国', cap: 9, aaScore: 53.2 },
+      'deepseek-v4-flash':       { context: 1000000, modalities: ['text'],               reasoning: true,  country: '中国', cap: 7, aaScore: 51.8 },
+      'deepseek-v4-flash-vision-exp': { context: 1000000, modalities: ['text', 'image'], reasoning: true,  country: '中国', cap: 7, aaScore: 52.0 },
+      'hy3':                     { context: 256000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 5, aaScore: 42.2 }
     };
 
     var ZEN_FREE_META = {
@@ -300,13 +300,17 @@
           m.country = meta.country || '';
           m.cap = meta.cap || 5;
           m.context = meta.context || 128000;
+          m.aaScore = meta.aaScore || 0;
         }
         var or = lookupOpenRouter(orData, m.modelId);
         if (or) {
           if (or.context) m.context = or.context;
           if (or.score) m.score = Math.round(or.score);
         }
-        if (!m.score) m.score = computeScore(m);
+        if (!m.score) {
+          if (m.aaScore) m.score = Math.round(m.aaScore);
+          else m.score = computeScore(m);
+        }
         m.suggest = computeSuggest(m);
       });
       if (apiModels && apiModels.length) {
@@ -315,13 +319,16 @@
         apiModels.forEach(function (m) {
           if (m.id && !docsIds[m.id]) {
             var meta = MODEL_META[m.id] || {};
-            var entry = { name: m.id, modelId: m.id, req5h: 0, reqWeek: 0, reqMonth: 0, input: 0, output: 0, usage: 0, context: meta.context || 128000, modalities: meta.modalities || ['text'], reasoning: meta.reasoning || false, country: meta.country || '', cap: meta.cap || 5, score: 0, suggest: '', isNew: true };
+            var entry = { name: m.id, modelId: m.id, req5h: 0, reqWeek: 0, reqMonth: 0, input: 0, output: 0, usage: 0, context: meta.context || 128000, modalities: meta.modalities || ['text'], reasoning: meta.reasoning || false, country: meta.country || '', cap: meta.cap || 5, aaScore: meta.aaScore || 0, score: 0, suggest: '', isNew: true };
             var or = lookupOpenRouter(orData, m.id);
             if (or) {
               if (or.context) entry.context = or.context;
               if (or.score) entry.score = Math.round(or.score);
             }
-            if (!entry.score) entry.score = computeScore(entry);
+            if (!entry.score) {
+              if (entry.aaScore) entry.score = Math.round(entry.aaScore);
+              else entry.score = computeScore(entry);
+            }
             entry.suggest = computeSuggest(entry);
             map[m.id] = entry;
           }
@@ -494,7 +501,7 @@
       footer.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid #333;font-size:11px;display:flex;justify-content:space-between;align-items:center;';
       footer.innerHTML =
         '<span style="opacity:0.5;">评分 = AA Intelligence Index · 数据来自 <a href="' + DOCS_URL + '" target="_blank" style="color:#1f6feb;">docs/go</a> + <a href="https://openrouter.ai/models" target="_blank" style="color:#1f6feb;">OpenRouter</a></span>' +
-        '<span style="opacity:0.5;">v1.1</span>';
+        '<span style="opacity:0.5;">v1.2</span>';
       panel.appendChild(footer);
 
       var contentEls = [stats, controls, tableWrap, zenSection, footer];
