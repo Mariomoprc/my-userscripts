@@ -953,6 +953,10 @@
     var lastModelText = '';
     var quotaEl = null;
 
+    // Local copies of functions (GO_MODULE's are not accessible)
+    function norm(name) { return (name || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+    function parseNum(s) { if (!s || s === '-') return 0; return Number(s.replace(/[$,]/g, '')) || 0; }
+
     function fetchQuotaMap() {
       return new Promise(function (resolve) {
         // Use GM.xmlhttpRequest to bypass CORS
