@@ -811,6 +811,9 @@
   })();
 
   var QUESTION_MODULE = (function () {
+    var ENTER_DEBOUNCE = 180;
+    var lastEnter = 0;
+
     function findDock() {
       return document.querySelector('[data-component="session-question-dock"]');
     }
@@ -828,12 +831,19 @@
              dock.querySelector('[data-slot="question-footer-actions"] button:last-child');
     }
     function isVisible(el) {
-      return el && el.offsetParent !== null;
+      if (!el) return false;
+      var s = getComputedStyle(el);
+      return s.display !== 'none' && s.visibility !== 'hidden' && el.getClientRects().length > 0;
+    }
+    function isCustomInputFocused() {
+      var el = document.activeElement;
+      return !!el && !!el.closest('[data-slot="question-custom-input"]');
     }
     function init() {
       document.addEventListener('keydown', function (e) {
         var dock = findDock();
         if (!dock || !isVisible(dock)) return;
+        if (e.isComposing || e.keyCode === 229) return;
         var options = findOptions();
         if (!options.length) return;
 
@@ -848,12 +858,43 @@
         }
 
         if (e.key === 'Enter') {
-          var submitBtn = findSubmitBtn();
-          if (submitBtn) {
+          if (isCustomInputFocused()) return;
+          var active = document.activeElement;
+          var inOptions = active && active.closest('[data-slot="question-options"]');
+          var isMulti = inOptions && active.getAttribute('role') === 'checkbox';
+          if (inOptions) {
+            active.click();
+            if (isMulti) {
+              e.preventDefault();
+              e.stopPropagation();
+              return;
+            }
             e.preventDefault();
             e.stopPropagation();
-            submitBtn.click();
+            var now = Date.now();
+            if (now - lastEnter < 180) return;
+            lastEnter = now;
+            setTimeout(function () {
+              var sb = findSubmitBtn();
+              if (sb) sb.click();
+            }, 30);
+            return;
           }
+          var picked = dock.querySelector('[data-slot="question-option"][data-picked="true"]');
+          if (!picked) {
+            if (options.length) options[0].focus();
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+          var submitBtn = findSubmitBtn();
+          if (!submitBtn) return;
+          var now2 = Date.now();
+          if (now2 - lastEnter < 180) return;
+          lastEnter = now2;
+          e.preventDefault();
+          e.stopPropagation();
+          submitBtn.click();
           return;
         }
 
