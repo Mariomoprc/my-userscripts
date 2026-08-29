@@ -954,20 +954,49 @@
     var quotaEl = null;
 
     function fetchQuotaMap() {
-      return fetch('https://opencode.ai/docs/go/', { credentials: 'omit' })
-        .then(function (r) { return r.ok ? r.text() : null; })
-        .catch(function () { return null; })
-        .then(function (html) {
-          if (!html) return;
-          var tables = GO_MODULE.__parseTables(html);
-          if (!tables || !tables.requests) return;
-          tables.requests.forEach(function (r) {
-            var name = (r[0] || '').trim();
-            var n = norm(name);
-            if (n) quotaMap[n] = { name: name, req5h: parseNum(r[1]), reqMonth: parseNum(r[3]), usage: parseNum(r[5]) };
+      return new Promise(function (resolve) {
+        // Use GM.xmlhttpRequest to bypass CORS
+        try {
+          GM.xmlhttpRequest({
+            method: 'GET',
+            url: 'https://opencode.ai/docs/go/',
+            onload: function (res) {
+              if (res.status !== 200) { resolve(); return; }
+              var html = res.responseText;
+              var tables = GO_MODULE.__parseTables(html);
+              if (!tables || !tables.requests) { resolve(); return; }
+              tables.requests.forEach(function (r) {
+                var name = (r[0] || '').trim();
+                var n = norm(name);
+                if (n) quotaMap[n] = { name: name, req5h: parseNum(r[1]), reqMonth: parseNum(r[3]), usage: parseNum(r[5]) };
+              });
+              console.log(TAG, 'Quota map loaded:', Object.keys(quotaMap).length, 'models');
+              resolve();
+            },
+            onerror: function () {
+              console.log(TAG, 'Quota fetch failed');
+              resolve();
+            }
           });
-          console.log(TAG, 'Quota map loaded:', Object.keys(quotaMap).length, 'models');
-        });
+        } catch (e) {
+          // Fallback to fetch if GM.xmlhttpRequest not available
+          fetch('https://opencode.ai/docs/go/', { credentials: 'omit' })
+            .then(function (r) { return r.ok ? r.text() : null; })
+            .catch(function () { return null; })
+            .then(function (html) {
+              if (!html) { resolve(); return; }
+              var tables = GO_MODULE.__parseTables(html);
+              if (!tables || !tables.requests) { resolve(); return; }
+              tables.requests.forEach(function (r) {
+                var name = (r[0] || '').trim();
+                var n = norm(name);
+                if (n) quotaMap[n] = { name: name, req5h: parseNum(r[1]), reqMonth: parseNum(r[3]), usage: parseNum(r[5]) };
+              });
+              console.log(TAG, 'Quota map loaded (fetch):', Object.keys(quotaMap).length, 'models');
+              resolve();
+            });
+        }
+      });
     }
 
     function findModelSelector() {
