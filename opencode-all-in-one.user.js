@@ -949,7 +949,6 @@
   // ════════════════════════════════════════════════════════════
 
   var GO_TOGGLE = (function () {
-    var topModels = null;
 
     function fetchTopModels() {
       return fetch('https://opencode.ai/docs/go/', { credentials: 'omit' })
@@ -967,13 +966,29 @@
         });
     }
 
-    function getModelName(models) {
-      if (!models || !models.length) return null;
+    function getModelLabel(models) {
+      if (!models || !models.length) return 'Go';
       var top = models[0];
       var tied = models.filter(function (m) { return m.reqMonth === top.reqMonth; });
-      return tied.length > 1
-        ? tied.slice(0, 2).map(function (m) { return m.name; }).join(' / ')
-        : top.name;
+      if (tied.length > 1) {
+        return tied[0].name + ' +' + (tied.length - 1);
+      }
+      return top.name;
+    }
+
+    function getModelTooltip(models) {
+      if (!models || !models.length) return '';
+      var top = models[0];
+      var tied = models.filter(function (m) { return m.reqMonth === top.reqMonth; });
+      if (tied.length > 1) {
+        return tied.map(function (m) { return m.name + ' (' + formatNum(m.reqMonth) + '/月)'; }).join('\n');
+      }
+      return top.name + ' ' + formatNum(top.req5h) + '/5h ' + (top.usage ? top.usage + 'x' : '');
+    }
+
+    function formatNum(n) {
+      if (n >= 1000) return (n / 1000).toFixed(0) + 'K';
+      return String(n);
     }
 
     function injectToggle() {
@@ -992,22 +1007,34 @@
       btn.addEventListener('mouseleave', function () { btn.style.background = 'rgba(255,255,255,.06)'; });
       btn.addEventListener('click', function () {
         var panel = document.getElementById('oc-go-panel');
-        if (panel) { panel.remove(); var b = document.getElementById('oc-go-backdrop'); if (b) b.remove(); }
-        else { GO_MODULE.loadAndInject(false); }
+        if (panel) {
+          panel.remove();
+          var b = document.getElementById('oc-go-backdrop');
+          if (b) b.remove();
+        } else {
+          GO_MODULE.loadAndInject(false);
+        }
+        refreshToggle();
       });
       mount.appendChild(btn);
     }
 
+    function updateToggle(models) {
+      var nameEl = document.getElementById('oc-go-toggle-name');
+      var barEl = document.getElementById('oc-go-toggle-bar');
+      if (nameEl) nameEl.textContent = getModelLabel(models);
+      if (barEl) barEl.title = getModelTooltip(models);
+    }
+
+    function refreshToggle() {
+      fetchTopModels().then(function (models) {
+        if (models) updateToggle(models);
+      });
+    }
+
     function init() {
       injectToggle();
-      fetchTopModels().then(function (models) {
-        var name = getModelName(models);
-        if (name) {
-          var el = document.getElementById('oc-go-toggle-name');
-          if (el) el.textContent = name;
-          console.log(TAG, 'Toggle updated:', name);
-        }
-      });
+      refreshToggle();
       console.log(TAG, 'GO_TOGGLE initialized');
     }
 
