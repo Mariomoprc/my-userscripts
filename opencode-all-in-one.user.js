@@ -863,8 +863,20 @@
           // Custom input: Shift+Enter newline, Enter submits if has text
           if (isCustomInputFocused(e.target)) {
             if (e.shiftKey || e.ctrlKey) return;
-            var customTa = (e.target && e.target.tagName === 'TEXTAREA') ? e.target :
-                           (document.activeElement && document.activeElement.tagName === 'TEXTAREA') ? document.activeElement : null;
+            // Find the textarea (may not be focused yet if user is on the button/form)
+            var customTa = null;
+            if (e.target && e.target.tagName === 'TEXTAREA') customTa = e.target;
+            else if (document.activeElement && document.activeElement.tagName === 'TEXTAREA') customTa = document.activeElement;
+            else {
+              // Focus is on the custom option button/form, not the textarea yet
+              var taInDock = dock.querySelector('[data-slot="question-custom-input"]');
+              if (taInDock) {
+                e.preventDefault();
+                e.stopPropagation();
+                taInDock.focus();
+                return;
+              }
+            }
             if (!customTa || !customTa.value.trim()) return;
             var sbCustom = findSubmitBtn();
             if (sbCustom) {
@@ -986,7 +998,7 @@
 
       var btn = document.createElement('div');
       btn.id = 'oc-go-toggle-bar';
-      btn.style.cssText = 'position:fixed;bottom:16px;right:16px;z-index:9999;display:flex;align-items:center;gap:6px;padding:6px 14px;border-radius:8px;cursor:pointer;transition:all .15s;font-size:12px;color:#888;white-space:nowrap;user-select:none;background:rgba(30,30,30,.85);border:1px solid #333;backdrop-filter:blur(8px);box-shadow:0 2px 8px rgba(0,0,0,.3);';
+      btn.style.cssText = 'position:fixed;top:4px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;align-items:center;gap:6px;padding:4px 14px;border-radius:20px;cursor:pointer;transition:all .15s;font-size:12px;color:#888;white-space:nowrap;user-select:none;background:rgba(30,30,30,.85);border:1px solid #333;backdrop-filter:blur(8px);box-shadow:0 2px 8px rgba(0,0,0,.3);';
       btn.innerHTML =
         '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#555;" id="oc-go-toggle-dot"></span>' +
         '<span id="oc-go-toggle-model" style="color:#ccc;font-weight:600;">Go</span>' +
