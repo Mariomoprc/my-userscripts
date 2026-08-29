@@ -996,19 +996,25 @@
     function injectToggle() {
       if (document.getElementById('oc-go-toggle-bar')) return;
 
+      var mount = document.getElementById('opencode-titlebar-right');
+      if (!mount) {
+        // Retry after 1 second if mount not ready
+        setTimeout(function () { injectToggle(); }, 1000);
+        return;
+      }
+
       var btn = document.createElement('div');
       btn.id = 'oc-go-toggle-bar';
-      btn.style.cssText = 'position:fixed;top:4px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;align-items:center;gap:6px;padding:4px 14px;border-radius:20px;cursor:pointer;transition:all .15s;font-size:12px;color:#888;white-space:nowrap;user-select:none;background:rgba(30,30,30,.85);border:1px solid #333;backdrop-filter:blur(8px);box-shadow:0 2px 8px rgba(0,0,0,.3);';
+      btn.style.cssText = 'display:flex;align-items:center;gap:5px;padding:2px 10px;border-radius:6px;cursor:pointer;transition:background .15s;font-size:12px;color:#888;white-space:nowrap;user-select:none;background:rgba(255,255,255,.06);';
       btn.innerHTML =
-        '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#555;" id="oc-go-toggle-dot"></span>' +
-        '<span id="oc-go-toggle-model" style="color:#ccc;font-weight:600;">Go</span>' +
-        '<span id="oc-go-toggle-usage" style="color:#666;font-size:11px;">-</span>' +
-        '<span id="oc-go-toggle-close" title="隐藏" style="margin-left:4px;color:#555;font-size:14px;line-height:1;">\u00D7</span>';
+        '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#555;" id="oc-go-toggle-dot"></span>' +
+        '<span id="oc-go-toggle-model" style="color:#ccc;font-weight:600;font-size:11px;">Go</span>' +
+        '<span id="oc-go-toggle-usage" style="color:#666;font-size:10px;">-</span>' +
+        '<span id="oc-go-toggle-close" title="\u9690\u85CF" style="margin-left:2px;color:#555;font-size:12px;line-height:1;cursor:pointer;">\u00D7</span>';
 
-      btn.addEventListener('mouseenter', function () { btn.style.borderColor = '#555'; });
-      btn.addEventListener('mouseleave', function () { btn.style.borderColor = '#333'; });
+      btn.addEventListener('mouseenter', function () { btn.style.background = 'rgba(255,255,255,.12)'; });
+      btn.addEventListener('mouseleave', function () { btn.style.background = 'rgba(255,255,255,.06)'; });
 
-      // Click main area to open panel
       btn.addEventListener('click', function (e) {
         if (e.target.id === 'oc-go-toggle-close') return;
         var panel = document.getElementById('oc-go-panel');
@@ -1021,16 +1027,14 @@
         }
       });
 
-      // Close button hides toggle bar
-      var closeBtn = btn.querySelector('#oc-go-toggle-close');
-      closeBtn.addEventListener('click', function (e) {
+      btn.querySelector('#oc-go-toggle-close').addEventListener('click', function (e) {
         e.stopPropagation();
         btn.remove();
         try { sessionStorage.setItem('oc_toggle_hidden', '1'); } catch (ex) {}
       });
 
-      document.body.appendChild(btn);
-      console.log(TAG, 'Toggle bar injected (fixed)');
+      mount.appendChild(btn);
+      console.log(TAG, 'Toggle bar injected (titlebar)');
     }
 
     function updateDisplay(quota) {
