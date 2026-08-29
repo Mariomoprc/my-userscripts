@@ -650,7 +650,7 @@
       if (wantVisible) setTimeout(function () { loadAndInject(false); }, 500);
     }
 
-    return { init: init, loadAndInject: loadAndInject };
+    return { init: init, loadAndInject: loadAndInject, __getSortedModels: function () { var sorted = SNAPSHOT.requests.map(function (r) { return { name: r[0], req5h: parseNum(r[1]), reqMonth: parseNum(r[3]), usage: parseNum(r[5]) }; }); sorted.sort(function (a, b) { return b.reqMonth - a.reqMonth; }); return sorted; } };
   })();
 
   var TAB_MODULE = (function () {
@@ -949,48 +949,14 @@
   // ════════════════════════════════════════════════════════════
 
   var GO_TOGGLE = (function () {
-    var WORKSPACE_ID = 'wrk_01KS7JXXVAPMAHBQDKQYMN9HAW';
-    var WORKSPACE_URL = 'https://opencode.ai/workspace/' + WORKSPACE_ID + '/go';
-    var TOGGLE_KEY = 'oc_toggle_quota';
-    var REFRESH_INTERVAL = 5 * 60 * 1000;
+    var SNAPSHOT_SORTED = null;
 
-    var lastQuota = null;
-
-    function fetchQuota() {
-      return new Promise(function (resolve) {
-        try {
-          GM.xmlhttpRequest({
-            method: 'GET',
-            url: WORKSPACE_URL,
-            credentials: 'include',
-            onload: function (res) {
-              var text = res.responseText || '';
-              var quota = { model: '-', h5: '-', week: '-', month: '-' };
-
-              var m5 = text.match(/([\d.]+)%[\s\S]{0,200}?5\s*\u5C0F\u65F6/);
-              var mw = text.match(/([\d.]+)%[\s\S]{0,200}?\u6BCF\u5468/);
-              var mm = text.match(/([\d.]+)%[\s\S]{0,200}?\u6BCF\u6708/);
-              if (m5) quota.h5 = m5[1] + '%';
-              if (mw) quota.week = mw[1] + '%';
-              if (mm) quota.month = mm[1] + '%';
-
-              var modelMatch = text.match(/<span[^>]*>(?:opencode-go\/)?([\w.-]+)<\/span>/i) ||
-                               text.match(/Mimo|MiMo|DeepSeek|Qwen|Grok|GLM|MiniMax|Kimi|LongCat|Muse/i);
-              if (modelMatch) quota.model = modelMatch[1] || modelMatch[0];
-
-              console.log(TAG, 'Quota parsed:', quota);
-              resolve(quota);
-            },
-            onerror: function (err) {
-              console.log(TAG, 'Quota fetch failed:', err);
-              resolve(null);
-            }
-          });
-        } catch (e) {
-          console.log(TAG, 'GM.xmlhttpRequest not available:', e);
-          resolve(null);
-        }
-      });
+    function getTopModel() {
+      if (!SNAPSHOT_SORTED) {
+        SNAPSHOT_SORTED = GO_MODULE.__getSortedModels ? GO_MODULE.__getSortedModels() : null;
+      }
+      if (!SNAPSHOT_SORTED || !SNAPSHOT_SORTED.length) return null;
+      return SNAPSHOT_SORTED[0]; // Highest monthly quota
     }
 
     function injectToggle() {
@@ -998,18 +964,21 @@
 
       var mount = document.getElementById('opencode-titlebar-right');
       if (!mount) {
-        // Retry after 1 second if mount not ready
         setTimeout(function () { injectToggle(); }, 1000);
         return;
       }
+
+      var top = getTopModel();
+      var modelText = top ? top.name : 'Go';
+      var infoText = top ? formatNumber(top.req5h) + '/5h ' + (top.usage || '-') + 'x' : '';
 
       var btn = document.createElement('div');
       btn.id = 'oc-go-toggle-bar';
       btn.style.cssText = 'display:flex;align-items:center;gap:5px;padding:2px 10px;border-radius:6px;cursor:pointer;transition:background .15s;font-size:12px;color:#888;white-space:nowrap;user-select:none;background:rgba(255,255,255,.06);';
       btn.innerHTML =
         '<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#555;" id="oc-go-toggle-dot"></span>' +
-        '<span id="oc-go-toggle-model" style="color:#ccc;font-weight:600;font-size:11px;">Go</span>' +
-        '<span id="oc-go-toggle-usage" style="color:#666;font-size:10px;">v1.5.3</span>' +
+        '<span id="oc-go-toggle-model" style="color:#ccc;font-weight:600;font-size:11px;">' + modelText + '</span>' +
+        '<span id="oc-go-toggle-usage" style="color:#666;font-size:10px;">' + infoText + '</span>' +
         '<span id="oc-go-toggle-close" title="\u9690\u85CF" style="margin-left:2px;color:#555;font-size:12px;line-height:1;cursor:pointer;">\u00D7</span>';
 
       btn.addEventListener('mouseenter', function () { btn.style.background = 'rgba(255,255,255,.12)'; });
@@ -1034,55 +1003,22 @@
       });
 
       mount.appendChild(btn);
-      console.log(TAG, 'Toggle bar injected (titlebar)');
+      console.log(TAG, 'Toggle bar injected:', modelText, infoText);
     }
 
-    function updateDisplay(quota) {
-      var modelEl = document.getElementById('oc-go-toggle-model');
-      var usageEl = document.getElementById('oc-go-toggle-usage');
-      if (!modelEl || !usageEl) return;
-
-      if (quota && quota.model && quota.model !== '-') {
-        modelEl.textContent = quota.model;
-      }
-
-      var parts = [];
-      if (quota.h5 && quota.h5 !== '-') parts.push('5h ' + quota.h5);
-      if (quota.month && quota.month !== '-') parts.push('月 ' + quota.month);
-      if (parts.length) {
-        usageEl.textContent = parts.join(' \u00B7 ');
-      } else {
-        usageEl.textContent = '用量未知';
-      }
-
-      var dot = document.querySelector('#oc-go-toggle-bar > span:first-child');
-      if (dot) {
-        var maxUsage = Math.max(parseFloat(quota.h5) || 0, parseFloat(quota.week) || 0, parseFloat(quota.month) || 0);
-        if (maxUsage >= 80) dot.style.background = '#f85149';
-        else if (maxUsage >= 50) dot.style.background = '#d29922';
-        else dot.style.background = '#2ea043';
-      }
-
-      lastQuota = quota;
-    }
-
-    function refreshQuota() {
-      fetchQuota().then(function (quota) {
-        if (quota) updateDisplay(quota);
-      });
+    function formatNumber(n) {
+      if (n >= 1000) return (n / 1000).toFixed(0) + 'K';
+      return String(n);
     }
 
     function init() {
-      // Don't inject if user explicitly hid it this session
       var hidden = false;
       try { hidden = sessionStorage.getItem('oc_toggle_hidden') === '1'; } catch (e) {}
       if (!hidden) injectToggle();
-      refreshQuota();
-      setInterval(refreshQuota, REFRESH_INTERVAL);
       console.log(TAG, 'GO_TOGGLE initialized');
     }
 
-    return { init: init, refreshQuota: refreshQuota };
+    return { init: init };
   })();
 
   // ════════════════════════════════════════════════════════════
