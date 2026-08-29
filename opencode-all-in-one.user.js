@@ -945,90 +945,122 @@
   })();
 
   // ════════════════════════════════════════════════════════════
-  //  顶部额度开关模块 (local web only)
+  //  模型选择器旁额度显示模块 (local web only)
   // ════════════════════════════════════════════════════════════
 
-  var GO_TOGGLE = (function () {
+  var MODEL_QUOTA = (function () {
+    var quotaMap = {};
+    var lastModelText = '';
+    var quotaEl = null;
 
-    function fetchTopModels() {
+    function fetchQuotaMap() {
       return fetch('https://opencode.ai/docs/go/', { credentials: 'omit' })
         .then(function (r) { return r.ok ? r.text() : null; })
         .catch(function () { return null; })
         .then(function (html) {
-          if (!html) return null;
+          if (!html) return;
           var tables = GO_MODULE.__parseTables(html);
-          if (!tables || !tables.requests || !tables.requests.length) return null;
-          var models = tables.requests.map(function (r) {
-            return { name: r[0], req5h: parseNum(r[1]), reqMonth: parseNum(r[3]), usage: parseNum(r[5]) };
-          }).filter(function (m) { return m.reqMonth > 0; });
-          models.sort(function (a, b) { return b.reqMonth - a.reqMonth; });
-          return models;
+          if (!tables || !tables.requests) return;
+          tables.requests.forEach(function (r) {
+            var name = (r[0] || '').trim();
+            var n = norm(name);
+            if (n) quotaMap[n] = { name: name, req5h: parseNum(r[1]), reqMonth: parseNum(r[3]), usage: parseNum(r[5]) };
+          });
+          console.log(TAG, 'Quota map loaded:', Object.keys(quotaMap).length, 'models');
         });
     }
 
-    function getModelLabel(models) {
-      if (!models || !models.length) return 'Go';
-      var top2 = models.slice(0, 2);
-      return top2.map(function (m) { return m.name; }).join(' · ');
-    }
-
-    function getModelTooltip(models) {
-      if (!models || !models.length) return '';
-      return models.slice(0, 3).map(function (m) {
-        return m.name + ' (' + formatNum(m.reqMonth) + '/月)';
-      }).join('\n');
-    }
-
-    function formatNum(n) {
-      if (n >= 1000) return (n / 1000).toFixed(0) + 'K';
-      return String(n);
-    }
-
-    function injectToggle() {
-      if (document.getElementById('oc-go-toggle-bar')) return;
-      var mount = document.getElementById('opencode-titlebar-right');
-      if (!mount) { setTimeout(injectToggle, 500); return; }
-
-      var btn = document.createElement('div');
-      btn.id = 'oc-go-toggle-bar';
-      btn.style.cssText = 'display:flex;align-items:center;gap:3px;padding:1px 6px;border-radius:4px;cursor:pointer;transition:background .15s;font-size:10px;white-space:nowrap;user-select:none;background:rgba(255,255,255,.04);';
-      btn.innerHTML =
-        '<span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:#888;"></span>' +
-        '<span id="oc-go-toggle-name" style="color:#888;">Go</span>';
-      btn.title = 'Go \u6A21\u578B\u989D\u5EA6';
-      btn.addEventListener('mouseenter', function () { btn.style.background = 'rgba(255,255,255,.12)'; });
-      btn.addEventListener('mouseleave', function () { btn.style.background = 'rgba(255,255,255,.06)'; });
-      btn.addEventListener('click', function () {
-        var panel = document.getElementById('oc-go-panel');
-        if (panel) {
-          panel.remove();
-          var b = document.getElementById('oc-go-backdrop');
-          if (b) b.remove();
-        } else {
-          GO_MODULE.loadAndInject(false);
+    function findModelSelector() {
+      // Find the model selector trigger in the prompt area (bottom bar)
+      // It contains the current model name like "MiMo V2.5"
+      var candidates = document.querySelectorAll('[data-component="prompt-input"] ~ div button, [data-component="prompt-input"] ~ div span');
+      for (var i = 0; i < candidates.length; i++) {
+        var text = candidates[i].textContent.trim();
+        if (text && (text.indexOf('MiMo') !== -1 || text.indexOf('DeepSeek') !== -1 || text.indexOf('Qwen') !== -1 ||
+            text.indexOf('Grok') !== -1 || text.indexOf('GLM') !== -1 || text.indexOf('Muse') !== -1 ||
+            text.indexOf('Free Models') !== -1 || text.indexOf('Auto Router') !== -1)) {
+          return candidates[i];
         }
-        refreshToggle();
-      });
-      mount.appendChild(btn);
+      }
+      // Fallback: find any element with model-like text near the bottom
+      var allText = document.querySelectorAll('span, div, button');
+      for (var j = allText.length - 1; j >= 0; j--) {
+        var el = allText[j];
+        if (el.children.length === 0 || el.children.length <= 2) {
+          var t = el.textContent.trim();
+          if (/^(MiMo|DeepSeek|Qwen|Grok|GLM|Muse|Nemotron|Free Models|Auto Router|OpenCode)/.test(t) && t.length < 60) {
+            return el;
+          }
+        }
+      }
+      return null;
     }
 
-    function updateToggle(models) {
-      var nameEl = document.getElementById('oc-go-toggle-name');
-      var barEl = document.getElementById('oc-go-toggle-bar');
-      if (nameEl) nameEl.textContent = getModelLabel(models);
-      if (barEl) barEl.title = getModelTooltip(models);
+    function getCurrentModelName() {
+      var selector = findModelSelector();
+      if (!selector) return '';
+      return selector.textContent.trim();
     }
 
-    function refreshToggle() {
-      fetchTopModels().then(function (models) {
-        if (models) updateToggle(models);
-      });
+    function updateQuotaDisplay() {
+      var selector = findModelSelector();
+      if (!selector) return;
+
+      var modelName = getCurrentModelName();
+      if (modelName === lastModelText) return;
+      lastModelText = modelName;
+
+      // Remove old quota display
+      if (quotaEl && quotaEl.parentNode) quotaEl.remove();
+      quotaEl = null;
+
+      if (!modelName) return;
+
+      // Find matching quota
+      var n = norm(modelName);
+      var quota = quotaMap[n];
+      if (!quota) {
+        // Try partial match
+        var keys = Object.keys(quotaMap);
+        for (var i = 0; i < keys.length; i++) {
+          if (keys[i].indexOf(n) !== -1 || n.indexOf(keys[i]) !== -1) {
+            quota = quotaMap[keys[i]];
+            break;
+          }
+        }
+      }
+
+      if (!quota) return;
+
+      // Insert quota text after the selector
+      quotaEl = document.createElement('span');
+      quotaEl.style.cssText = 'color:#666;font-size:11px;margin-left:4px;white-space:nowrap;';
+      quotaEl.textContent = '\u00B7 ' + quota.reqMonth.toLocaleString() + '/月';
+
+      if (selector.nextSibling) {
+        selector.parentNode.insertBefore(quotaEl, selector.nextSibling);
+      } else {
+        selector.parentNode.appendChild(quotaEl);
+      }
     }
 
     function init() {
-      injectToggle();
-      refreshToggle();
-      console.log(TAG, 'GO_TOGGLE initialized');
+      // Fetch quota data
+      fetchQuotaMap().then(function () {
+        updateQuotaDisplay();
+      });
+
+      // MutationObserver to detect model changes
+      var observer = new MutationObserver(function () {
+        setTimeout(updateQuotaDisplay, 200);
+      });
+
+      // Observe the whole document for model selector changes
+      if (document.body) {
+        observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+      }
+
+      console.log(TAG, 'MODEL_QUOTA initialized');
     }
 
     return { init: init };
@@ -1044,7 +1076,7 @@
     }
     if (isLocalWeb) {
       if (getSetting('goPanel', true)) {
-        GO_TOGGLE.init();
+        MODEL_QUOTA.init();
       }
       if (getSetting('tabCycle', true)) {
         if (document.readyState === 'loading') {
