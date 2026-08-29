@@ -835,9 +835,10 @@
       var s = getComputedStyle(el);
       return s.display !== 'none' && s.visibility !== 'hidden' && el.getClientRects().length > 0;
     }
-    function isCustomInputFocused() {
-      var el = document.activeElement;
-      return !!el && !!el.closest('[data-slot="question-custom-input"]');
+    function isCustomInputFocused(target) {
+      var el = (target && target.closest && target.closest('[data-slot="question-custom-input"],[data-custom="true"]')) ||
+               (document.activeElement && document.activeElement.closest && document.activeElement.closest('[data-slot="question-custom-input"],[data-custom="true"]'));
+      return !!el;
     }
     function init() {
       document.addEventListener('keydown', function (e) {
@@ -858,7 +859,20 @@
         }
 
         if (e.key === 'Enter') {
-          if (isCustomInputFocused()) return;
+          // Custom input: Shift+Enter newline, Enter submits custom answer
+          if (isCustomInputFocused(e.target)) {
+            if (e.shiftKey || e.ctrlKey) return;
+            var sbCustom = findSubmitBtn();
+            if (sbCustom) {
+              e.preventDefault();
+              e.stopPropagation();
+              var nowC = Date.now();
+              if (nowC - lastEnter < ENTER_DEBOUNCE) return;
+              lastEnter = nowC;
+              sbCustom.click();
+            }
+            return;
+          }
           var active = document.activeElement;
           var inOptions = active && active.closest('[data-slot="question-options"]');
           var isMulti = inOptions && active.getAttribute('role') === 'checkbox';
