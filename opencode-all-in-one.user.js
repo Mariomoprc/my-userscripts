@@ -261,9 +261,9 @@
         var header = (t.match(/<thead>([\s\S]*?)<\/thead>/) || ['', ''])[1];
         var ths = (header.match(/<th[^>]*>([\s\S]*?)<\/th>/g) || []).map(function (h) { return h.replace(/<[^>]+>/g, '').trim().toLowerCase(); });
         var joined = ths.join('|');
-        if (joined.indexOf('requests per 5') !== -1) requests = rows(t);
-        else if (joined.indexOf('input') !== -1 && joined.indexOf('output') !== -1 && joined.indexOf('usage') !== -1) prices = rows(t);
-        else if (joined.indexOf('model id') !== -1) endpoints = rows(t);
+        if (joined.indexOf('requests per 5') !== -1 || joined.indexOf('\u6BCF 5 \u5C0F\u65F6') !== -1 || joined.indexOf('\u8BF7\u6C42\u6570') !== -1) requests = rows(t);
+        else if ((joined.indexOf('input') !== -1 && joined.indexOf('output') !== -1 && joined.indexOf('usage') !== -1) || (joined.indexOf('\u8F93\u5165') !== -1 && joined.indexOf('\u8F93\u51FA') !== -1 && joined.indexOf('\u4F7F\u7528\u989D\u5EA6') !== -1)) prices = rows(t);
+        else if (joined.indexOf('model id') !== -1 || joined.indexOf('\u6A21\u578B id') !== -1 || joined.indexOf('\u7AEF\u70B9') !== -1) endpoints = rows(t);
       });
       return { requests: requests, prices: prices, endpoints: endpoints };
     }
