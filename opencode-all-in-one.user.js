@@ -1074,9 +1074,10 @@
       quotaEl.style.cssText = 'color:#666;font-size:11px;margin-left:4px;white-space:nowrap;';
       quotaEl.textContent = '\u00B7 ' + quota.reqMonth.toLocaleString() + '/月';
 
-      // Insert after the trigger button
-      if (selector.nextSibling) {
-        selector.parentNode.insertBefore(quotaEl, selector.nextSibling);
+      // Insert at the end of the controls container (after all elements like Default dropdown)
+      var controlsContainer = selector.closest('.flex');
+      if (controlsContainer) {
+        controlsContainer.appendChild(quotaEl);
       } else {
         selector.parentNode.appendChild(quotaEl);
       }
