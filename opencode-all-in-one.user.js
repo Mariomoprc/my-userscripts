@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.7.2
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度显示 + Tab 切换代理 + 粘贴图片 + 选项键盘导航 + 模式选择器点击切换
+// @version      1.7.3
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度显示 + Tab 切换代理 + 粘贴图片 + 选项键盘导航
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?://localhost:\d+/
@@ -37,7 +37,6 @@
 
   var SETTINGS = [
     { key: 'goPanel', label: 'Go 额度面板', def: true },
-    { key: 'agentToggleClick', label: '模式选择器点击切换', def: true },
     { key: 'tabCycle', label: 'Tab 键切换代理', def: true },
     { key: 'pasteImg', label: '粘贴图片', def: true },
     { key: 'questionKeys', label: '选项键盘导航', def: true }
@@ -1052,70 +1051,6 @@
     return { init: init };
   })();
 
-  var AGENT_TOGGLE_MODULE = (function () {
-    var lastToggleTime = 0;
-    var toggleCooldown = 400;
-
-    function findAgentButton() {
-      return document.querySelector('button[aria-label="选择智能体"]');
-    }
-
-    function isArrowClick(target, btn) {
-      if (!target) return false;
-      var arrowSpan = btn.querySelector('span.flex.shrink-0');
-      if (arrowSpan && arrowSpan.contains(target)) return true;
-      return target === btn.querySelector('svg');
-    }
-
-    function getCurrentAgent(btn) {
-      var span = btn.querySelector('span.truncate');
-      if (!span) return null;
-      return span.textContent.trim().toLowerCase();
-    }
-
-    function triggerAgentCycle() {
-      var input = document.querySelector('[data-component="prompt-input"]') ||
-                  document.querySelector('[contenteditable="true"]') ||
-                  document.querySelector('textarea');
-      if (!input) return;
-      var isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-      var modKey = isMac ? 'Meta' : 'Control';
-      try {
-        var event = new KeyboardEvent('keydown', { key: '.', code: 'Period', keyCode: 190, which: 190, bubbles: true, cancelable: true });
-        Object.defineProperty(event, modKey.toLowerCase() + 'Key', { value: true, writable: false });
-        Object.defineProperty(event, 'ctrlKey', { value: !isMac, writable: false });
-        Object.defineProperty(event, 'metaKey', { value: isMac, writable: false });
-        input.dispatchEvent(event);
-      } catch (err) {}
-    }
-
-    function handlePointerDown(e) {
-      var btn = findAgentButton();
-      if (!btn) return;
-      if (!btn.contains(e.target)) return;
-      if (isArrowClick(e.target, btn)) return;
-
-      var now = Date.now();
-      if (now - lastToggleTime < toggleCooldown) return;
-      var cur = getCurrentAgent(btn);
-      if (cur !== 'plan' && cur !== 'build') return;
-
-      lastToggleTime = now;
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      triggerAgentCycle();
-    }
-
-    function init() {
-      document.addEventListener('pointerdown', handlePointerDown, true);
-      document.addEventListener('mousedown', handlePointerDown, true);
-      console.log(TAG, '模式选择器点击切换已启用');
-    }
-
-    return { init: init };
-  })();
-
   // ════════════════════════════════════════════════════════════
   //  Main entry
   // ════════════════════════════════════════════════════════════
@@ -1127,13 +1062,6 @@
     if (isLocalWeb) {
       if (getSetting('goPanel', true)) {
         MODEL_QUOTA.init();
-      }
-      if (getSetting('agentToggleClick', true)) {
-        if (document.readyState === 'loading') {
-          document.addEventListener('DOMContentLoaded', AGENT_TOGGLE_MODULE.init);
-        } else {
-          AGENT_TOGGLE_MODULE.init();
-        }
       }
       if (getSetting('tabCycle', true)) {
         if (document.readyState === 'loading') {
