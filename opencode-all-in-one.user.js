@@ -1102,7 +1102,6 @@
       var btn = findAgentButton();
       if (btn) cur = getCurrentAgent(btn);
       updateButtonText(next);
-      toast('⇄ 切换: ' + (cur || '?') + ' → ' + next, '#1f6feb');
 
       if (!sid) return;
       fetch('/api/session/' + sid + '/agent', {
