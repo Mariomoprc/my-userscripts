@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.6
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度显示 + Tab 切换代理 + 粘贴图片 + 选项键盘导航
+// @version      1.7
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度显示 + Tab 切换代理 + 粘贴图片 + 选项键盘导航 + 模式选择器点击切换
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?://localhost:\d+/
@@ -37,6 +37,7 @@
 
   var SETTINGS = [
     { key: 'goPanel', label: 'Go 额度面板', def: true },
+    { key: 'agentToggleClick', label: '模式选择器点击切换', def: true },
     { key: 'tabCycle', label: 'Tab 键切换代理', def: true },
     { key: 'pasteImg', label: '粘贴图片', def: true },
     { key: 'questionKeys', label: '选项键盘导航', def: true }
@@ -1051,6 +1052,104 @@
     return { init: init };
   })();
 
+  var AGENT_TOGGLE_MODULE = (function () {
+    var lastToggleTime = 0;
+    var toggleCooldown = 400;
+    var sessionIdCache = null;
+
+    function getSessionId() {
+      if (sessionIdCache) return sessionIdCache;
+      var m = location.pathname.match(/\/session\/(ses_[a-zA-Z0-9]+)/);
+      if (m) { sessionIdCache = m[1]; return sessionIdCache; }
+      var segs = location.pathname.split('/').filter(Boolean);
+      for (var i = 0; i < segs.length; i++) {
+        try {
+          var dec = atob(segs[i]);
+          var m2 = dec.match(/\/session\/(ses_[a-zA-Z0-9]+)/);
+          if (m2) { sessionIdCache = m2[1]; return sessionIdCache; }
+        } catch (e) {}
+      }
+      return null;
+    }
+
+    function findAgentButton() {
+      return document.querySelector('button[aria-label="选择智能体"]');
+    }
+
+    function isArrowClick(target, btn) {
+      if (!target) return false;
+      var arrowSpan = btn.querySelector('span.flex.shrink-0');
+      if (arrowSpan && arrowSpan.contains(target)) return true;
+      return target === btn.querySelector('svg');
+    }
+
+    function getCurrentAgent(btn) {
+      var span = btn.querySelector('span.truncate');
+      if (!span) return null;
+      return span.textContent.trim().toLowerCase();
+    }
+
+    function updateButtonText(next) {
+      var btn = findAgentButton();
+      if (!btn) return;
+      var span = btn.querySelector('span.truncate');
+      if (span) span.textContent = next;
+    }
+
+    function switchAgent(next) {
+      var sid = getSessionId();
+      var cur = null;
+      var btn = findAgentButton();
+      if (btn) cur = getCurrentAgent(btn);
+      updateButtonText(next);
+      toast('⇄ 切换: ' + (cur || '?') + ' → ' + next, '#1f6feb');
+
+      if (!sid) return;
+      fetch('/api/session/' + sid + '/agent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ agent: next })
+      })
+        .then(function (r) {
+          if (!r.ok) {
+            toast('✗ 切换失败: HTTP ' + r.status + '（已回滚显示）', '#f85149');
+            if (cur) updateButtonText(cur);
+          }
+        })
+        .catch(function (err) {
+          toast('✗ 切换失败: ' + (err.message || err) + '（已回滚显示）', '#f85149');
+          if (cur) updateButtonText(cur);
+        });
+    }
+
+    function handlePointerDown(e) {
+      var btn = findAgentButton();
+      if (!btn) return;
+      if (!btn.contains(e.target)) return;
+      if (isArrowClick(e.target, btn)) return;
+
+      var now = Date.now();
+      if (now - lastToggleTime < toggleCooldown) return;
+      var cur = getCurrentAgent(btn);
+      if (cur !== 'plan' && cur !== 'build') return;
+
+      lastToggleTime = now;
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      switchAgent(cur === 'build' ? 'plan' : 'build');
+    }
+
+    function init() {
+      document.addEventListener('pointerdown', handlePointerDown, true);
+      document.addEventListener('mousedown', handlePointerDown, true);
+      console.log(TAG, '模式选择器点击切换已启用');
+    }
+
+    return { init: init };
+  })();
+
   // ════════════════════════════════════════════════════════════
   //  Main entry
   // ════════════════════════════════════════════════════════════
@@ -1062,6 +1161,13 @@
     if (isLocalWeb) {
       if (getSetting('goPanel', true)) {
         MODEL_QUOTA.init();
+      }
+      if (getSetting('agentToggleClick', true)) {
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', AGENT_TOGGLE_MODULE.init);
+        } else {
+          AGENT_TOGGLE_MODULE.init();
+        }
       }
       if (getSetting('tabCycle', true)) {
         if (document.readyState === 'loading') {
