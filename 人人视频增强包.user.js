@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         人人视频增强包
 // @namespace    http://tampermonkey.net/
-// @version      2.8.2
+// @version      2.8.3
 // @description  反调试绕过 + 隐藏滚动条 + 无感去广告(播放态自动续播/暂停态保持/loading修复) + 豆瓣跳转 + 唤醒后暂停(点播放即恢复) + 播放卡死自愈(智能判定不误伤正常缓冲) | 菜单可开关
 // @author       opencode
 // @match        *://*.yichengwlkj.com/*
@@ -384,11 +384,11 @@
         '.xgplayer.rrmv-ad-active .xgplayer-enter-loading,',
         '.xgplayer.rrmv-ad-active .xg-loading,',
         '.xgplayer.rrmv-ad-active [class*="animate-spinner"],',
-        '.xgplayer.rrmv-ad-active i[class*="rounded-full"][class*="border-2"],',
+        '.xgplayer.rrmv-ad-active i[class*="animate-spinner"][class*="border-2"],',
         '#player-container.rrmv-ad-active [class*="animate-spinner"],',
-        '#player-container.rrmv-ad-active i[class*="rounded-full"][class*="border-2"],',
+        '#player-container.rrmv-ad-active i[class*="animate-spinner"][class*="border-2"],',
         '#ve-player-container.rrmv-ad-active [class*="animate-spinner"],',
-        '#ve-player-container.rrmv-ad-active i[class*="rounded-full"][class*="border-2"],',
+        '#ve-player-container.rrmv-ad-active i[class*="animate-spinner"][class*="border-2"],',
         '#player-container.rrmv-ad-active .xgplayer-loading,',
         '#ve-player-container.rrmv-ad-active .xgplayer-loading {',
         '  opacity: 0 !important;',
@@ -485,13 +485,6 @@
       var lastAdBlockAt = 0;
       var AD_RESUME_WINDOW = 10000;
 
-      var _findMainVideoRef = function () {
-        return document.querySelector('#ve-player-container video') ||
-               document.querySelector('#player-container video') ||
-               document.querySelector('.xgplayer video') ||
-               document.querySelector('#ve-player video');
-      };
-
       function setAdActive(video, on) {
         var targets = [
           document.querySelector('.xgplayer'),
@@ -515,7 +508,7 @@
           c.querySelectorAll('.xgplayer-loading, .xgplayer-enter-loading, .xg-loading, .xgplayer-loading-spinner').forEach(function (el) {
             el.setAttribute('data-rrmv-ad', 'hide');
           });
-          c.querySelectorAll('[class*="animate-spinner"], i[class*="rounded-full"][class*="border-2"]').forEach(function (el) {
+          c.querySelectorAll('[class*="animate-spinner"], i[class*="animate-spinner"][class*="border-2"]').forEach(function (el) {
             try { el.style.setProperty('display', 'none', 'important'); el.style.setProperty('opacity', '0', 'important'); el.style.setProperty('animation', 'none', 'important'); } catch (e) {}
           });
           if (c.classList.contains('xgplayer-isloading')) c.classList.remove('xgplayer-isloading');
@@ -525,8 +518,8 @@
 
       function resumeIfNeeded(video, reason) {
         try {
-          video = (video && video.isConnected) ? video : (typeof findMainVideo === 'function' ? findMainVideo() : _findMainVideoRef());
-        } catch (e) { video = _findMainVideoRef(); }
+          video = (video && video.isConnected) ? video : findMainVideo();
+        } catch (e) { video = findMainVideo(); }
         if (!video || video.ended) return;
         var st = adState.get(video);
         var wasPlaying = st ? st.wasPlaying : !userPaused;
@@ -549,24 +542,30 @@
           if (xp && typeof xp.play === 'function' && xp !== video) xp.play();
         } catch (e) {}
         try { video.play().catch(function () {}); } catch (e) {}
-        setTimeout(function () { try { setAdActive(video, false); } catch (e) {} }, 500);
+        setTimeout(function () {
+          try {
+            if (Date.now() - lastAdBlockAt >= AD_RESUME_WINDOW) setAdActive(video, false);
+          } catch (e) {}
+        }, 500);
         console.log('[增强包] 无感续播 (' + reason + ') wasPlaying=' + wasPlaying);
       }
 
       function scheduleResume(video, reason) {
         try {
-          var v = (video && video.isConnected) ? video : (typeof findMainVideo === 'function' ? findMainVideo() : _findMainVideoRef());
+          var v = (video && video.isConnected) ? video : findMainVideo();
           if (!v) v = video;
           var st = v ? adState.get(v) : null;
-          if (st && st.timer) clearTimeout(st.timer);
+          if (st && st.timer) {
+            if (Array.isArray(st.timer)) st.timer.forEach(function (id) { clearTimeout(id); });
+            else clearTimeout(st.timer);
+          }
           var delays = reason === 'src-intercept' ? [120, 800, 2000] : [200, 1000];
-          delays.forEach(function (d, i) {
-            setTimeout(function () { resumeIfNeeded(v, reason + (i > 0 ? '-r' + i : '')); }, d);
+          var timers = delays.map(function (d, i) {
+            return setTimeout(function () { resumeIfNeeded(v, reason + (i > 0 ? '-r' + i : '')); }, d);
           });
-          var t = delays[0];
           if (v) {
-            if (st) st.timer = t;
-            else adState.set(v, { wasPlaying: v ? (!v.paused && !v.ended) : !userPaused, blockedAt: Date.now(), adUrl: st ? st.adUrl : '', timer: t });
+            if (st) st.timer = timers;
+            else adState.set(v, { wasPlaying: v ? (!v.paused && !v.ended) : !userPaused, blockedAt: Date.now(), adUrl: st ? st.adUrl : '', timer: timers });
             var cur = adState.get(v);
             if (cur && !cur.blockedAt) cur.blockedAt = Date.now();
             try { window.__rrmv_lastAdBlockAt = cur ? cur.blockedAt : Date.now(); } catch (e) {}
@@ -588,7 +587,7 @@
                 if (isAdVideoUrl(val)) {
                   var isMain = false;
                   try {
-                    var mainV = (typeof findMainVideo === 'function' ? findMainVideo() : _findMainVideoRef());
+                    var mainV = findMainVideo();
                     isMain = (this === mainV) || (this.tagName === 'VIDEO') && ( !this.closest || this.closest('#ve-player-container, #player-container, .xgplayer, video'));
                   } catch (e) { isMain = (this.tagName === 'VIDEO'); }
                   if (isMain) {
@@ -827,18 +826,8 @@
           '[class*="promotion-modal"], [class*="float-ad"], [class*="pop-ad"]'
         ).forEach(hideElement);
 
-        // 广告窗口期内隐藏 loading + spinner
-        if (Date.now() - lastAdBlockAt < AD_RESUME_WINDOW) {
-          hideLoading(video);
-          ['#player-container', '#ve-player-container', '.xgplayer'].forEach(function (sel) {
-            var pc = document.querySelector(sel);
-            if (!pc) return;
-            if (pc.classList.contains('xgplayer-isloading')) pc.classList.remove('xgplayer-isloading');
-            pc.querySelectorAll('[class*="animate-spinner"], i[class*="rounded-full"][class*="border-2"]').forEach(function (el) {
-              try { el.style.setProperty('display', 'none', 'important'); } catch (e) {}
-            });
-          });
-        }
+        // 广告窗口期内隐藏 loading + spinner（统一走 hideLoading）
+        if (Date.now() - lastAdBlockAt < AD_RESUME_WINDOW) hideLoading(video);
 
         // 自动关闭会员/VIP推广弹窗
         document.querySelectorAll('[data-rrmv-ad="hide"]').forEach(function (el) {
@@ -1041,6 +1030,7 @@
         }
       }, true);
 
+      var lastCheckTime = 0, stuckCount = 0;
       var cleanupTimer = setInterval(stealthCleanup, 2000);
       var stuckTimer = setInterval(function () {
         var video = findMainVideo();
@@ -1056,7 +1046,6 @@
         lastCheckTime = ct;
       }, 2000);
 
-      var lastCheckTime = 0, stuckCount = 0;
 
       // 页面卸载时清理定时器
       window.addEventListener('beforeunload', function () {
