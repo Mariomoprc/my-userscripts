@@ -965,10 +965,12 @@
             method: 'GET',
             url: 'https://opencode.ai/docs/go/',
             onload: function (res) {
-              if (res.status !== 200) { resolve(); return; }
+              console.log(TAG, 'GM.xmlhttpRequest status:', res.status, 'length:', (res.responseText || '').length);
+              if (res.status !== 200) { console.log(TAG, 'Non-200 status, resolve'); resolve(); return; }
               var html = res.responseText;
               var tables = GO_MODULE.__parseTables(html);
-              if (!tables || !tables.requests) { resolve(); return; }
+              console.log(TAG, 'parseTables result:', tables ? 'ok' : 'null', 'requests:', tables && tables.requests ? tables.requests.length : 0);
+              if (!tables || !tables.requests) { console.log(TAG, 'No tables/requests, resolve'); resolve(); return; }
               tables.requests.forEach(function (r) {
                 var name = (r[0] || '').trim();
                 var n = norm(name);
@@ -977,8 +979,8 @@
               console.log(TAG, 'Quota map loaded:', Object.keys(quotaMap).length, 'models');
               resolve();
             },
-            onerror: function () {
-              console.log(TAG, 'Quota fetch failed');
+            onerror: function (err) {
+              console.log(TAG, 'GM.xmlhttpRequest ERROR:', err);
               resolve();
             }
           });
