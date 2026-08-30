@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.7.1
+// @version      1.7.2
 // @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度显示 + Tab 切换代理 + 粘贴图片 + 选项键盘导航 + 模式选择器点击切换
 // @author       pass
 // @match        https://opencode.ai/*
@@ -1055,22 +1055,6 @@
   var AGENT_TOGGLE_MODULE = (function () {
     var lastToggleTime = 0;
     var toggleCooldown = 400;
-    var sessionIdCache = null;
-
-    function getSessionId() {
-      if (sessionIdCache) return sessionIdCache;
-      var m = location.pathname.match(/\/session\/(ses_[a-zA-Z0-9]+)/);
-      if (m) { sessionIdCache = m[1]; return sessionIdCache; }
-      var segs = location.pathname.split('/').filter(Boolean);
-      for (var i = 0; i < segs.length; i++) {
-        try {
-          var dec = atob(segs[i]);
-          var m2 = dec.match(/\/session\/(ses_[a-zA-Z0-9]+)/);
-          if (m2) { sessionIdCache = m2[1]; return sessionIdCache; }
-        } catch (e) {}
-      }
-      return null;
-    }
 
     function findAgentButton() {
       return document.querySelector('button[aria-label="选择智能体"]');
@@ -1089,37 +1073,20 @@
       return span.textContent.trim().toLowerCase();
     }
 
-    function updateButtonText(next) {
-      var btn = findAgentButton();
-      if (!btn) return;
-      var span = btn.querySelector('span.truncate');
-      if (span) span.textContent = next;
-    }
-
-    function switchAgent(next) {
-      var sid = getSessionId();
-      var cur = null;
-      var btn = findAgentButton();
-      if (btn) cur = getCurrentAgent(btn);
-      updateButtonText(next);
-
-      if (!sid) return;
-      fetch('/api/session/' + sid + '/agent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ agent: next })
-      })
-        .then(function (r) {
-          if (!r.ok) {
-            toast('✗ 切换失败: HTTP ' + r.status + '（已回滚显示）', '#f85149');
-            if (cur) updateButtonText(cur);
-          }
-        })
-        .catch(function (err) {
-          toast('✗ 切换失败: ' + (err.message || err) + '（已回滚显示）', '#f85149');
-          if (cur) updateButtonText(cur);
-        });
+    function triggerAgentCycle() {
+      var input = document.querySelector('[data-component="prompt-input"]') ||
+                  document.querySelector('[contenteditable="true"]') ||
+                  document.querySelector('textarea');
+      if (!input) return;
+      var isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+      var modKey = isMac ? 'Meta' : 'Control';
+      try {
+        var event = new KeyboardEvent('keydown', { key: '.', code: 'Period', keyCode: 190, which: 190, bubbles: true, cancelable: true });
+        Object.defineProperty(event, modKey.toLowerCase() + 'Key', { value: true, writable: false });
+        Object.defineProperty(event, 'ctrlKey', { value: !isMac, writable: false });
+        Object.defineProperty(event, 'metaKey', { value: isMac, writable: false });
+        input.dispatchEvent(event);
+      } catch (err) {}
     }
 
     function handlePointerDown(e) {
@@ -1137,7 +1104,7 @@
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
-      switchAgent(cur === 'build' ? 'plan' : 'build');
+      triggerAgentCycle();
     }
 
     function init() {
