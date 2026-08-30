@@ -968,6 +968,14 @@
               console.log(TAG, 'GM.xmlhttpRequest status:', res.status, 'length:', (res.responseText || '').length);
               if (res.status !== 200) { console.log(TAG, 'Non-200 status, resolve'); resolve(); return; }
               var html = res.responseText;
+              // Debug: log table info
+              var rawTables = html.match(/<table[\s\S]*?<\/table>/g) || [];
+              console.log(TAG, 'Raw tables found:', rawTables.length);
+              rawTables.forEach(function (t, i) {
+                var header = (t.match(/<thead>([\s\S]*?)<\/thead>/) || ['', ''])[1];
+                var ths = (header.match(/<th[^>]*>([\s\S]*?)<\/th>/g) || []).map(function (h) { return h.replace(/<[^>]+>/g, '').trim().substring(0, 30); });
+                console.log(TAG, '  Table', i, ':', ths.join(' | '));
+              });
               var tables = GO_MODULE.__parseTables(html);
               console.log(TAG, 'parseTables result:', tables ? 'ok' : 'null', 'requests:', tables && tables.requests ? tables.requests.length : 0);
               if (!tables || !tables.requests) { console.log(TAG, 'No tables/requests, resolve'); resolve(); return; }
