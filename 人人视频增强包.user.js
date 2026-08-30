@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         人人视频增强包
 // @namespace    http://tampermonkey.net/
-// @version      2.7
-// @description  反调试绕过 + 隐藏滚动条 + 无感去广告 + 豆瓣跳转 + 唤醒后暂停(点播放即恢复) + 播放卡死自愈(智能判定不误伤正常缓冲) | 菜单可开关
+// @version      2.8.2
+// @description  反调试绕过 + 隐藏滚动条 + 无感去广告(播放态自动续播/暂停态保持/loading修复) + 豆瓣跳转 + 唤醒后暂停(点播放即恢复) + 播放卡死自愈(智能判定不误伤正常缓冲) | 菜单可开关
 // @author       opencode
 // @match        *://*.yichengwlkj.com/*
 // @match        *://*.rrmj.plus/*
@@ -27,6 +27,7 @@
   // ============================================================
   //  菜单
   // ============================================================
+  window.__rrmv_lastAdBlockAt = 0;
   function buildMenu(label, key, def) {
     var on = S.get(key, def);
     GM_registerMenuCommand((on ? '✔ ' : '✘ ') + label, function () {
@@ -251,6 +252,10 @@
 
       // 监控 currentTime 推进：连续 noProgressSec 秒零进展且未暂停 → 判定真卡死
       function armStallWatch(video, noProgressSec) {
+        try {
+          var lastAd2 = window.__rrmv_lastAdBlockAt || 0;
+          if (Date.now() - lastAd2 < 3000) return;
+        } catch (err) {}
         clearStallTimer();
         var lastTime = -1;
         var still = 0;
@@ -308,6 +313,10 @@
         // waiting：缓冲不足（转圈出现）→ 开始监控时间推进，而非固定超时
         document.addEventListener('waiting', function (e) {
           if (!e.target || e.target.tagName !== 'VIDEO') return;
+          try {
+            var lastAd = window.__rrmv_lastAdBlockAt || 0;
+            if (Date.now() - lastAd < 3000) return;
+          } catch (err) {}
           softTried = false;
           e.target.__rrmvLastCheck = e.target.currentTime;
           armStallWatch(e.target, 8);
@@ -366,11 +375,27 @@
         '[class*="float-ad"],',
         '[class*="pop-ad"],',
         '[class*="modal-mask"][data-rrmv-ad="hide"],',
-        '[class*="dialog-mask"][data-rrmv-ad="hide"] {',
+        '[class*="dialog-mask"][data-rrmv-ad="hide"],',
+        '.xgplayer-loading[data-rrmv-ad="hide"],',
+        '.xgplayer-enter-loading[data-rrmv-ad="hide"],',
+        '.xg-loading[data-rrmv-ad="hide"],',
+        '.xgplayer-is-loading [data-rrmv-ad="hide"],',
+        '.xgplayer.rrmv-ad-active .xgplayer-loading,',
+        '.xgplayer.rrmv-ad-active .xgplayer-enter-loading,',
+        '.xgplayer.rrmv-ad-active .xg-loading,',
+        '.xgplayer.rrmv-ad-active [class*="animate-spinner"],',
+        '.xgplayer.rrmv-ad-active i[class*="rounded-full"][class*="border-2"],',
+        '#player-container.rrmv-ad-active [class*="animate-spinner"],',
+        '#player-container.rrmv-ad-active i[class*="rounded-full"][class*="border-2"],',
+        '#ve-player-container.rrmv-ad-active [class*="animate-spinner"],',
+        '#ve-player-container.rrmv-ad-active i[class*="rounded-full"][class*="border-2"],',
+        '#player-container.rrmv-ad-active .xgplayer-loading,',
+        '#ve-player-container.rrmv-ad-active .xgplayer-loading {',
         '  opacity: 0 !important;',
         '  pointer-events: none !important;',
         '  visibility: hidden !important;',
         '  display: none !important;',
+        '  animation: none !important;',
         '}'
       ].join('\n');
       (document.head || document.documentElement).appendChild(adCSS);
@@ -455,8 +480,101 @@
 
       var savedContentSrc = null;
 
+      // 广告拦截状态：用于无感续播（播放态自动续/暂停态保持）
+      var adState = new WeakMap();
+      var lastAdBlockAt = 0;
+      var AD_RESUME_WINDOW = 10000;
+
+      var _findMainVideoRef = function () {
+        return document.querySelector('#ve-player-container video') ||
+               document.querySelector('#player-container video') ||
+               document.querySelector('.xgplayer video') ||
+               document.querySelector('#ve-player video');
+      };
+
+      function setAdActive(video, on) {
+        var targets = [
+          document.querySelector('.xgplayer'),
+          document.querySelector('#player-container'),
+          document.querySelector('#ve-player-container')
+        ].filter(Boolean);
+        targets.forEach(function (c) {
+          if (on) c.classList.add('rrmv-ad-active');
+          else c.classList.remove('rrmv-ad-active');
+        });
+      }
+
+      function hideLoading(video) {
+        var containers = [
+          document.querySelector('#ve-player-container'),
+          document.querySelector('#player-container'),
+          document.querySelector('.xgplayer')
+        ].filter(Boolean);
+        if (!containers.length) return;
+        containers.forEach(function (c) {
+          c.querySelectorAll('.xgplayer-loading, .xgplayer-enter-loading, .xg-loading, .xgplayer-loading-spinner').forEach(function (el) {
+            el.setAttribute('data-rrmv-ad', 'hide');
+          });
+          c.querySelectorAll('[class*="animate-spinner"], i[class*="rounded-full"][class*="border-2"]').forEach(function (el) {
+            try { el.style.setProperty('display', 'none', 'important'); el.style.setProperty('opacity', '0', 'important'); el.style.setProperty('animation', 'none', 'important'); } catch (e) {}
+          });
+          if (c.classList.contains('xgplayer-isloading')) c.classList.remove('xgplayer-isloading');
+        });
+        if (Date.now() - lastAdBlockAt < AD_RESUME_WINDOW) setAdActive(video, true);
+      }
+
+      function resumeIfNeeded(video, reason) {
+        try {
+          video = (video && video.isConnected) ? video : (typeof findMainVideo === 'function' ? findMainVideo() : _findMainVideoRef());
+        } catch (e) { video = _findMainVideoRef(); }
+        if (!video || video.ended) return;
+        var st = adState.get(video);
+        var wasPlaying = st ? st.wasPlaying : !userPaused;
+        if (!wasPlaying || userPaused) { hideLoading(video); return; }
+        if (Date.now() - (st ? st.blockedAt : lastAdBlockAt) > AD_RESUME_WINDOW) return;
+        if (!video.paused && video.readyState >= 2) { hideLoading(video); return; }
+        try {
+          if (sessionStorage.getItem('rrmv_paused_once') === '1') {
+            try { hideLoading(video); } catch (e) {}
+            try { sessionStorage.removeItem('rrmv_paused_once'); } catch (e) {}
+            return;
+          }
+        } catch (e) {}
+        hideLoading(video);
+        try { if (typeof stealthCleanup === 'function') stealthCleanup(); } catch (e) {}
+        try {
+          var xp = window.player || window.__xgplayer__ ||
+                   (video && (video.__xgplayer__ || video.xgplayer)) ||
+                   (document.querySelector('.xgplayer') && document.querySelector('.xgplayer').__xgplayer__);
+          if (xp && typeof xp.play === 'function' && xp !== video) xp.play();
+        } catch (e) {}
+        try { video.play().catch(function () {}); } catch (e) {}
+        setTimeout(function () { try { setAdActive(video, false); } catch (e) {} }, 500);
+        console.log('[增强包] 无感续播 (' + reason + ') wasPlaying=' + wasPlaying);
+      }
+
+      function scheduleResume(video, reason) {
+        try {
+          var v = (video && video.isConnected) ? video : (typeof findMainVideo === 'function' ? findMainVideo() : _findMainVideoRef());
+          if (!v) v = video;
+          var st = v ? adState.get(v) : null;
+          if (st && st.timer) clearTimeout(st.timer);
+          var delays = reason === 'src-intercept' ? [120, 800, 2000] : [200, 1000];
+          delays.forEach(function (d, i) {
+            setTimeout(function () { resumeIfNeeded(v, reason + (i > 0 ? '-r' + i : '')); }, d);
+          });
+          var t = delays[0];
+          if (v) {
+            if (st) st.timer = t;
+            else adState.set(v, { wasPlaying: v ? (!v.paused && !v.ended) : !userPaused, blockedAt: Date.now(), adUrl: st ? st.adUrl : '', timer: t });
+            var cur = adState.get(v);
+            if (cur && !cur.blockedAt) cur.blockedAt = Date.now();
+            try { window.__rrmv_lastAdBlockAt = cur ? cur.blockedAt : Date.now(); } catch (e) {}
+          }
+        } catch (e) {}
+      }
+
       // --- Phase E: video.src 拦截 ---
-      // 只阻止广告 URL 设置，不替换为内容源，避免干扰网站恢复逻辑
       var origSrcDesc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src');
       if (origSrcDesc && origSrcDesc.set) {
         Object.defineProperty(HTMLMediaElement.prototype, 'src', {
@@ -468,9 +586,29 @@
             try {
               if (typeof val === 'string' && val.length > 0) {
                 if (isAdVideoUrl(val)) {
-                  // 广告源 → 阻止设置，不替换，让网站自己的恢复逻辑处理
-                  console.log('[增强包] 阻止广告源设置');
-                  return;
+                  var isMain = false;
+                  try {
+                    var mainV = (typeof findMainVideo === 'function' ? findMainVideo() : _findMainVideoRef());
+                    isMain = (this === mainV) || (this.tagName === 'VIDEO') && ( !this.closest || this.closest('#ve-player-container, #player-container, .xgplayer, video'));
+                  } catch (e) { isMain = (this.tagName === 'VIDEO'); }
+                  if (isMain) {
+                    var wasPlaying = false;
+                    try { wasPlaying = !this.paused && !this.ended && !document.hidden; } catch (e) {}
+                    adState.set(this, { wasPlaying: wasPlaying, blockedAt: Date.now(), adUrl: val, timer: null });
+                    lastAdBlockAt = Date.now(); window.__rrmv_lastAdBlockAt = lastAdBlockAt;
+                    if (wasPlaying && !savedContentSrc) {
+                      try { savedContentSrc = this.currentSrc || this.src || savedContentSrc; } catch (e) {}
+                    }
+                    console.log('[增强包] 拦截主视频广告 src wasPlaying=' + wasPlaying, val.slice(0, 80));
+                    setAdActive(this, true);
+                    scheduleResume(this, 'src-intercept');
+                    return;
+                  } else {
+                    try { this.pause(); } catch (e) {}
+                    try { this.setAttribute('data-rrmv-ad', 'hide'); } catch (e) {}
+                    console.log('[增强包] 拦截非主视频广告', val.slice(0, 80));
+                    return;
+                  }
                 }
                 savedContentSrc = val;
               }
@@ -658,6 +796,7 @@
           if (video.src && isAdVideoUrl(video.src)) return;
           if (video.ended || video.seeking) return;
           if (Date.now() - pageLoadTime < 3000) return;
+          if (Date.now() - lastAdBlockAt < AD_RESUME_WINDOW) return;
           // 标签不可见时的暂停是浏览器行为（切标签/最小化），不是用户手动暂停
           if (document.hidden) return;
           // 广告覆盖层存在时的暂停是网站行为，不是用户手动暂停
@@ -688,6 +827,19 @@
           '[class*="promotion-modal"], [class*="float-ad"], [class*="pop-ad"]'
         ).forEach(hideElement);
 
+        // 广告窗口期内隐藏 loading + spinner
+        if (Date.now() - lastAdBlockAt < AD_RESUME_WINDOW) {
+          hideLoading(video);
+          ['#player-container', '#ve-player-container', '.xgplayer'].forEach(function (sel) {
+            var pc = document.querySelector(sel);
+            if (!pc) return;
+            if (pc.classList.contains('xgplayer-isloading')) pc.classList.remove('xgplayer-isloading');
+            pc.querySelectorAll('[class*="animate-spinner"], i[class*="rounded-full"][class*="border-2"]').forEach(function (el) {
+              try { el.style.setProperty('display', 'none', 'important'); } catch (e) {}
+            });
+          });
+        }
+
         // 自动关闭会员/VIP推广弹窗
         document.querySelectorAll('[data-rrmv-ad="hide"]').forEach(function (el) {
           if (el.offsetParent !== null) {
@@ -715,28 +867,36 @@
 
       if (playerContainer) {
         var observer = new MutationObserver(function (mutations) {
+          var needResume = false;
           for (var i = 0; i < mutations.length; i++) {
             var m = mutations[i];
-
+            if (m.type === 'attributes' && m.target) {
+              if (m.target.classList && (m.target.classList.contains('xgplayer-is-loading') || isAdElement(m.target))) {
+                hideLoading(findMainVideo());
+              }
+              continue;
+            }
             for (var j = 0; j < m.addedNodes.length; j++) {
               var node = m.addedNodes[j];
               if (node.nodeType !== 1) continue;
-
               var videos = node.tagName === 'VIDEO' ? [node] :
                 (node.querySelectorAll ? Array.from(node.querySelectorAll('video')) : []);
               videos.forEach(function (v) { hookVideo(v); });
-
               if (node.classList && isAdElement(node)) {
                 hideElement(node);
+                needResume = true;
               }
-
+              if (node.id === 'adPlayContainer' || (node.querySelector && node.querySelector('#adPlayContainer'))) {
+                needResume = true;
+              }
               hideAdTips(node);
             }
           }
+          if (needResume && Date.now() - lastAdBlockAt < AD_RESUME_WINDOW * 2) scheduleResume(findMainVideo(), 'ad-dom');
         });
 
         observer.observe(playerContainer, {
-          childList: true, subtree: true
+          childList: true, subtree: true, attributes: true, attributeFilter: ['class']
         });
       } else {
         // 播放器容器还没出现，等它出现后再监听
@@ -747,18 +907,32 @@
             if (pc) {
               clearInterval(waitContainer);
               var obs = new MutationObserver(function (mutations) {
+                var needResume = false;
                 for (var i = 0; i < mutations.length; i++) {
                   var m = mutations[i];
+                  if (m.type === 'attributes' && m.target) {
+                    if (m.target.classList && (m.target.classList.contains('xgplayer-is-loading') || isAdElement(m.target))) {
+                      hideLoading(findMainVideo());
+                    }
+                    continue;
+                  }
                   for (var j = 0; j < m.addedNodes.length; j++) {
                     var node = m.addedNodes[j];
                     if (node.nodeType !== 1) continue;
                     var videos = node.tagName === 'VIDEO' ? [node] :
                       (node.querySelectorAll ? Array.from(node.querySelectorAll('video')) : []);
                     videos.forEach(function (v) { hookVideo(v); });
-                    if (node.classList && isAdElement(node)) hideElement(node);
+                    if (node.classList && isAdElement(node)) {
+                      hideElement(node);
+                      needResume = true;
+                    }
+                    if (node.id === 'adPlayContainer' || (node.querySelector && node.querySelector('#adPlayContainer'))) {
+                      needResume = true;
+                    }
                     hideAdTips(node);
                   }
                 }
+                if (needResume && Date.now() - lastAdBlockAt < AD_RESUME_WINDOW * 2) scheduleResume(findMainVideo(), 'ad-dom');
               });
               obs.observe(pc, {
                 childList: true, subtree: true,
@@ -855,6 +1029,17 @@
 
       // 初始 hook + 巡检定时器（带清理保护）
       document.querySelectorAll('video').forEach(function (v) { hookVideo(v); });
+
+      // 广告诱发的 waiting 立即尝试无感续播
+      document.addEventListener('waiting', function (e) {
+        if (!e.target || e.target.tagName !== 'VIDEO') return;
+        if (Date.now() - lastAdBlockAt < AD_RESUME_WINDOW && !userPaused) {
+          hideLoading(e.target);
+          scheduleResume(e.target, 'waiting');
+        } else if (Date.now() - lastAdBlockAt < AD_RESUME_WINDOW) {
+          hideLoading(e.target);
+        }
+      }, true);
 
       var cleanupTimer = setInterval(stealthCleanup, 2000);
       var stuckTimer = setInterval(function () {
