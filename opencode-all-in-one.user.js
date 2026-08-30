@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.7
+// @version      1.7.1
 // @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度显示 + Tab 切换代理 + 粘贴图片 + 选项键盘导航 + 模式选择器点击切换
 // @author       pass
 // @match        https://opencode.ai/*
