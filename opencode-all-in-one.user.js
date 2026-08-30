@@ -950,8 +950,6 @@
 
   var MODEL_QUOTA = (function () {
     var quotaMap = {};
-    var lastModelText = '';
-    var quotaEl = null;
 
     // Local copies of functions (GO_MODULE's are not accessible)
     function norm(name) { return (name || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
@@ -959,26 +957,15 @@
 
     function fetchQuotaMap() {
       return new Promise(function (resolve) {
-        // Use GM.xmlhttpRequest to bypass CORS
         try {
           GM.xmlhttpRequest({
             method: 'GET',
             url: 'https://opencode.ai/docs/go/',
             onload: function (res) {
-              console.log(TAG, 'GM.xmlhttpRequest status:', res.status, 'length:', (res.responseText || '').length);
-              if (res.status !== 200) { console.log(TAG, 'Non-200 status, resolve'); resolve(); return; }
+              if (res.status !== 200) { resolve(); return; }
               var html = res.responseText;
-              // Debug: log table info
-              var rawTables = html.match(/<table[\s\S]*?<\/table>/g) || [];
-              console.log(TAG, 'Raw tables found:', rawTables.length);
-              rawTables.forEach(function (t, i) {
-                var header = (t.match(/<thead>([\s\S]*?)<\/thead>/) || ['', ''])[1];
-                var ths = (header.match(/<th[^>]*>([\s\S]*?)<\/th>/g) || []).map(function (h) { return h.replace(/<[^>]+>/g, '').trim().substring(0, 30); });
-                console.log(TAG, '  Table', i, ':', ths.join(' | '));
-              });
               var tables = GO_MODULE.__parseTables(html);
-              console.log(TAG, 'parseTables result:', tables ? 'ok' : 'null', 'requests:', tables && tables.requests ? tables.requests.length : 0);
-              if (!tables || !tables.requests) { console.log(TAG, 'No tables/requests, resolve'); resolve(); return; }
+              if (!tables || !tables.requests) { resolve(); return; }
               tables.requests.forEach(function (r) {
                 var name = (r[0] || '').trim();
                 var n = norm(name);
@@ -987,13 +974,9 @@
               console.log(TAG, 'Quota map loaded:', Object.keys(quotaMap).length, 'models');
               resolve();
             },
-            onerror: function (err) {
-              console.log(TAG, 'GM.xmlhttpRequest ERROR:', err);
-              resolve();
-            }
+            onerror: function () { resolve(); }
           });
         } catch (e) {
-          // Fallback to fetch if GM.xmlhttpRequest not available
           fetch('https://opencode.ai/docs/go/', { credentials: 'omit' })
             .then(function (r) { return r.ok ? r.text() : null; })
             .catch(function () { return null; })
@@ -1006,104 +989,63 @@
                 var n = norm(name);
                 if (n) quotaMap[n] = { name: name, req5h: parseNum(r[1]), reqMonth: parseNum(r[3]), usage: parseNum(r[5]) };
               });
-              console.log(TAG, 'Quota map loaded (fetch):', Object.keys(quotaMap).length, 'models');
               resolve();
             });
         }
       });
     }
 
-    function findModelSelector() {
-      // Use the official data-action attribute from opencode source
-      var btn = document.querySelector('[data-action="prompt-model"]');
-      if (btn) return btn;
-      // Fallback: search by model name text
-      var allEls = document.querySelectorAll('span, div, button');
-      for (var j = allEls.length - 1; j >= 0; j--) {
-        var el = allEls[j];
-        if (el.children.length > 3) continue;
-        var t = el.textContent.trim();
-        if (!t || t.length > 60) continue;
-        if (/MiMo|DeepSeek|Qwen|Grok|GLM|Muse|Nemotron|Free Models|Auto Router/i.test(t) && t.length < 60) {
-          var parent = el.parentElement;
-          if (parent && parent.querySelector('[role="menu"], [role="listbox"], [data-slot]')) continue;
-          return el;
-        }
-      }
-      return null;
-    }
+    function injectQuotasIntoDropdown() {
+      // Find dropdown with model options
+      var items = document.querySelectorAll('[data-option-key]');
+      if (!items.length) return;
 
-    function getCurrentModelName() {
-      var selector = findModelSelector();
-      if (!selector) return '';
-      return selector.textContent.trim();
-    }
+      items.forEach(function (item) {
+        if (item.querySelector('.oc-quota-tag')) return; // Already injected
 
-    function updateQuotaDisplay() {
-      var selector = findModelSelector();
-      if (!selector) return;
+        var key = item.getAttribute('data-option-key') || '';
+        var modelId = key.split(':').pop().toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (!modelId) return;
 
-      var modelName = getCurrentModelName();
-      if (modelName === lastModelText) return;
-      lastModelText = modelName;
-
-      // Remove old quota display
-      if (quotaEl && quotaEl.parentNode) quotaEl.remove();
-      quotaEl = null;
-
-      if (!modelName) return;
-
-      // Find matching quota
-      var n = norm(modelName);
-      var quota = quotaMap[n];
-      if (!quota) {
-        // Try partial match
-        var keys = Object.keys(quotaMap);
-        for (var i = 0; i < keys.length; i++) {
-          if (keys[i].indexOf(n) !== -1 || n.indexOf(keys[i]) !== -1) {
-            quota = quotaMap[keys[i]];
-            break;
+        // Look up quota by model ID
+        var quota = quotaMap[modelId];
+        if (!quota) {
+          var keys = Object.keys(quotaMap);
+          for (var i = 0; i < keys.length; i++) {
+            if (keys[i].indexOf(modelId) !== -1 || modelId.indexOf(keys[i]) !== -1) {
+              quota = quotaMap[keys[i]];
+              break;
+            }
           }
         }
-      }
+        if (!quota) return;
 
-      if (!quota) return;
-
-      // Insert quota text after the selector
-      quotaEl = document.createElement('span');
-      quotaEl.style.cssText = 'color:#666;font-size:11px;margin-left:4px;white-space:nowrap;';
-      quotaEl.textContent = '\u00B7 ' + quota.reqMonth.toLocaleString() + '/月';
-
-      // Insert at the end of the controls container (after all elements like Default dropdown)
-      var controlsContainer = selector.closest('.flex');
-      if (controlsContainer) {
-        controlsContainer.appendChild(quotaEl);
-      } else {
-        selector.parentNode.appendChild(quotaEl);
-      }
+        var tag = document.createElement('span');
+        tag.className = 'oc-quota-tag';
+        tag.style.cssText = 'color:#666;font-size:10px;margin-left:6px;white-space:nowrap;flex-shrink:0;';
+        tag.textContent = quota.reqMonth.toLocaleString() + '/月';
+        item.appendChild(tag);
+      });
+      console.log(TAG, 'Injected quotas into', items.length, 'dropdown items');
     }
 
     function init() {
-      // Fetch quota data
       fetchQuotaMap().then(function () {
-        updateQuotaDisplay();
+        // Also try injecting if dropdown already open
+        injectQuotasIntoDropdown();
       });
 
-      // MutationObserver with debounce to detect model changes
-      var debounceTimer = null;
+      // Watch for dropdown opening
       var observer = new MutationObserver(function () {
-        if (debounceTimer) clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(updateQuotaDisplay, 500);
+        var dropdown = document.querySelector('[data-option-key]');
+        if (dropdown) setTimeout(injectQuotasIntoDropdown, 100);
       });
 
       if (document.body) {
-        observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+        observer.observe(document.body, { childList: true, subtree: true });
       }
 
-      // Also try again after page settles
-      setTimeout(updateQuotaDisplay, 2000);
-
-      console.log(TAG, 'MODEL_QUOTA initialized');
+      console.log(TAG, 'MODEL_QUOTA initialized (dropdown mode)');
     }
 
     return { init: init };
