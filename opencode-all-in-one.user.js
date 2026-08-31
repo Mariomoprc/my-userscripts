@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.7.7
+// @version      1.7.8
 // @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度显示 + Tab 切换代理 + 粘贴图片 + 拖拽链接/文字 + 选项键盘导航
 // @author       pass
 // @match        https://opencode.ai/*
@@ -786,7 +786,7 @@
           if (settled) return;
           settled = true;
           obs.disconnect();
-          if (success) toast('✓ 已附加为原生附件（识图模型可读）');
+          if (success) console.log(TAG, 'paste image attached');
           else dropFailed('前端未响应 drop。请手动拖拽图片或使用附件按钮');
         }
         var obsOpts = { childList: true, subtree: true, attributes: true, characterData: true };
