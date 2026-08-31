@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.7.4
+// @version      1.7.5
 // @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度显示 + Tab 切换代理 + 粘贴图片 + 拖拽链接/文字 + 选项键盘导航
 // @author       pass
 // @match        https://opencode.ai/*
@@ -826,12 +826,6 @@
       if (!text) text = dt.getData('text');
       return text || null;
     }
-    function isExternalDrag(e) {
-      var dt = e.dataTransfer;
-      if (!dt) return false;
-      var ea = dt.effectAllowed;
-      return ea === 'copy' || ea === 'copyLink' || ea === 'link' || ea === 'all';
-    }
     function insertTextToInput(text) {
       var target = findInput();
       if (!target) { toast('✗ 未找到输入框', '#f55'); return; }
@@ -867,7 +861,6 @@
     }
     function init() {
       document.addEventListener('dragover', function (e) {
-        if (!isExternalDrag(e)) return;
         var text = extractText(e);
         if (!text) return;
         e.preventDefault();
