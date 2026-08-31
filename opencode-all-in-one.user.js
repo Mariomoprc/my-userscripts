@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.7.5
+// @version      1.7.6
 // @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度显示 + Tab 切换代理 + 粘贴图片 + 拖拽链接/文字 + 选项键盘导航
 // @author       pass
 // @match        https://opencode.ai/*
@@ -861,16 +861,21 @@
     }
     function init() {
       document.addEventListener('dragover', function (e) {
+        var dt = e.dataTransfer;
+        if (!dt || dt.files.length > 0) return;
         var text = extractText(e);
         if (!text) return;
+        e.stopImmediatePropagation();
         e.preventDefault();
-        e.dataTransfer.dropEffect = 'copy';
+        dt.dropEffect = 'copy';
       }, true);
       document.addEventListener('drop', function (e) {
+        var dt = e.dataTransfer;
+        if (!dt || dt.files.length > 0) return;
         var text = extractText(e);
         if (!text) return;
+        e.stopImmediatePropagation();
         e.preventDefault();
-        e.stopPropagation();
         insertTextToInput(text);
       }, true);
       console.log(TAG, '拖拽链接/文字已启用');
