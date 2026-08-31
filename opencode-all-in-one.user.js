@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.7.6
+// @version      1.7.7
 // @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度显示 + Tab 切换代理 + 粘贴图片 + 拖拽链接/文字 + 选项键盘导航
 // @author       pass
 // @match        https://opencode.ai/*
@@ -859,29 +859,42 @@
       }
       toast('✓ 已插入链接/文字 (' + text.length + ' 字符)');
     }
+    function isTextOnlyDrag(e) {
+      var dt = e.dataTransfer;
+      if (!dt || dt.files.length > 0) return false;
+      return !!extractText(e);
+    }
+    function onDragCheck(e) {
+      if (!isTextOnlyDrag(e)) return;
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      try { e.dataTransfer.dropEffect = 'copy'; } catch (err) {}
+    }
+    function onDrop(e) {
+      if (!isTextOnlyDrag(e)) return;
+      var text = extractText(e);
+      if (!text) return;
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      insertTextToInput(text);
+    }
     function init() {
-      document.addEventListener('dragover', function (e) {
-        var dt = e.dataTransfer;
-        if (!dt || dt.files.length > 0) return;
-        var text = extractText(e);
-        if (!text) return;
-        e.stopImmediatePropagation();
-        e.preventDefault();
-        dt.dropEffect = 'copy';
-      }, true);
-      document.addEventListener('drop', function (e) {
-        var dt = e.dataTransfer;
-        if (!dt || dt.files.length > 0) return;
-        var text = extractText(e);
-        if (!text) return;
-        e.stopImmediatePropagation();
-        e.preventDefault();
-        insertTextToInput(text);
-      }, true);
-      console.log(TAG, '拖拽链接/文字已启用');
+      // Capture on both document and window to beat React's early handlers
+      ['dragenter', 'dragover', 'dragleave'].forEach(function (type) {
+        document.addEventListener(type, onDragCheck, true);
+        window.addEventListener(type, onDragCheck, true);
+      });
+      document.addEventListener('drop', onDrop, true);
+      window.addEventListener('drop', onDrop, true);
+      console.log(TAG, '拖拽链接/文字已启用 (early capture)');
     }
     return { init: init };
   })();
+
+  // Early registration at document-start to beat React hydration
+  if (isLocalWeb && getSetting('dragLinks', true)) {
+    try { DRAG_MODULE.init(); } catch (err) {}
+  }
 
   var QUESTION_MODULE = (function () {
     var ENTER_DEBOUNCE = 180;
@@ -1144,9 +1157,6 @@
       }
       if (getSetting('pasteImg', true)) {
         PASTE_MODULE.init();
-      }
-      if (getSetting('dragLinks', true)) {
-        DRAG_MODULE.init();
       }
       if (getSetting('questionKeys', true)) {
         QUESTION_MODULE.init();
