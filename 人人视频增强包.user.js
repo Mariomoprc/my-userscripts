@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         人人视频增强包
 // @namespace    http://tampermonkey.net/
-// @version      2.8.3
+// @version      2.8.4
 // @description  反调试绕过 + 隐藏滚动条 + 无感去广告(播放态自动续播/暂停态保持/loading修复) + 豆瓣跳转 + 唤醒后暂停(点播放即恢复) + 播放卡死自愈(智能判定不误伤正常缓冲) | 菜单可开关
 // @author       opencode
 // @match        *://*.yichengwlkj.com/*
@@ -380,17 +380,11 @@
         '.xgplayer-enter-loading[data-rrmv-ad="hide"],',
         '.xg-loading[data-rrmv-ad="hide"],',
         '.xgplayer-is-loading [data-rrmv-ad="hide"],',
-        '.xgplayer.rrmv-ad-active .xgplayer-loading,',
-        '.xgplayer.rrmv-ad-active .xgplayer-enter-loading,',
-        '.xgplayer.rrmv-ad-active .xg-loading,',
-        '.xgplayer.rrmv-ad-active [class*="animate-spinner"],',
-        '.xgplayer.rrmv-ad-active i[class*="animate-spinner"][class*="border-2"],',
-        '#player-container.rrmv-ad-active [class*="animate-spinner"],',
-        '#player-container.rrmv-ad-active i[class*="animate-spinner"][class*="border-2"],',
-        '#ve-player-container.rrmv-ad-active [class*="animate-spinner"],',
-        '#ve-player-container.rrmv-ad-active i[class*="animate-spinner"][class*="border-2"],',
-        '#player-container.rrmv-ad-active .xgplayer-loading,',
-        '#ve-player-container.rrmv-ad-active .xgplayer-loading {',
+        'html.rrmv-ad-active .xgplayer-loading,',
+        'html.rrmv-ad-active .xgplayer-enter-loading,',
+        'html.rrmv-ad-active .xg-loading,',
+        'html.rrmv-ad-active [class*="animate-spinner"],',
+        'html.rrmv-ad-active [class*="spinner-spin"],',
         '  opacity: 0 !important;',
         '  pointer-events: none !important;',
         '  visibility: hidden !important;',
@@ -486,33 +480,19 @@
       var AD_RESUME_WINDOW = 10000;
 
       function setAdActive(video, on) {
-        var targets = [
-          document.querySelector('.xgplayer'),
-          document.querySelector('#player-container'),
-          document.querySelector('#ve-player-container')
-        ].filter(Boolean);
-        targets.forEach(function (c) {
-          if (on) c.classList.add('rrmv-ad-active');
-          else c.classList.remove('rrmv-ad-active');
-        });
+        if (on) document.documentElement.classList.add('rrmv-ad-active');
+        else document.documentElement.classList.remove('rrmv-ad-active');
       }
 
       function hideLoading(video) {
-        var containers = [
-          document.querySelector('#ve-player-container'),
-          document.querySelector('#player-container'),
-          document.querySelector('.xgplayer')
-        ].filter(Boolean);
-        if (!containers.length) return;
-        containers.forEach(function (c) {
-          c.querySelectorAll('.xgplayer-loading, .xgplayer-enter-loading, .xg-loading, .xgplayer-loading-spinner').forEach(function (el) {
-            el.setAttribute('data-rrmv-ad', 'hide');
-          });
-          c.querySelectorAll('[class*="animate-spinner"], i[class*="animate-spinner"][class*="border-2"]').forEach(function (el) {
-            try { el.style.setProperty('display', 'none', 'important'); el.style.setProperty('opacity', '0', 'important'); el.style.setProperty('animation', 'none', 'important'); } catch (e) {}
-          });
-          if (c.classList.contains('xgplayer-isloading')) c.classList.remove('xgplayer-isloading');
+        document.querySelectorAll('.xgplayer-loading, .xgplayer-enter-loading, .xg-loading, .xgplayer-loading-spinner').forEach(function (el) {
+          el.setAttribute('data-rrmv-ad', 'hide');
         });
+        document.querySelectorAll('[class*="animate-spinner"], [class*="spinner-spin"]').forEach(function (el) {
+          el.setAttribute('data-rrmv-ad', 'hide');
+        });
+        var xp = document.querySelector('.xgplayer');
+        if (xp && xp.classList.contains('xgplayer-isloading')) xp.classList.remove('xgplayer-isloading');
         if (Date.now() - lastAdBlockAt < AD_RESUME_WINDOW) setAdActive(video, true);
       }
 
