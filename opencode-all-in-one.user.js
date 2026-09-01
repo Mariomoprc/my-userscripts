@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.7.9
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度显示 + Tab 切换代理 + 粘贴图片 + 选项键盘导航
+// @version      1.8.1
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+评分+隐私显示 + Tab 切换代理 + 粘贴图片 + 选项键盘导航
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?://localhost:\d+/
@@ -145,7 +145,7 @@
       'mimo-v2.5-pro':           { context: 256000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 6, aaScore: 42.9, speed: 36.3 },
       'minimax-m3':              { context: 1000000, modalities: ['text', 'image'],      reasoning: false, country: '中国', cap: 6, aaScore: 45.4, speed: 113.9 },
       'minimax-m2.7':            { context: 205000, modalities: ['text', 'image'],       reasoning: false, country: '中国', cap: 5, aaScore: 38.9, speed: 60.9 },
-      'muse-spark-1.2-contributor': { context: 1000000, modalities: ['text', 'image'],   reasoning: false, country: '美国', cap: 4, aaScore: 56.8, speed: 211.7 },
+      'muse-spark-1.2-contributor': { context: 1000000, modalities: ['text', 'image'],   reasoning: false, country: '美国', cap: 4, aaScore: 56.8, speed: 211.7, trainedOnUserData: true },
       'qwen3.8-max':             { context: 1000000, modalities: ['text'],               reasoning: true,  country: '中国', cap: 8, aaScore: 58.1, speed: 22.8 },
       'qwen3.8-flash':           { context: 1000000, modalities: ['text'],               reasoning: true,  country: '中国', cap: 6, aaScore: 55.8, speed: 74.0 },
       'qwen3.7-max':             { context: 1000000, modalities: ['text'],               reasoning: true,  country: '中国', cap: 7, aaScore: 46.7, speed: 205.2 },
@@ -304,6 +304,7 @@
           m.context = meta.context || 128000;
           m.aaScore = meta.aaScore || 0;
           m.speed = meta.speed || 0;
+          m.trainedOnUserData = !!meta.trainedOnUserData;
         }
         var or = lookupOpenRouter(orData, m.modelId);
         if (or) {
@@ -322,7 +323,7 @@
         apiModels.forEach(function (m) {
           if (m.id && !docsIds[m.id]) {
             var meta = MODEL_META[m.id] || {};
-            var entry = { name: m.id, modelId: m.id, req5h: 0, reqWeek: 0, reqMonth: 0, input: 0, output: 0, usage: 0, context: meta.context || 128000, modalities: meta.modalities || ['text'], reasoning: meta.reasoning || false, country: meta.country || '', cap: meta.cap || 5, aaScore: meta.aaScore || 0, speed: meta.speed || 0, score: 0, suggest: '', isNew: true };
+            var entry = { name: m.id, modelId: m.id, req5h: 0, reqWeek: 0, reqMonth: 0, input: 0, output: 0, usage: 0, context: meta.context || 128000, modalities: meta.modalities || ['text'], reasoning: meta.reasoning || false, country: meta.country || '', cap: meta.cap || 5, aaScore: meta.aaScore || 0, speed: meta.speed || 0, trainedOnUserData: !!meta.trainedOnUserData, score: 0, suggest: '', isNew: true };
             var or = lookupOpenRouter(orData, m.id);
             if (or) {
               if (or.context) entry.context = or.context;
@@ -435,7 +436,7 @@
         t.style.cssText = 'width:100%;border-collapse:collapse;font-size:12px;';
         t.innerHTML =
           '<thead><tr style="border-bottom:1px solid #333;text-align:left;position:sticky;top:0;background:#1a1a1a;">' +
-          '<th style="padding:6px 6px;">模型</th><th style="padding:6px 6px;text-align:center;">模态</th><th style="padding:6px 6px;text-align:right;">上下文</th><th style="padding:6px 6px;text-align:right;">速度</th><th style="padding:6px 6px;text-align:right;">5h</th><th style="padding:6px 6px;text-align:right;">月额度</th><th style="padding:6px 6px;text-align:center;">倍数</th><th style="padding:6px 6px;text-align:center;">建议</th><th style="padding:6px 6px;">操作</th>' +
+          '<th style="padding:6px 6px;">模型</th><th style="padding:6px 6px;text-align:center;">模态</th><th style="padding:6px 6px;text-align:right;">上下文</th><th style="padding:6px 6px;text-align:right;">速度</th><th style="padding:6px 6px;text-align:right;">5h</th><th style="padding:6px 6px;text-align:right;">月额度</th><th style="padding:6px 6px;text-align:center;">倍数</th><th style="padding:6px 6px;text-align:center;">建议</th><th style="padding:6px 6px;text-align:center;">隐私</th><th style="padding:6px 6px;">操作</th>' +
           '</tr></thead>';
         var tbody = document.createElement('tbody');
         items.forEach(function (d, i) {
@@ -452,6 +453,7 @@
             '<td style="padding:6px 6px;text-align:right;">' + d.reqMonth.toLocaleString() + '</td>' +
             '<td style="padding:6px 6px;text-align:center;"><span style="display:inline-block;padding:2px 6px;border-radius:3px;font-size:11px;font-weight:600;color:#fff;background:' + usageColor(d.usage) + ';">' + (d.usage ? d.usage + 'x' : '-') + '</span></td>' +
             '<td style="padding:6px 6px;text-align:center;">' + suggestBadge(d.suggest) + '</td>' +
+            '<td style="padding:6px 6px;text-align:center;">' + (d.trainedOnUserData ? '<span style="color:#f85149;font-size:10px;font-weight:600;">⚠ 训练</span>' : '<span style="color:#555;font-size:10px;">-</span>') + '</td>' +
             '<td style="padding:6px 6px;"><button class="oc-go-copy" data-id="' + (d.modelId || '') + '" style="padding:2px 8px;cursor:pointer;border:1px solid #555;border-radius:3px;background:transparent;color:#aaa;font-size:11px;' + (d.modelId ? '' : 'opacity:0.3;cursor:default;') + '">复制</button></td>';
           tbody.appendChild(tr);
         });
@@ -650,7 +652,7 @@
       if (wantVisible) setTimeout(function () { loadAndInject(false); }, 500);
     }
 
-    return { init: init, loadAndInject: loadAndInject, __parseTables: parseTables, __getSortedModels: function () { var sorted = SNAPSHOT.requests.map(function (r) { return { name: r[0], req5h: parseNum(r[1]), reqMonth: parseNum(r[3]), usage: parseNum(r[5]) }; }); sorted.sort(function (a, b) { return b.reqMonth - a.reqMonth; }); return sorted; } };
+    return { init: init, loadAndInject: loadAndInject, __parseTables: parseTables, __getSortedModels: function () { var sorted = SNAPSHOT.requests.map(function (r) { return { name: r[0], req5h: parseNum(r[1]), reqMonth: parseNum(r[3]), usage: parseNum(r[5]) }; }); sorted.sort(function (a, b) { return b.reqMonth - a.reqMonth; }); return sorted; }, __getScore: function (normId) { if (!normId) return null; var keys = Object.keys(MODEL_META); for (var i = 0; i < keys.length; i++) { if (norm(keys[i]) === normId) { var meta = MODEL_META[keys[i]]; var s = Math.round(meta.aaScore || meta.cap * 10); return { score: s, color: scoreColor(s) }; } } return null; }, __getPrivacy: function (normId) { if (!normId) return null; var keys = Object.keys(MODEL_META); for (var i = 0; i < keys.length; i++) { if (norm(keys[i]) === normId) { var meta = MODEL_META[keys[i]]; return { trainedOnUserData: !!meta.trainedOnUserData }; } } return null; } };
   })();
 
   var TAB_MODULE = (function () {
@@ -1021,10 +1023,12 @@
         }
         if (!quota) return;
 
+        var scoreInfo = GO_MODULE.__getScore(modelId);
+        var privacyInfo = GO_MODULE.__getPrivacy(modelId);
         var tag = document.createElement('span');
         tag.className = 'oc-quota-tag';
         tag.style.cssText = 'color:#666;font-size:10px;margin-left:6px;white-space:nowrap;flex-shrink:0;';
-        tag.textContent = quota.reqMonth.toLocaleString() + '/月';
+        tag.innerHTML = quota.reqMonth.toLocaleString() + '/月' + (scoreInfo ? ' <span style="color:' + scoreInfo.color + ';font-weight:600;">' + scoreInfo.score + '分</span>' : '') + (privacyInfo && privacyInfo.trainedOnUserData ? ' <span style="color:#f85149;font-weight:600;">⚠ 训练</span>' : '');
         item.appendChild(tag);
       });
       console.log(TAG, 'Injected quotas into', items.length, 'dropdown items');
