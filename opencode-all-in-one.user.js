@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.8.4
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默) + 选项键盘导航 + 拖拽网页/链接到输入框(无遮挡) + 后端掉线提示 | v1.8.4
+// @version      1.8.5
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示 | v1.8.5
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -14,6 +14,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.8.5 修复拖拽文字黑屏（精确定位浮层+栈式还原）
 // v1.8.4 拖拽文字遮挡修复（types快判+虚线框隐藏）
 // v1.8.3 拖拽网页/链接恢复 + 额度显示加国家 + 粘贴图片去成功提示 + 仅保留 localhost:4096
 // v1.8.2 Zen 免费模型补训练标记 + URL 拖放遮挡拦截
@@ -899,50 +900,49 @@
       if (!dt || dt.files.length > 0) return false;
       return hasTextType(dt);
     }
-    function hideOverlay() {
-      // 注入一次性样式压制常见浮层类名
-      if (!document.getElementById('oc-drag-hide')) {
-        var st = document.createElement('style');
-        st.id = 'oc-drag-hide';
-        st.textContent = '[data-drag-overlay], .drag-overlay, .drop-overlay, [class*="drag"] [class*="overlay"]{ display:none !important; }';
-        document.head.appendChild(st);
-      }
-      // 直接隐藏包含文案的节点（OC 的“拖放文件以添加附件”）
-      var nodes = document.querySelectorAll('*');
-      for (var i = 0; i < nodes.length; i++) {
-        var el = nodes[i];
-        if (el.textContent && el.textContent.indexOf('拖放文件以添加附件') !== -1) {
-          // 找到最外层虚线框容器
-          var cur = el;
-          for (var k = 0; k < 4 && cur; k++) {
-            var cs = getComputedStyle(cur);
-            if (cs.borderStyle === 'dashed' || cur.getAttribute('data-drag-overlay') !== null) break;
-            cur = cur.parentElement;
+    var _hiddenOverlays = [];
+    function findOverlayEl() {
+      // 精确查找：含文案的文本节点 -> 上溯到虚线/fixed 容器
+      try {
+        var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        var n;
+        while ((n = walker.nextNode())) {
+          if (n.nodeValue && n.nodeValue.indexOf('拖放文件以添加附件') !== -1) {
+            var el = n.parentElement;
+            for (var i = 0; i < 6 && el; i++) {
+              try {
+                var cs = getComputedStyle(el);
+                if (cs.borderStyle === 'dashed' || cs.position === 'fixed' || el.hasAttribute('data-drag-overlay')) return el;
+              } catch (e2) {}
+              el = el.parentElement;
+            }
+            return n.parentElement;
           }
-          if (cur) cur.style.display = 'none';
-          else el.style.display = 'none';
         }
-      }
+      } catch (e3) {}
+      return null;
+    }
+    function hideOverlay() {
+      var ov = findOverlayEl();
+      if (!ov) return;
+      // 仅隐藏该浮层本体，不动 body/#root
+      if (ov.dataset.ocHidden) return;
+      ov.dataset.ocHidden = '1';
+      ov.style.display = 'none';
+      _hiddenOverlays.push(ov);
     }
     function showOverlay() {
-      // 清理由 hideOverlay 隐藏的节点，让文件拖拽恢复
-      var hid = document.getElementById('oc-drag-hide');
-      if (hid) hid.remove();
-      var nodes = document.querySelectorAll('*');
-      for (var i = 0; i < nodes.length; i++) {
-        var el = nodes[i];
-        if (el.style && el.style.display === 'none' && el.textContent && el.textContent.indexOf('拖放文件以添加附件') !== -1) {
+      while (_hiddenOverlays.length) {
+        var el = _hiddenOverlays.pop();
+        if (el && el.dataset.ocHidden) {
+          delete el.dataset.ocHidden;
           el.style.display = '';
-          var cur = el.parentElement;
-          for (var k = 0; k < 4 && cur; k++) {
-            if (cur.style.display === 'none') cur.style.display = '';
-            cur = cur.parentElement;
-          }
         }
       }
     }
     function onDragCheck(e) {
-      // 文字拖拽：dragenter 时 getData 不可读，用 types 快判
+      // 输入框内拖选不拦截
+      try { if (e.target && e.target.closest && e.target.closest('[contenteditable], textarea, input')) return; } catch (e2) {}
       if (!isTextTypesDrag(e)) return;
       e.stopImmediatePropagation();
       e.preventDefault();
@@ -950,50 +950,47 @@
       hideOverlay();
     }
     function onDragLeave(e) {
-      if (!isTextTypesDrag(e)) return;
-      hideOverlay();
+      // 仅在真正离开视口时恢复，避免频繁闪烁
+      if (e.relatedTarget) return;
+      showOverlay();
     }
     function onDrop(e) {
-      // drop 阶段再用 getData 精判并插入
-      if (!isTextOnlyDrag(e) && !isTextTypesDrag(e)) return;
+      if (!isTextOnlyDrag(e) && !isTextTypesDrag(e)) { showOverlay(); return; }
       var text = extractText(e);
       if (!text) { showOverlay(); return; }
       e.stopImmediatePropagation();
       e.preventDefault();
       insertTextToInput(text);
-      setTimeout(showOverlay, 100);
+      setTimeout(showOverlay, 200);
     }
     function init() {
       if (_inited) return;
       _inited = true;
+      var _dragIsText = false;
+      function updateFlag(e) { try { _dragIsText = isTextTypesDrag(e); } catch (e2) { _dragIsText = false; } }
       ['dragenter', 'dragover'].forEach(function (type) {
-        document.addEventListener(type, onDragCheck, true);
-        window.addEventListener(type, onDragCheck, true);
+        document.addEventListener(type, function (e) { updateFlag(e); onDragCheck(e); }, true);
+        window.addEventListener(type, function (e) { updateFlag(e); onDragCheck(e); }, true);
       });
-      document.addEventListener('dragleave', onDragLeave, true);
-      window.addEventListener('dragleave', onDragLeave, true);
-      document.addEventListener('drop', onDrop, true);
-      window.addEventListener('drop', onDrop, true);
-      // 兜底：OC 若动态插入浮层，Mutation 观察到文字即隐藏
+      document.addEventListener('dragleave', function (e) { onDragLeave(e); if (!e.relatedTarget) _dragIsText = false; }, true);
+      window.addEventListener('dragleave', function (e) { onDragLeave(e); if (!e.relatedTarget) _dragIsText = false; }, true);
+      document.addEventListener('drop', function (e) { _dragIsText = false; onDrop(e); }, true);
+      window.addEventListener('drop', function (e) { _dragIsText = false; onDrop(e); }, true);
+      // 兜底：若 OC 在 dragover 后动态插入浮层，仅在文字拖拽时隐藏该浮层本体
       var mo = new MutationObserver(function (muts) {
+        if (!_dragIsText) return;
         for (var i = 0; i < muts.length; i++) {
           var added = muts[i].addedNodes;
           for (var j = 0; j < added.length; j++) {
             var nd = added[j];
             if (nd.nodeType === 1 && nd.textContent && nd.textContent.indexOf('拖放文件以添加附件') !== -1) {
-              // 仅在当前是文字拖拽时隐藏
-              var dtTypes = nd.ownerDocument && nd.ownerDocument.__ocDragIsText;
-              // 简化：直接查当前拖拽类型缓存
-              if (document.__ocDragIsText) nd.style.display = 'none';
+              var ov = findOverlayEl();
+              if (ov && !ov.dataset.ocHidden) { ov.dataset.ocHidden = '1'; ov.style.display = 'none'; _hiddenOverlays.push(ov); }
             }
           }
         }
       });
       try { mo.observe(document.body, { childList: true, subtree: true }); } catch (e) {}
-      // 缓存当前拖拽是否为文字，供 Mutation 判别
-      document.addEventListener('dragover', function (e) { document.__ocDragIsText = isTextTypesDrag(e); }, true);
-      document.addEventListener('dragleave', function () { document.__ocDragIsText = false; setTimeout(showOverlay, 200); }, true);
-      document.addEventListener('drop', function () { document.__ocDragIsText = false; }, true);
       console.log(TAG, '拖拽链接/文字已启用 (early capture, overlay suppressed)');
     }
     return { init: init };
