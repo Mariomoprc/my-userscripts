@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.8.1
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+评分+隐私显示 + Tab 切换代理 + 粘贴图片 + 选项键盘导航 | v1.8.1
+// @version      1.8.2
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+评分+隐私显示 + Tab 切换代理 + 粘贴图片 + 选项键盘导航 + URL 拖放遮挡拦截 | v1.8.2
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?://localhost:\d+/
@@ -17,6 +17,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.8.2 Zen 免费模型补训练标记 + URL 拖放遮挡拦截
 // v1.8.1 模型选择器+面板显示请求数据训练标记（Muse Spark 1.2 Contributor）
 // v1.8.0 模型选择器+面板显示 AA 智能指数评分
 // v1.7.9 自定义输入框数字键被拦截跳选项修复
@@ -165,10 +166,10 @@
     };
 
     var ZEN_FREE_META = {
-      'muse-spark-1.2-contributor-free': { context: 1048576, modalities: ['text', 'image', 'video', 'pdf', 'audio'], reasoning: true, suggest: '多模态', score: 57, country: '美国', speed: 211.7 },
+      'muse-spark-1.2-contributor-free': { context: 1048576, modalities: ['text', 'image', 'video', 'pdf', 'audio'], reasoning: true, suggest: '多模态', score: 57, country: '美国', speed: 211.7, trainedOnUserData: true },
       'nemotron-3-ultra-free': { context: 1000000, modalities: ['text'], reasoning: true, suggest: '长上下文', score: 48, country: '美国', speed: 157.3 },
       'hy3-free': { context: 190000, modalities: ['text'], reasoning: true, suggest: '通用', score: 42, country: '中国', speed: 67.4 },
-      'mimo-v2.5-free': { context: 200000, modalities: ['text', 'image', 'audio', 'video'], reasoning: true, suggest: '多模态', score: 38, country: '中国', speed: 69.4 },
+      'mimo-v2.5-free': { context: 200000, modalities: ['text', 'image', 'audio', 'video'], reasoning: true, suggest: '多模态', score: 38, country: '中国', speed: 69.4, trainedOnUserData: true },
       'ling-3.0-flash-fin-free': { context: 262144, modalities: ['text'], reasoning: true, suggest: '金融', score: 38, country: '中国', speed: 0 },
       'nemotron-3.5-lightning-free': { context: 262144, modalities: ['text'], reasoning: true, suggest: '通用', score: 24, country: '美国', speed: 299.7 },
       'big-pickle': { context: 200000, modalities: ['text'], reasoning: true, suggest: '通用', score: 35, country: '中国', speed: 0 }
@@ -365,12 +366,12 @@
           }
           var list = ids.map(function (id) {
             var meta = ZEN_FREE_META[id] || { context: 128000, modalities: ['text'], reasoning: true, suggest: '通用', score: 30, country: '待确认', speed: 0 };
-            return { id: id, context: meta.context, modalities: meta.modalities, reasoning: meta.reasoning, suggest: meta.suggest, score: meta.score, country: meta.country, speed: meta.speed };
+            return { id: id, context: meta.context, modalities: meta.modalities, reasoning: meta.reasoning, suggest: meta.suggest, score: meta.score, country: meta.country, speed: meta.speed, trainedOnUserData: !!meta.trainedOnUserData };
           });
           if (!list.length) {
             list = Object.keys(ZEN_FREE_META).map(function (id) {
               var meta = ZEN_FREE_META[id];
-              return { id: id, context: meta.context, modalities: meta.modalities, reasoning: meta.reasoning, suggest: meta.suggest, score: meta.score, country: meta.country, speed: meta.speed };
+              return { id: id, context: meta.context, modalities: meta.modalities, reasoning: meta.reasoning, suggest: meta.suggest, score: meta.score, country: meta.country, speed: meta.speed, trainedOnUserData: !!meta.trainedOnUserData };
             });
           }
           list.sort(function (a, b) { return (b.score || 0) - (a.score || 0); });
@@ -482,7 +483,7 @@
       if (zenFree && zenFree.length) {
         var zt = document.createElement('table');
         zt.style.cssText = 'width:100%;border-collapse:collapse;font-size:12px;';
-        zt.innerHTML = '<thead><tr style="border-bottom:1px solid #2a2a2a;text-align:left;"><th style="padding:4px 6px;">评分</th><th style="padding:4px 6px;">模型</th><th style="padding:4px 6px;text-align:right;">上下文</th><th style="padding:4px 6px;text-align:right;">速度</th><th style="padding:4px 6px;text-align:center;">模态</th><th style="padding:4px 6px;text-align:center;">推理</th><th style="padding:4px 6px;text-align:center;">建议</th><th style="padding:4px 6px;">操作</th></tr></thead>';
+        zt.innerHTML = '<thead><tr style="border-bottom:1px solid #2a2a2a;text-align:left;"><th style="padding:4px 6px;">评分</th><th style="padding:4px 6px;">模型</th><th style="padding:4px 6px;text-align:right;">上下文</th><th style="padding:4px 6px;text-align:right;">速度</th><th style="padding:4px 6px;text-align:center;">模态</th><th style="padding:4px 6px;text-align:center;">推理</th><th style="padding:4px 6px;text-align:center;">建议</th><th style="padding:4px 6px;text-align:center;">训练</th><th style="padding:4px 6px;">操作</th></tr></thead>';
         var ztb = document.createElement('tbody');
         zenFree.forEach(function (f) {
           var tr = document.createElement('tr');
@@ -495,6 +496,7 @@
             '<td style="padding:4px 6px;text-align:center;font-size:11px;">' + modalitiesText(f.modalities) + '</td>' +
             '<td style="padding:4px 6px;text-align:center;">' + (f.reasoning ? '<span style="color:#2ea043;">✓</span>' : '-') + '</td>' +
             '<td style="padding:4px 6px;text-align:center;"><span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;color:#111;background:#eee;">' + f.suggest + '</span></td>' +
+            '<td style="padding:4px 6px;text-align:center;">' + (f.trainedOnUserData ? '<span style="color:#f85149;font-size:10px;font-weight:600;">⚠ 训练</span>' : '<span style="color:#555;font-size:10px;">-</span>') + '</td>' +
             '<td style="padding:4px 6px;"><button class="oc-go-copy" data-id="' + f.id + '" style="padding:2px 8px;cursor:pointer;border:1px solid #555;border-radius:3px;background:transparent;color:#aaa;font-size:11px;">复制</button></td>';
           ztb.appendChild(tr);
         });
@@ -820,6 +822,27 @@
     return { init: init };
   })();
 
+  var DRAG_MODULE = (function () {
+    function init() {
+      document.addEventListener('dragover', function (e) {
+        var dt = e.dataTransfer;
+        if (!dt || !dt.types) return;
+        var hasFiles = false, hasUri = false;
+        for (var i = 0; i < dt.types.length; i++) {
+          var t = dt.types[i];
+          if (t === 'Files') hasFiles = true;
+          if (t === 'text/uri-list') hasUri = true;
+        }
+        if (hasUri && !hasFiles) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }, true);
+      console.log(TAG, 'URL 拖放遮挡拦截已启用');
+    }
+    return { init: init };
+  })();
+
   var QUESTION_MODULE = (function () {
     var ENTER_DEBOUNCE = 180;
     var lastEnter = 0;
@@ -1068,6 +1091,7 @@
   // ════════════════════════════════════════════════════════════
 
   function init() {
+    DRAG_MODULE.init();
     if (isOpencodeAi && getSetting('goPanel', true)) {
       GO_MODULE.init();
     }
