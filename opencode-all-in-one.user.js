@@ -1,14 +1,11 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.8.2
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+评分+隐私显示 + Tab 切换代理 + 粘贴图片 + 选项键盘导航 + URL 拖放遮挡拦截 | v1.8.2
+// @version      1.8.3
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默) + 选项键盘导航 + 拖拽网页/链接到输入框 | v1.8.3
 // @author       pass
 // @match        https://opencode.ai/*
-// @include      /^https?://localhost:\d+/
-// @include      /^https?://127\.0\.0\.1:\d+/
-// @include      /^https?://192\.168\.\d+\.\d+:\d+/
-// @include      /^https?://\d+\.\d+\.\d+\.\d+:\d+/
+// @include      /^https?:\/\/localhost:4096/
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_registerMenuCommand
@@ -17,6 +14,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.8.3 拖拽网页/链接恢复 + 额度显示加国家 + 粘贴图片去成功提示 + 仅保留 localhost:4096
 // v1.8.2 Zen 免费模型补训练标记 + URL 拖放遮挡拦截
 // v1.8.1 模型选择器+面板显示请求数据训练标记（Muse Spark 1.2 Contributor）
 // v1.8.0 模型选择器+面板显示 AA 智能指数评分
@@ -47,6 +45,7 @@
     { key: 'goPanel', label: 'Go 额度面板', def: true },
     { key: 'tabCycle', label: 'Tab 键切换代理', def: true },
     { key: 'pasteImg', label: '粘贴图片', def: true },
+    { key: 'dragDrop', label: '拖拽链接/文字', def: true },
     { key: 'questionKeys', label: '选项键盘导航', def: true }
   ];
 
@@ -67,8 +66,10 @@
   });
 
   var host = location.hostname;
+  var port = location.port;
   var isOpencodeAi = host === 'opencode.ai';
   var isLocalWeb = /^(localhost|127\.0\.0\.1|192\.168\.|(\d+\.){3}\d+)/.test(host);
+  var isLocalhost4096 = host === 'localhost' && port === '4096';
 
   if (isLocalWeb && typeof crypto !== 'undefined' && !crypto.subtle) {
     try {
@@ -661,7 +662,7 @@
       if (wantVisible) setTimeout(function () { loadAndInject(false); }, 500);
     }
 
-    return { init: init, loadAndInject: loadAndInject, __parseTables: parseTables, __getSortedModels: function () { var sorted = SNAPSHOT.requests.map(function (r) { return { name: r[0], req5h: parseNum(r[1]), reqMonth: parseNum(r[3]), usage: parseNum(r[5]) }; }); sorted.sort(function (a, b) { return b.reqMonth - a.reqMonth; }); return sorted; }, __getScore: function (normId) { if (!normId) return null; var keys = Object.keys(MODEL_META); for (var i = 0; i < keys.length; i++) { if (norm(keys[i]) === normId) { var meta = MODEL_META[keys[i]]; var s = Math.round(meta.aaScore || meta.cap * 10); return { score: s, color: scoreColor(s) }; } } return null; }, __getPrivacy: function (normId) { if (!normId) return null; var keys = Object.keys(MODEL_META); for (var i = 0; i < keys.length; i++) { if (norm(keys[i]) === normId) { var meta = MODEL_META[keys[i]]; return { trainedOnUserData: !!meta.trainedOnUserData }; } } return null; } };
+    return { init: init, loadAndInject: loadAndInject, __parseTables: parseTables, __getSortedModels: function () { var sorted = SNAPSHOT.requests.map(function (r) { return { name: r[0], req5h: parseNum(r[1]), reqMonth: parseNum(r[3]), usage: parseNum(r[5]) }; }); sorted.sort(function (a, b) { return b.reqMonth - a.reqMonth; }); return sorted; }, __getScore: function (normId) { if (!normId) return null; var keys = Object.keys(MODEL_META); for (var i = 0; i < keys.length; i++) { if (norm(keys[i]) === normId) { var meta = MODEL_META[keys[i]]; var s = Math.round(meta.aaScore || meta.cap * 10); return { score: s, color: scoreColor(s) }; } } return null; }, __getPrivacy: function (normId) { if (!normId) return null; var keys = Object.keys(MODEL_META); for (var i = 0; i < keys.length; i++) { if (norm(keys[i]) === normId) { var meta = MODEL_META[keys[i]]; return { trainedOnUserData: !!meta.trainedOnUserData }; } } return null; }, __getCountry: function (normId) { if (!normId) return null; var keys = Object.keys(MODEL_META); for (var i = 0; i < keys.length; i++) { if (norm(keys[i]) === normId) { var meta = MODEL_META[keys[i]]; return meta.country || null; } } return null; }, __getMeta: function (normId) { if (!normId) return null; var keys = Object.keys(MODEL_META); for (var i = 0; i < keys.length; i++) { if (norm(keys[i]) === normId) return MODEL_META[keys[i]]; } return null; } };
   })();
 
   var TAB_MODULE = (function () {
@@ -796,7 +797,7 @@
           if (settled) return;
           settled = true;
           obs.disconnect();
-          if (success) toast('✓ 已附加为原生附件（识图模型可读）');
+          if (success) { console.log(TAG, 'paste image attached'); }
           else dropFailed('前端未响应 drop。请手动拖拽图片或使用附件按钮');
         }
         var obsOpts = { childList: true, subtree: true, attributes: true, characterData: true };
@@ -823,25 +824,98 @@
   })();
 
   var DRAG_MODULE = (function () {
+    var _inited = false;
+    function findInput() {
+      return document.querySelector('[contenteditable="true"]') ||
+             document.querySelector('textarea') ||
+             document.querySelector('input[type="text"]');
+    }
+    function extractText(e) {
+      var dt = e.dataTransfer;
+      if (!dt) return null;
+      var text = dt.getData('text/uri-list');
+      if (text) {
+        var lines = text.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(function (l) { return l && l.indexOf('#') !== 0; });
+        if (lines.length) text = lines[0];
+        else text = '';
+      }
+      if (!text || text.indexOf('#') === 0) text = dt.getData('text/plain');
+      if (!text) text = dt.getData('text');
+      return text ? text.trim() : null;
+    }
+    function insertTextToInput(text) {
+      var target = findInput();
+      if (!target) { toast('✗ 未找到输入框', '#f55'); return; }
+      var sel = window.getSelection();
+      var range = null;
+      if (sel && sel.rangeCount) range = sel.getRangeAt(0);
+      if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') {
+        var start = target.selectionStart;
+        var end = target.selectionEnd;
+        var val = target.value;
+        if (start == null || end == null) {
+          target.value = val + (val && !val.endsWith('\n') ? '\n' : '') + text;
+        } else {
+          target.value = val.slice(0, start) + text + val.slice(end);
+          target.selectionStart = target.selectionEnd = start + text.length;
+        }
+        target.dispatchEvent(new Event('input', { bubbles: true }));
+        target.focus();
+      } else if (target.isContentEditable) {
+        target.focus();
+        if (range && target.contains(range.startContainer)) {
+          range.deleteContents();
+          range.insertNode(document.createTextNode(text));
+          range.collapse(false);
+          sel.removeAllRanges();
+          sel.addRange(range);
+        } else {
+          var sep = target.textContent && !target.textContent.endsWith('\n') ? '\n' : '';
+          target.appendChild(document.createTextNode(sep + text));
+        }
+        target.dispatchEvent(new Event('input', { bubbles: true }));
+      } else {
+        toast('✗ 不支持的输入框类型', '#f55');
+        return;
+      }
+      toast('✓ 已插入 ' + text.length + ' 字符', '#2ea043');
+    }
+    function isTextOnlyDrag(e) {
+      var dt = e.dataTransfer;
+      if (!dt || dt.files.length > 0) return false;
+      return !!extractText(e);
+    }
+    function onDragCheck(e) {
+      if (!isTextOnlyDrag(e)) return;
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      try { e.dataTransfer.dropEffect = 'copy'; } catch (err) {}
+    }
+    function onDrop(e) {
+      if (!isTextOnlyDrag(e)) return;
+      var text = extractText(e);
+      if (!text) return;
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      insertTextToInput(text);
+    }
     function init() {
-      document.addEventListener('dragover', function (e) {
-        var dt = e.dataTransfer;
-        if (!dt || !dt.types) return;
-        var hasFiles = false, hasUri = false;
-        for (var i = 0; i < dt.types.length; i++) {
-          var t = dt.types[i];
-          if (t === 'Files') hasFiles = true;
-          if (t === 'text/uri-list') hasUri = true;
-        }
-        if (hasUri && !hasFiles) {
-          e.preventDefault();
-          e.stopPropagation();
-        }
-      }, true);
-      console.log(TAG, 'URL 拖放遮挡拦截已启用');
+      if (_inited) return;
+      _inited = true;
+      ['dragenter', 'dragover', 'dragleave'].forEach(function (type) {
+        document.addEventListener(type, onDragCheck, true);
+        window.addEventListener(type, onDragCheck, true);
+      });
+      document.addEventListener('drop', onDrop, true);
+      window.addEventListener('drop', onDrop, true);
+      console.log(TAG, '拖拽链接/文字已启用 (early capture)');
     }
     return { init: init };
   })();
+  // Early DRAG registration for localhost:4096 to beat React hydration
+  if (isLocalhost4096 && (getSetting('dragDrop', true) || getSetting('dragLinks', true))) {
+    try { DRAG_MODULE.init(); } catch (e) {}
+  }
 
   var QUESTION_MODULE = (function () {
     var ENTER_DEBOUNCE = 180;
@@ -1055,10 +1129,11 @@
 
         var scoreInfo = GO_MODULE.__getScore(modelId);
         var privacyInfo = GO_MODULE.__getPrivacy(modelId);
+        var country = GO_MODULE.__getCountry ? GO_MODULE.__getCountry(modelId) : null;
         var tag = document.createElement('span');
         tag.className = 'oc-quota-tag';
         tag.style.cssText = 'color:#666;font-size:10px;margin-left:6px;white-space:nowrap;flex-shrink:0;';
-        tag.innerHTML = quota.reqMonth.toLocaleString() + '/月' + (scoreInfo ? ' <span style="color:' + scoreInfo.color + ';font-weight:600;">' + scoreInfo.score + '分</span>' : '') + (privacyInfo && privacyInfo.trainedOnUserData ? ' <span style="color:#f85149;font-weight:600;">⚠ 训练</span>' : '');
+        tag.innerHTML = quota.reqMonth.toLocaleString() + '/月' + (country ? ' <span style="color:#888;">(' + country + ')</span>' : '') + (scoreInfo ? ' <span style="color:' + scoreInfo.color + ';font-weight:600;">' + scoreInfo.score + '分</span>' : '') + (privacyInfo && privacyInfo.trainedOnUserData ? ' <span style="color:#f85149;font-weight:600;">⚠ 训练</span>' : '');
         item.appendChild(tag);
       });
       console.log(TAG, 'Injected quotas into', items.length, 'dropdown items');
@@ -1087,15 +1162,72 @@
   })();
 
   // ════════════════════════════════════════════════════════════
+  //  后端连接监测 (仅 localhost:4096)
+  // ════════════════════════════════════════════════════════════
+  var CONNECTION_MODULE = (function () {
+    var origTitle = '';
+    var disconnected = false;
+    var failCount = 0;
+    var probeTimer = null;
+    var origFetch = window.fetch;
+    function setDisconnected(on) {
+      if (on === disconnected) return;
+      disconnected = on;
+      if (on) {
+        toast('✗ 后端已断开 (4096) - 等待重连…', '#f85149');
+        try { document.title = '● 掉线 - ' + (origTitle || document.title); } catch (e) {}
+      } else {
+        toast('✓ 后端已重连', '#2ea043');
+        try { document.title = origTitle || document.title.replace(/^● 掉线 - /, ''); } catch (e) {}
+      }
+    }
+    function probe() {
+      if (!isLocalhost4096) return;
+      fetch(location.origin + '/', { method: 'HEAD', cache: 'no-store' }).then(function (r) {
+        if (r.ok || r.status < 500) { failCount = 0; setDisconnected(false); }
+        else { failCount++; if (failCount >= 2) setDisconnected(true); }
+      }).catch(function () { failCount++; if (failCount >= 2) setDisconnected(true); });
+    }
+    function wrapFetch() {
+      if (!origFetch || window.__ocFetchWrapped) return;
+      window.__ocFetchWrapped = true;
+      window.fetch = function (input, init) {
+        var url = typeof input === 'string' ? input : (input && input.url) || '';
+        var isSelf = url.indexOf(location.origin) === 0 || url.indexOf('localhost:4096') !== -1;
+        return origFetch.apply(this, arguments).then(function (r) {
+          if (isSelf) { if (r.ok || r.status < 500) { failCount = 0; if (disconnected) setDisconnected(false); } }
+          return r;
+        }, function (err) {
+          if (isSelf) { failCount++; if (failCount >= 2) setDisconnected(true); }
+          throw err;
+        });
+      };
+    }
+    function init() {
+      if (!isLocalhost4096) return;
+      origTitle = document.title;
+      wrapFetch();
+      window.addEventListener('online', probe);
+      window.addEventListener('offline', function () { setDisconnected(true); });
+      probe();
+      probeTimer = setInterval(probe, 5000);
+      console.log(TAG, '后端连接监测已启用 (localhost:4096)');
+    }
+    return { init: init };
+  })();
+
+  // ════════════════════════════════════════════════════════════
   //  Main entry
   // ════════════════════════════════════════════════════════════
 
   function init() {
-    DRAG_MODULE.init();
+    if (isLocalhost4096 && (getSetting('dragDrop', true) || getSetting('dragLinks', true))) {
+      try { DRAG_MODULE.init(); } catch (e) {}
+    }
     if (isOpencodeAi && getSetting('goPanel', true)) {
       GO_MODULE.init();
     }
-    if (isLocalWeb) {
+    if (isLocalhost4096) {
       if (getSetting('goPanel', true)) {
         MODEL_QUOTA.init();
       }
@@ -1112,6 +1244,11 @@
       if (getSetting('questionKeys', true)) {
         QUESTION_MODULE.init();
       }
+      CONNECTION_MODULE.init();
+    } else if (isLocalWeb) {
+      // Fallback for other local ports if script ever runs there (should not due to @include)
+      if (getSetting('goPanel', true)) MODEL_QUOTA.init();
+      if (getSetting('pasteImg', true)) PASTE_MODULE.init();
     }
   }
 

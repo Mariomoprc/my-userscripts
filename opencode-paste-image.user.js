@@ -1,13 +1,10 @@
 // ==UserScript==
 // @name         OpenCode Web 粘贴图片
 // @namespace    http://tampermonkey.net/
-// @version      2.6
-// @description  Ctrl+V 粘贴图片到 OpenCode Web：注入 crypto.subtle polyfill（修复局域网 HTTP 非安全上下文下 putBlob 崩溃），伪造 dragover+drop 派发到 document 走原生附件通道；不落地 base64 文本（识图模型读不到）
+// @version      2.7
+// @description  Ctrl+V 粘贴图片到 OpenCode Web：注入 crypto.subtle polyfill（修复局域网 HTTP 非安全上下文下 putBlob 崩溃），伪造 dragover+drop 派发到 document 走原生附件通道；不落地 base64 文本（识图模型读不到） | 仅 localhost:4096 | 去成功提示
 // @author       pass
-// @include      /^https?://localhost:\d+/
-// @include      /^https?://127\.0\.0\.1:\d+/
-// @include      /^https?://192\.168\.\d+\.\d+:\d+/
-// @include      /^https?://\d+\.\d+\.\d+\.\d+:\d+/
+// @include      /^https?:\/\/localhost:4096/
 // @grant        GM_registerMenuCommand
 // @run-at       document-start
 // ==/UserScript==
@@ -188,7 +185,7 @@
         settled = true;
         obs.disconnect();
         if (success) {
-          toast('✓ 已附加为原生附件（识图模型可读）');
+          console.log('[OC Paste] image attached');
         } else {
           dropFailed('前端未响应 drop。请手动拖拽图片或使用附件按钮');
         }
