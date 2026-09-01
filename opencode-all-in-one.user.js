@@ -2,7 +2,7 @@
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
 // @version      1.8.1
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+评分+隐私显示 + Tab 切换代理 + 粘贴图片 + 选项键盘导航
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+评分+隐私显示 + Tab 切换代理 + 粘贴图片 + 选项键盘导航 | v1.8.1
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?://localhost:\d+/
@@ -15,6 +15,13 @@
 // @grant        GM.xmlhttpRequest
 // @run-at       document-start
 // ==/UserScript==
+
+// 版本历史：
+// v1.8.1 模型选择器+面板显示请求数据训练标记（Muse Spark 1.2 Contributor）
+// v1.8.0 模型选择器+面板显示 AA 智能指数评分
+// v1.7.9 自定义输入框数字键被拦截跳选项修复
+// v1.7.8 Go 模型额度面板 + 模型选择器额度显示
+// v1.7.7 Tab 键切换代理 + 粘贴图片 + 选项键盘导航
 
 (function () {
   'use strict';
