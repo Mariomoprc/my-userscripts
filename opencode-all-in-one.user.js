@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.7.8
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度显示 + Tab 切换代理 + 粘贴图片 + 拖拽链接/文字 + 选项键盘导航
+// @version      1.7.9
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度显示 + Tab 切换代理 + 粘贴图片 + 选项键盘导航
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?://localhost:\d+/
@@ -39,7 +39,6 @@
     { key: 'goPanel', label: 'Go 额度面板', def: true },
     { key: 'tabCycle', label: 'Tab 键切换代理', def: true },
     { key: 'pasteImg', label: '粘贴图片', def: true },
-    { key: 'dragLinks', label: '拖拽链接/文字', def: true },
     { key: 'questionKeys', label: '选项键盘导航', def: true }
   ];
 
@@ -786,7 +785,7 @@
           if (settled) return;
           settled = true;
           obs.disconnect();
-          if (success) console.log(TAG, 'paste image attached');
+          if (success) toast('✓ 已附加为原生附件（识图模型可读）');
           else dropFailed('前端未响应 drop。请手动拖拽图片或使用附件按钮');
         }
         var obsOpts = { childList: true, subtree: true, attributes: true, characterData: true };
@@ -811,90 +810,6 @@
     }
     return { init: init };
   })();
-
-  var DRAG_MODULE = (function () {
-    function findInput() {
-      return document.querySelector('[contenteditable="true"]') ||
-             document.querySelector('textarea') ||
-             document.querySelector('input[type="text"]');
-    }
-    function extractText(e) {
-      var dt = e.dataTransfer;
-      if (!dt) return null;
-      var text = dt.getData('text/uri-list');
-      if (!text || text.indexOf('#') === 0) text = dt.getData('text/plain');
-      if (!text) text = dt.getData('text');
-      return text || null;
-    }
-    function insertTextToInput(text) {
-      var target = findInput();
-      if (!target) { toast('✗ 未找到输入框', '#f55'); return; }
-      var sel = window.getSelection();
-      var range = null;
-      if (sel && sel.rangeCount) range = sel.getRangeAt(0);
-
-      if (target.tagName === 'TEXTAREA' || target.tagName === 'INPUT') {
-        var start = target.selectionStart;
-        var end = target.selectionEnd;
-        var val = target.value;
-        target.value = val.slice(0, start) + text + val.slice(end);
-        target.selectionStart = target.selectionEnd = start + text.length;
-        target.dispatchEvent(new Event('input', { bubbles: true }));
-        target.focus();
-      } else if (target.isContentEditable) {
-        target.focus();
-        if (range && target.contains(range.startContainer)) {
-          range.deleteContents();
-          range.insertNode(document.createTextNode(text));
-          range.collapse(false);
-          sel.removeAllRanges();
-          sel.addRange(range);
-        } else {
-          target.appendChild(document.createTextNode(text));
-        }
-        target.dispatchEvent(new Event('input', { bubbles: true }));
-      } else {
-        toast('✗ 不支持的输入框类型', '#f55');
-        return;
-      }
-      toast('✓ 已插入链接/文字 (' + text.length + ' 字符)');
-    }
-    function isTextOnlyDrag(e) {
-      var dt = e.dataTransfer;
-      if (!dt || dt.files.length > 0) return false;
-      return !!extractText(e);
-    }
-    function onDragCheck(e) {
-      if (!isTextOnlyDrag(e)) return;
-      e.stopImmediatePropagation();
-      e.preventDefault();
-      try { e.dataTransfer.dropEffect = 'copy'; } catch (err) {}
-    }
-    function onDrop(e) {
-      if (!isTextOnlyDrag(e)) return;
-      var text = extractText(e);
-      if (!text) return;
-      e.stopImmediatePropagation();
-      e.preventDefault();
-      insertTextToInput(text);
-    }
-    function init() {
-      // Capture on both document and window to beat React's early handlers
-      ['dragenter', 'dragover', 'dragleave'].forEach(function (type) {
-        document.addEventListener(type, onDragCheck, true);
-        window.addEventListener(type, onDragCheck, true);
-      });
-      document.addEventListener('drop', onDrop, true);
-      window.addEventListener('drop', onDrop, true);
-      console.log(TAG, '拖拽链接/文字已启用 (early capture)');
-    }
-    return { init: init };
-  })();
-
-  // Early registration at document-start to beat React hydration
-  if (isLocalWeb && getSetting('dragLinks', true)) {
-    try { DRAG_MODULE.init(); } catch (err) {}
-  }
 
   var QUESTION_MODULE = (function () {
     var ENTER_DEBOUNCE = 180;
@@ -935,6 +850,7 @@
         if (!options.length) return;
 
         if (e.key >= '1' && e.key <= '9') {
+          if (isCustomInputFocused(e.target)) return;
           var idx = parseInt(e.key, 10) - 1;
           if (idx < options.length) {
             e.preventDefault();
