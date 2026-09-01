@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.8.3
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默) + 选项键盘导航 + 拖拽网页/链接到输入框 | v1.8.3
+// @version      1.8.4
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默) + 选项键盘导航 + 拖拽网页/链接到输入框(无遮挡) + 后端掉线提示 | v1.8.4
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -14,6 +14,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.8.4 拖拽文字遮挡修复（types快判+虚线框隐藏）
 // v1.8.3 拖拽网页/链接恢复 + 额度显示加国家 + 粘贴图片去成功提示 + 仅保留 localhost:4096
 // v1.8.2 Zen 免费模型补训练标记 + URL 拖放遮挡拦截
 // v1.8.1 模型选择器+面板显示请求数据训练标记（Muse Spark 1.2 Contributor）
@@ -880,35 +881,120 @@
       }
       toast('✓ 已插入 ' + text.length + ' 字符', '#2ea043');
     }
+    function hasTextType(dt) {
+      if (!dt || !dt.types) return false;
+      for (var i = 0; i < dt.types.length; i++) {
+        var t = dt.types[i];
+        if (t === 'text/plain' || t === 'text/uri-list' || t === 'text/html' || t === 'text') return true;
+      }
+      return false;
+    }
     function isTextOnlyDrag(e) {
       var dt = e.dataTransfer;
       if (!dt || dt.files.length > 0) return false;
       return !!extractText(e);
     }
+    function isTextTypesDrag(e) {
+      var dt = e.dataTransfer;
+      if (!dt || dt.files.length > 0) return false;
+      return hasTextType(dt);
+    }
+    function hideOverlay() {
+      // 注入一次性样式压制常见浮层类名
+      if (!document.getElementById('oc-drag-hide')) {
+        var st = document.createElement('style');
+        st.id = 'oc-drag-hide';
+        st.textContent = '[data-drag-overlay], .drag-overlay, .drop-overlay, [class*="drag"] [class*="overlay"]{ display:none !important; }';
+        document.head.appendChild(st);
+      }
+      // 直接隐藏包含文案的节点（OC 的“拖放文件以添加附件”）
+      var nodes = document.querySelectorAll('*');
+      for (var i = 0; i < nodes.length; i++) {
+        var el = nodes[i];
+        if (el.textContent && el.textContent.indexOf('拖放文件以添加附件') !== -1) {
+          // 找到最外层虚线框容器
+          var cur = el;
+          for (var k = 0; k < 4 && cur; k++) {
+            var cs = getComputedStyle(cur);
+            if (cs.borderStyle === 'dashed' || cur.getAttribute('data-drag-overlay') !== null) break;
+            cur = cur.parentElement;
+          }
+          if (cur) cur.style.display = 'none';
+          else el.style.display = 'none';
+        }
+      }
+    }
+    function showOverlay() {
+      // 清理由 hideOverlay 隐藏的节点，让文件拖拽恢复
+      var hid = document.getElementById('oc-drag-hide');
+      if (hid) hid.remove();
+      var nodes = document.querySelectorAll('*');
+      for (var i = 0; i < nodes.length; i++) {
+        var el = nodes[i];
+        if (el.style && el.style.display === 'none' && el.textContent && el.textContent.indexOf('拖放文件以添加附件') !== -1) {
+          el.style.display = '';
+          var cur = el.parentElement;
+          for (var k = 0; k < 4 && cur; k++) {
+            if (cur.style.display === 'none') cur.style.display = '';
+            cur = cur.parentElement;
+          }
+        }
+      }
+    }
     function onDragCheck(e) {
-      if (!isTextOnlyDrag(e)) return;
+      // 文字拖拽：dragenter 时 getData 不可读，用 types 快判
+      if (!isTextTypesDrag(e)) return;
       e.stopImmediatePropagation();
       e.preventDefault();
       try { e.dataTransfer.dropEffect = 'copy'; } catch (err) {}
+      hideOverlay();
+    }
+    function onDragLeave(e) {
+      if (!isTextTypesDrag(e)) return;
+      hideOverlay();
     }
     function onDrop(e) {
-      if (!isTextOnlyDrag(e)) return;
+      // drop 阶段再用 getData 精判并插入
+      if (!isTextOnlyDrag(e) && !isTextTypesDrag(e)) return;
       var text = extractText(e);
-      if (!text) return;
+      if (!text) { showOverlay(); return; }
       e.stopImmediatePropagation();
       e.preventDefault();
       insertTextToInput(text);
+      setTimeout(showOverlay, 100);
     }
     function init() {
       if (_inited) return;
       _inited = true;
-      ['dragenter', 'dragover', 'dragleave'].forEach(function (type) {
+      ['dragenter', 'dragover'].forEach(function (type) {
         document.addEventListener(type, onDragCheck, true);
         window.addEventListener(type, onDragCheck, true);
       });
+      document.addEventListener('dragleave', onDragLeave, true);
+      window.addEventListener('dragleave', onDragLeave, true);
       document.addEventListener('drop', onDrop, true);
       window.addEventListener('drop', onDrop, true);
-      console.log(TAG, '拖拽链接/文字已启用 (early capture)');
+      // 兜底：OC 若动态插入浮层，Mutation 观察到文字即隐藏
+      var mo = new MutationObserver(function (muts) {
+        for (var i = 0; i < muts.length; i++) {
+          var added = muts[i].addedNodes;
+          for (var j = 0; j < added.length; j++) {
+            var nd = added[j];
+            if (nd.nodeType === 1 && nd.textContent && nd.textContent.indexOf('拖放文件以添加附件') !== -1) {
+              // 仅在当前是文字拖拽时隐藏
+              var dtTypes = nd.ownerDocument && nd.ownerDocument.__ocDragIsText;
+              // 简化：直接查当前拖拽类型缓存
+              if (document.__ocDragIsText) nd.style.display = 'none';
+            }
+          }
+        }
+      });
+      try { mo.observe(document.body, { childList: true, subtree: true }); } catch (e) {}
+      // 缓存当前拖拽是否为文字，供 Mutation 判别
+      document.addEventListener('dragover', function (e) { document.__ocDragIsText = isTextTypesDrag(e); }, true);
+      document.addEventListener('dragleave', function () { document.__ocDragIsText = false; setTimeout(showOverlay, 200); }, true);
+      document.addEventListener('drop', function () { document.__ocDragIsText = false; }, true);
+      console.log(TAG, '拖拽链接/文字已启用 (early capture, overlay suppressed)');
     }
     return { init: init };
   })();
