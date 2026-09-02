@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.8.14
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(底部居中自适应+进度条自动刷新) + 静音 opencode-mem capture(无条件通知屏蔽) + DS峰时提醒(轻跟随opencode·紧凑不挤名) | v1.8.14
+// @version      1.9.0
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(底部居中自适应+指数退避重连) + 静音 opencode-mem capture + DS峰时提醒 + 大图懒加载(>200KB降采样) + 长输出折叠(>50行默认折叠) + 智能滚动(手动暂停) + 推理折叠 + token用量胶囊 + 草稿持久化 + 代码换行切换 | v1.9.0
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -14,6 +14,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.9.0 参考oc-remote优化：大图懒加载/降采样(>200KB) + 长输出折叠(>50行) + 粘贴压缩(1280px/WebP) + 智能滚动(手动暂停) + 推理折叠 + 指数退避重连(1s-30s) + token用量胶囊 + 草稿持久化 + 代码换行 + MODEL_QUOTA防抖
 // v1.8.14 DS峰时紧凑修复：徽标缩至🔥峰时/🌙谷时/⏰将峰(9px)倒计时移至hover，周末全谷，解决名字被挤
 // v1.8.13 DS峰时提醒(轻跟随opencode)：下拉/badge+倒计时 + 面板时钟条 + 底部胶囊，三处全加，解析 opencode.ai/docs/go 文案自动跟随，回退硬编码 09-12/14-18 BJT
 // v1.8.5 修复拖拽文字黑屏（精确定位浮层+栈式还原）
@@ -49,10 +50,18 @@
     { key: 'goPanel', label: 'Go 额度面板', def: true },
     { key: 'tabCycle', label: 'Tab 键切换代理', def: true },
     { key: 'pasteImg', label: '粘贴图片', def: true },
+    { key: 'pasteCompress', label: '粘贴图片压缩', def: true },
     { key: 'dragDrop', label: '拖拽链接/文字', def: true },
     { key: 'questionKeys', label: '选项键盘导航', def: true },
     { key: 'memSilence', label: '静音 capture 会话', def: true },
-    { key: 'peakHint', label: 'DS峰时提醒', def: true }
+    { key: 'peakHint', label: 'DS峰时提醒', def: true },
+    { key: 'largeImg', label: '大图懒加载', def: true },
+    { key: 'toolFold', label: '长输出折叠', def: true },
+    { key: 'smartScroll', label: '智能滚动', def: true },
+    { key: 'reasonFold', label: '推理折叠', def: true },
+    { key: 'tokenUsage', label: 'token用量显示', def: true },
+    { key: 'draftSave', label: '草稿持久化', def: true },
+    { key: 'codeWrap', label: '代码换行切换', def: true }
   ];
 
   function toast(text, color) {
@@ -1033,9 +1042,13 @@
         if (!file) return;
         e.preventDefault();
         e.stopPropagation();
-        tryNativeDrop(file);
+        if (getSetting('pasteCompress', true) && typeof PASTE_COMPRESS_MODULE !== 'undefined' && PASTE_COMPRESS_MODULE.compress) {
+          PASTE_COMPRESS_MODULE.compress(file).then(function (compressed) { tryNativeDrop(compressed); }).catch(function () { tryNativeDrop(file); });
+        } else {
+          tryNativeDrop(file);
+        }
       }, true);
-      console.log(TAG, '粘贴图片已启用');
+      console.log(TAG, '粘贴图片已启用' + (getSetting('pasteCompress', true) ? ' (压缩)' : ''));
     }
     return { init: init };
   })();
@@ -1570,12 +1583,15 @@
         try { updateBottomBadge(); } catch (eB) {}
       });
 
-      // Watch for dropdown opening
+      // Watch for dropdown opening (debounced 300ms to avoid SSE-driven DOM churn)
+      var debounceTimer = null;
       var observer = new MutationObserver(function () {
-        var dropdown = document.querySelector('[data-option-key]');
-        if (dropdown) setTimeout(injectQuotasIntoDropdown, 100);
-        // also check bottom badge on any DOM change
-        try { updateBottomBadge(); } catch (eB2) {}
+        if (!document.querySelector('[data-option-key]')) return;
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(function () {
+          injectQuotasIntoDropdown();
+          try { updateBottomBadge(); } catch (eB2) {}
+        }, 300);
       });
 
       if (document.body) {
@@ -1608,6 +1624,9 @@
     var disconnected = false;
     var failCount = 0;
     var probeTimer = null;
+    var currentInterval = 5000;
+    var MIN_INTERVAL = 1000;
+    var MAX_INTERVAL = 30000;
     var origFetch = window.fetch;
     var bannerEl = null;
     var reloadTimer = null;
@@ -1685,13 +1704,20 @@
       fetch(location.origin + '/', { method: 'HEAD', cache: 'no-store' }).then(function (r) {
         // 401/403 是鉴权而非断线，视为存活；仅 5xx / 网络异常算断
         var alive = r.ok || r.status === 401 || r.status === 403 || (r.status >= 200 && r.status < 500);
-        if (alive) { failCount = 0; setDisconnected(false); }
-        else { failCount++; if (failCount >= 2) setDisconnected(true); }
+        if (alive) { failCount = 0; setDisconnected(false); currentInterval = 5000; }
+        else { failCount++; if (failCount >= 2) setDisconnected(true); currentInterval = Math.min(currentInterval * 2, MAX_INTERVAL); }
+        scheduleNext();
       }).catch(function (e) {
         // 网络错误里若能取到状态 401/403 也算存活
-        try { var s = e && e.status ? e.status : 0; if (s === 401 || s === 403) { failCount = 0; setDisconnected(false); return; } } catch (err2) {}
+        try { var s = e && e.status ? e.status : 0; if (s === 401 || s === 403) { failCount = 0; setDisconnected(false); currentInterval = 5000; scheduleNext(); return; } } catch (err2) {}
         failCount++; if (failCount >= 2) setDisconnected(true);
+        currentInterval = Math.min(currentInterval * 2, MAX_INTERVAL);
+        scheduleNext();
       });
+    }
+    function scheduleNext() {
+      if (probeTimer) { clearTimeout(probeTimer); probeTimer = null; }
+      probeTimer = setTimeout(probe, currentInterval);
     }
     function wrapFetch() {
       if (!origFetch || window.__ocFetchWrapped) return;
@@ -1722,8 +1748,8 @@
       window.addEventListener('online', probe);
       window.addEventListener('offline', function () { setDisconnected(true); });
       probe();
-      probeTimer = setInterval(probe, 5000);
-      console.log(TAG, '后端连接监测已启用 (localhost:4096) 底部居中自适应');
+      scheduleNext();
+      console.log(TAG, '后端连接监测已启用 (localhost:4096) 指数退避重连');
     }
     return { init: init };
   })();
@@ -1956,6 +1982,477 @@
   })();
 
   // ════════════════════════════════════════════════════════════
+  //  LARGE_IMAGE_MODULE — 大图懒加载/降采样 (参考 oc-remote Image optimization)
+  //  >200KB base64 图片 → 占位 + IntersectionObserver 进入视口才解码 + canvas ≤1280px
+  // ════════════════════════════════════════════════════════════
+  var LARGE_IMAGE_MODULE = (function () {
+    var THRESHOLD = 200 * 1024;
+    var MAX_DIM = 1280;
+    var PROCESSED = '__oc_li_done';
+
+    function processImg(img) {
+      if (img[PROCESSED]) return;
+      var src = img.src || '';
+      if (!src || src.indexOf('data:image') !== 0) return;
+      if (src.length < THRESHOLD) return;
+      img[PROCESSED] = true;
+      var kb = Math.round(src.length / 1024);
+      var origW = img.naturalWidth, origH = img.naturalHeight;
+      var placeholder = document.createElement('div');
+      placeholder.className = 'oc-li-placeholder';
+      placeholder.style.cssText = 'display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border:1px dashed rgba(255,255,255,.2);border-radius:8px;background:rgba(255,255,255,.04);color:#888;font-size:12px;cursor:pointer;max-width:100%;';
+      placeholder.innerHTML = '<span>⬜</span><span>图片 ' + kb + 'KB' + (origW ? ' (' + origW + '×' + origH + ')' : '') + '</span><span style="color:#58a6ff;">[点击加载]</span>';
+      placeholder.title = '点击加载此图片（已降采样到 ≤' + MAX_DIM + 'px）';
+      var rect = img.getBoundingClientRect();
+      if (rect.width > 0) placeholder.style.width = Math.min(rect.width, 400) + 'px';
+      img.style.display = 'none';
+      img.parentNode && img.parentNode.insertBefore(placeholder, img);
+      function loadAndDownsample() {
+        var canvas = document.createElement('canvas');
+        var ctx = canvas.getContext('2d');
+        var w = origW || img.naturalWidth || MAX_DIM;
+        var h = origH || img.naturalHeight || MAX_DIM;
+        if (w > MAX_DIM || h > MAX_DIM) {
+          var scale = MAX_DIM / Math.max(w, h);
+          w = Math.round(w * scale);
+          h = Math.round(h * scale);
+        }
+        canvas.width = w;
+        canvas.height = h;
+        ctx.drawImage(img, 0, 0, w, h);
+        var outSrc = canvas.toDataURL('image/webp', 0.8);
+        img.src = outSrc;
+        img.style.display = '';
+        img.style.maxWidth = '100%';
+        img.style.height = 'auto';
+        placeholder.remove();
+        console.log(TAG, 'LARGE_IMAGE: downsampled', kb + 'KB →', Math.round(outSrc.length / 1024) + 'KB', w + '×' + h);
+      }
+      placeholder.addEventListener('click', function () { loadAndDownsample(); });
+      var observer = new IntersectionObserver(function (entries) {
+        for (var i = 0; i < entries.length; i++) {
+          if (entries[i].isIntersecting) { observer.disconnect(); loadAndDownsample(); return; }
+        }
+      }, { rootMargin: '200px' });
+      observer.observe(placeholder);
+    }
+
+    function scan(root) {
+      var imgs = (root || document).querySelectorAll('img[src^="data:image"]');
+      for (var i = 0; i < imgs.length; i++) processImg(imgs[i]);
+    }
+
+    function init() {
+      if (!isLocalhost4096) return;
+      scan();
+      var obs = new MutationObserver(function (muts) {
+        for (var i = 0; i < muts.length; i++) {
+          for (var j = 0; j < muts[i].addedNodes.length; j++) {
+            var n = muts[i].addedNodes[j];
+            if (n.nodeType !== 1) continue;
+            if (n.tagName === 'IMG') processImg(n);
+            if (n.querySelectorAll) scan(n);
+          }
+        }
+      });
+      if (document.body) obs.observe(document.body, { childList: true, subtree: true });
+      console.log(TAG, 'LARGE_IMAGE_MODULE enabled (>' + (THRESHOLD / 1024) + 'KB threshold)');
+    }
+    return { init: init, scan: scan };
+  })();
+
+  // ════════════════════════════════════════════════════════════
+  //  TOOL_FOLD_MODULE — 长输出折叠 (参考 oc-remote expandable tool-call cards)
+  //  >50 行或 >10KB 的 tool 输出 → 默认折叠，点击展开
+  // ════════════════════════════════════════════════════════════
+  var TOOL_FOLD_MODULE = (function () {
+    var LINE_THRESHOLD = 50;
+    var SIZE_THRESHOLD = 10 * 1024;
+    var FOLDED_ATTR = '__oc_tf_folded';
+    var STYLE_ID = 'oc-tool-fold-style';
+
+    function ensureStyle() {
+      if (document.getElementById(STYLE_ID)) return;
+      var st = document.createElement('style');
+      st.id = STYLE_ID;
+      st.textContent = '.oc-tf-btn{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border:1px solid rgba(255,255,255,.15);border-radius:6px;background:rgba(255,255,255,.06);color:#8b949e;font-size:11px;cursor:pointer;margin:4px 0;transition:background .15s}.oc-tf-btn:hover{background:rgba(255,255,255,.12)}.oc-tf-folded{max-height:120px;overflow:hidden;position:relative}.oc-tf-folded::after{content:"";position:absolute;bottom:0;left:0;right:0;height:40px;background:linear-gradient(transparent,rgba(30,30,30,.95))}';
+      (document.head || document.documentElement).appendChild(st);
+    }
+
+    function foldBlock(el) {
+      if (el[FOLDED_ATTR]) return;
+      var text = el.textContent || '';
+      var lines = text.split('\n');
+      var isLong = lines.length > LINE_THRESHOLD || text.length > SIZE_THRESHOLD;
+      if (!isLong) return;
+      el[FOLDED_ATTR] = true;
+      el.classList.add('oc-tf-folded');
+      var btn = document.createElement('button');
+      btn.className = 'oc-tf-btn';
+      var kb = Math.round(text.length / 1024);
+      btn.textContent = '▸ 展开 ' + lines.length + ' 行' + (kb > 1 ? ' / ' + kb + 'KB' : '');
+      btn.addEventListener('click', function () {
+        var folded = el.classList.contains('oc-tf-folded');
+        if (folded) {
+          el.classList.remove('oc-tf-folded');
+          btn.textContent = '▾ 折叠';
+        } else {
+          el.classList.add('oc-tf-folded');
+          btn.textContent = '▸ 展开 ' + lines.length + ' 行' + (kb > 1 ? ' / ' + kb + 'KB' : '');
+        }
+      });
+      el.parentNode && el.parentNode.insertBefore(btn, el);
+    }
+
+    function scan(root) {
+      var targets = (root || document).querySelectorAll('pre, code, [class*="output"], [class*="tool"]');
+      for (var i = 0; i < targets.length; i++) foldBlock(targets[i]);
+    }
+
+    function init() {
+      if (!isLocalhost4096) return;
+      ensureStyle();
+      scan();
+      var obs = new MutationObserver(function (muts) {
+        for (var i = 0; i < muts.length; i++) {
+          for (var j = 0; j < muts[i].addedNodes.length; j++) {
+            var n = muts[i].addedNodes[j];
+            if (n.nodeType !== 1) continue;
+            if (n.tagName === 'PRE' || n.tagName === 'CODE') foldBlock(n);
+            if (n.querySelectorAll) scan(n);
+          }
+        }
+      });
+      if (document.body) obs.observe(document.body, { childList: true, subtree: true });
+      console.log(TAG, 'TOOL_FOLD_MODULE enabled (>' + LINE_THRESHOLD + ' lines)');
+    }
+    return { init: init };
+  })();
+
+  // ════════════════════════════════════════════════════════════
+  //  PASTE_MODULE 增强 — 粘贴图片压缩 (参考 oc-remote Image optimization controls)
+  //  粘贴前 canvas 压缩 ≤1280px / WebP 0.8 / <200KB
+  // ════════════════════════════════════════════════════════════
+  var PASTE_COMPRESS_MODULE = (function () {
+    var MAX_DIM = 1280;
+    var TARGET_KB = 200;
+
+    function compressImage(file) {
+      return new Promise(function (resolve) {
+        var reader = new FileReader();
+        reader.onload = function (e) {
+          var img = new Image();
+          img.onload = function () {
+            var w = img.width, h = img.height;
+            if (w > MAX_DIM || h > MAX_DIM) {
+              var scale = MAX_DIM / Math.max(w, h);
+              w = Math.round(w * scale);
+              h = Math.round(h * scale);
+            }
+            var canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            var quality = 0.8;
+            var out = canvas.toDataURL('image/webp', quality);
+            while (out.length > TARGET_KB * 1024 && quality > 0.3) {
+              quality -= 0.1;
+              out = canvas.toDataURL('image/webp', quality);
+            }
+            var origKB = Math.round(file.size / 1024);
+            var newKB = Math.round(out.length / 1024);
+            if (newKB < origKB) {
+              console.log(TAG, 'PASTE_COMPRESS: ' + origKB + 'KB → ' + newKB + 'KB (quality=' + quality.toFixed(2) + ')');
+              var binary = atob(out.split(',')[1]);
+              var arr = new Uint8Array(binary.length);
+              for (var i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+              resolve(new File([arr], file.name || 'paste-' + Date.now() + '.webp', { type: 'image/webp' }));
+            } else {
+              resolve(file);
+            }
+          };
+          img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+    return { compress: compressImage };
+  })();
+
+  // ════════════════════════════════════════════════════════════
+  //  SMART_SCROLL_MODULE — 智能滚动 (参考 oc-remote Smart scroll behavior)
+  //  手动上滚暂停自动滚动 +「↓ 回到底部」浮标
+  // ════════════════════════════════════════════════════════════
+  var SMART_SCROLL_MODULE = (function () {
+    var autoScroll = true;
+    var fab = null;
+    var STYLE_ID = 'oc-smart-scroll-style';
+
+    function ensureStyle() {
+      if (document.getElementById(STYLE_ID)) return;
+      var st = document.createElement('style');
+      st.id = STYLE_ID;
+      st.textContent = '#oc-scroll-fab{position:fixed;bottom:80px;right:20px;z-index:2147483646;padding:8px 14px;border-radius:20px;border:1px solid rgba(255,255,255,.15);background:rgba(30,30,30,.92);color:#8b949e;font-size:12px;cursor:pointer;display:none;box-shadow:0 2px 8px rgba(0,0,0,.3);transition:opacity .15s}#oc-scroll-fab:hover{background:rgba(50,50,50,.95);color:#e6edf3}';
+      (document.head || document.documentElement).appendChild(st);
+    }
+
+    function createFab() {
+      if (fab) return fab;
+      fab = document.createElement('button');
+      fab.id = 'oc-scroll-fab';
+      fab.textContent = '↓ 回到底部';
+      fab.addEventListener('click', function () {
+        autoScroll = true;
+        fab.style.display = 'none';
+        window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
+      });
+      document.body && document.body.appendChild(fab);
+      return fab;
+    }
+
+    function onScroll() {
+      var atBottom = (window.innerHeight + window.scrollY) >= (document.documentElement.scrollHeight - 100);
+      if (atBottom) {
+        autoScroll = true;
+        if (fab) fab.style.display = 'none';
+      } else if (autoScroll) {
+        autoScroll = false;
+        createFab();
+        fab.style.display = 'block';
+      }
+    }
+
+    function init() {
+      if (!isLocalhost4096) return;
+      ensureStyle();
+      window.addEventListener('scroll', onScroll, { passive: true });
+      console.log(TAG, 'SMART_SCROLL_MODULE enabled');
+    }
+    return { init: init, isAutoScroll: function () { return autoScroll; } };
+  })();
+
+  // ════════════════════════════════════════════════════════════
+  //  REASONING_FOLD_MODULE — 推理折叠 (参考 oc-remote Collapsible reasoning)
+  //  reasoning 内容默认折叠，点击展开
+  // ════════════════════════════════════════════════════════════
+  var REASONING_FOLD_MODULE = (function () {
+    var STYLE_ID = 'oc-reason-fold-style';
+    var FOLDED_ATTR = '__oc_rf_done';
+
+    function ensureStyle() {
+      if (document.getElementById(STYLE_ID)) return;
+      var st = document.createElement('style');
+      st.id = STYLE_ID;
+      st.textContent = '.oc-rf-folded{max-height:80px;overflow:hidden;position:relative;opacity:.7}.oc-rf-folded::after{content:"";position:absolute;bottom:0;left:0;right:0;height:30px;background:linear-gradient(transparent,rgba(30,30,30,.95))}.oc-rf-btn{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border:1px solid rgba(255,255,255,.12);border-radius:5px;background:rgba(255,255,255,.05);color:#8b949e;font-size:11px;cursor:pointer;margin:2px 0}';
+      (document.head || document.documentElement).appendChild(st);
+    }
+
+    function foldReasoning(el) {
+      if (el[FOLDED_ATTR]) return;
+      el[FOLDED_ATTR] = true;
+      el.classList.add('oc-rf-folded');
+      var btn = document.createElement('button');
+      btn.className = 'oc-rf-btn';
+      btn.textContent = '▸ 展开推理';
+      btn.addEventListener('click', function () {
+        var folded = el.classList.contains('oc-rf-folded');
+        if (folded) { el.classList.remove('oc-rf-folded'); btn.textContent = '▾ 折叠推理'; }
+        else { el.classList.add('oc-rf-folded'); btn.textContent = '▸ 展开推理'; }
+      });
+      el.parentNode && el.parentNode.insertBefore(btn, el);
+    }
+
+    function scan(root) {
+      var targets = (root || document).querySelectorAll('[class*="reasoning"], [data-type="reasoning"]');
+      for (var i = 0; i < targets.length; i++) foldReasoning(targets[i]);
+    }
+
+    function init() {
+      if (!isLocalhost4096) return;
+      ensureStyle();
+      scan();
+      var obs = new MutationObserver(function (muts) {
+        for (var i = 0; i < muts.length; i++) {
+          for (var j = 0; j < muts[i].addedNodes.length; j++) {
+            var n = muts[i].addedNodes[j];
+            if (n.nodeType !== 1) continue;
+            if (n.querySelectorAll) scan(n);
+          }
+        }
+      });
+      if (document.body) obs.observe(document.body, { childList: true, subtree: true });
+      console.log(TAG, 'REASONING_FOLD_MODULE enabled');
+    }
+    return { init: init };
+  })();
+
+  // ════════════════════════════════════════════════════════════
+  //  TOKEN_USAGE_MODULE — token 用量显示 (参考 oc-remote Context window details)
+  //  会话页顶部右侧显示 in/out/reasoning/cache + 成本
+  // ════════════════════════════════════════════════════════════
+  var TOKEN_USAGE_MODULE = (function () {
+    var capsule = null;
+    var STYLE_ID = 'oc-token-usage-style';
+    var POLL_MS = 30000;
+
+    function ensureStyle() {
+      if (document.getElementById(STYLE_ID)) return;
+      var st = document.createElement('style');
+      st.id = STYLE_ID;
+      st.textContent = '#oc-token-capsule{position:fixed;top:50px;right:12px;z-index:2147483645;padding:5px 10px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(20,20,20,.88);color:#8b949e;font-size:10px;line-height:1.4;font-family:monospace;pointer-events:auto;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);white-space:nowrap}#oc-token-capsule .in{color:#58a6ff}#oc-token-capsule .out{color:#2ea043}#oc-token-capsule .cache{color:#8b949e}#oc-token-capsule .cost{color:#f0883e}';
+      (document.head || document.documentElement).appendChild(st);
+    }
+
+    function getSessionId() {
+      var m = location.pathname.match(/\/session\/([^/?]+)/);
+      return m ? m[1] : null;
+    }
+
+    function updateCapsule() {
+      var sid = getSessionId();
+      if (!sid) { if (capsule) capsule.style.display = 'none'; return; }
+      fetch('/session/' + sid, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (data) {
+        var t = data.tokens;
+        if (!t) return;
+        var fmt = function (n) { if (!n) return '0'; if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M'; if (n >= 1000) return (n / 1000).toFixed(1) + 'K'; return String(n); };
+        var html = '<span class="in">in ' + fmt(t.input) + '</span> <span class="out">out ' + fmt(t.output) + '</span>';
+        if (t.cache && t.cache.read) html += ' <span class="cache">cache ' + fmt(t.cache.read) + '</span>';
+        if (data.cost) html += ' <span class="cost">· $' + data.cost.toFixed(3) + '</span>';
+        createCapsule();
+        capsule.innerHTML = html;
+        capsule.style.display = 'block';
+      }).catch(function () {});
+    }
+
+    function createCapsule() {
+      if (capsule) return;
+      capsule = document.createElement('div');
+      capsule.id = 'oc-token-capsule';
+      capsule.style.display = 'none';
+      document.body && document.body.appendChild(capsule);
+    }
+
+    function init() {
+      if (!isLocalhost4096) return;
+      ensureStyle();
+      updateCapsule();
+      setInterval(updateCapsule, POLL_MS);
+      console.log(TAG, 'TOKEN_USAGE_MODULE enabled');
+    }
+    return { init: init, refresh: updateCapsule };
+  })();
+
+  // ════════════════════════════════════════════════════════════
+  //  DRAFT_MODULE — 草稿持久化 (参考 oc-remote Draft persistence)
+  //  输入框内容按会话 ID 存 localStorage，刷新/切换会话恢复
+  // ════════════════════════════════════════════════════════════
+  var DRAFT_MODULE = (function () {
+    var PREFIX = 'ocall_draft_';
+    var currentSession = null;
+
+    function getSessionId() {
+      var m = location.pathname.match(/\/session\/([^/?]+)/);
+      return m ? m[1] : null;
+    }
+
+    function getInput() {
+      return document.querySelector('[contenteditable="true"]') || document.querySelector('textarea');
+    }
+
+    function saveDraft() {
+      var sid = currentSession || getSessionId();
+      if (!sid) return;
+      var el = getInput();
+      if (!el) return;
+      var text = el.textContent || el.value || '';
+      if (!text.trim()) { localStorage.removeItem(PREFIX + sid); return; }
+      try { localStorage.setItem(PREFIX + sid, text); } catch (e) {}
+    }
+
+    function restoreDraft() {
+      var sid = getSessionId();
+      if (!sid || sid === currentSession) return;
+      currentSession = sid;
+      var saved = localStorage.getItem(PREFIX + sid);
+      if (!saved) return;
+      var el = getInput();
+      if (!el) return;
+      if (el.contentEditable === 'true') { el.textContent = saved; }
+      else { el.value = saved; }
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      console.log(TAG, 'DRAFT: restored for', sid.slice(0, 12));
+    }
+
+    function init() {
+      if (!isLocalhost4096) return;
+      restoreDraft();
+      setInterval(function () {
+        var sid = getSessionId();
+        if (sid && sid !== currentSession) restoreDraft();
+        saveDraft();
+      }, 2000);
+      console.log(TAG, 'DRAFT_MODULE enabled');
+    }
+    return { init: init, save: saveDraft };
+  })();
+
+  // ════════════════════════════════════════════════════════════
+  //  CODE_WRAP_MODULE — 代码换行切换 (参考 oc-remote Code word wrap)
+  //  代码块加「换行/滚动」切换按钮
+  // ════════════════════════════════════════════════════════════
+  var CODE_WRAP_MODULE = (function () {
+    var STYLE_ID = 'oc-code-wrap-style';
+    var DONE_ATTR = '__oc_cw_done';
+
+    function ensureStyle() {
+      if (document.getElementById(STYLE_ID)) return;
+      var st = document.createElement('style');
+      st.id = STYLE_ID;
+      st.textContent = '.oc-cw-btn{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border:1px solid rgba(255,255,255,.1);border-radius:4px;background:rgba(255,255,255,.05);color:#8b949e;font-size:10px;cursor:pointer;position:absolute;top:4px;right:4px;z-index:1}.oc-cw-btn:hover{background:rgba(255,255,255,.12)}.oc-cw-wrapped pre,.oc-cw-wrapped code{white-space:pre-wrap!important;word-break:break-all!important}';
+      (document.head || document.documentElement).appendChild(st);
+    }
+
+    function addButton(pre) {
+      if (pre[DONE_ATTR]) return;
+      pre[DONE_ATTR] = true;
+      pre.style.position = 'relative';
+      var btn = document.createElement('button');
+      btn.className = 'oc-cw-btn';
+      btn.textContent = '↔ 滚动';
+      btn.addEventListener('click', function () {
+        var wrapped = pre.classList.contains('oc-cw-wrapped');
+        if (wrapped) { pre.classList.remove('oc-cw-wrapped'); btn.textContent = '↔ 滚动'; }
+        else { pre.classList.add('oc-cw-wrapped'); btn.textContent = '↕ 换行'; }
+      });
+      pre.appendChild(btn);
+    }
+
+    function scan(root) {
+      var pres = (root || document).querySelectorAll('pre');
+      for (var i = 0; i < pres.length; i++) addButton(pres[i]);
+    }
+
+    function init() {
+      if (!isLocalhost4096) return;
+      ensureStyle();
+      scan();
+      var obs = new MutationObserver(function (muts) {
+        for (var i = 0; i < muts.length; i++) {
+          for (var j = 0; j < muts[i].addedNodes.length; j++) {
+            var n = muts[i].addedNodes[j];
+            if (n.nodeType !== 1) continue;
+            if (n.tagName === 'PRE') addButton(n);
+            if (n.querySelectorAll) scan(n);
+          }
+        }
+      });
+      if (document.body) obs.observe(document.body, { childList: true, subtree: true });
+      console.log(TAG, 'CODE_WRAP_MODULE enabled');
+    }
+    return { init: init };
+  })();
+
+  // ════════════════════════════════════════════════════════════
   //  Main entry
   // ════════════════════════════════════════════════════════════
 
@@ -1985,6 +2482,27 @@
       }
       CONNECTION_MODULE.init();
       MEM_CAPTURE_SILENCE_MODULE.init();
+      if (getSetting('largeImg', true)) {
+        try { LARGE_IMAGE_MODULE.init(); } catch (e) {}
+      }
+      if (getSetting('toolFold', true)) {
+        try { TOOL_FOLD_MODULE.init(); } catch (e) {}
+      }
+      if (getSetting('smartScroll', true)) {
+        try { SMART_SCROLL_MODULE.init(); } catch (e) {}
+      }
+      if (getSetting('reasonFold', true)) {
+        try { REASONING_FOLD_MODULE.init(); } catch (e) {}
+      }
+      if (getSetting('tokenUsage', true)) {
+        try { TOKEN_USAGE_MODULE.init(); } catch (e) {}
+      }
+      if (getSetting('draftSave', true)) {
+        try { DRAFT_MODULE.init(); } catch (e) {}
+      }
+      if (getSetting('codeWrap', true)) {
+        try { CODE_WRAP_MODULE.init(); } catch (e) {}
+      }
     } else if (isLocalWeb) {
       // Fallback for other local ports if script ever runs there (should not due to @include)
       if (getSetting('goPanel', true)) MODEL_QUOTA.init();
