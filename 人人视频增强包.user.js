@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         人人视� ��增强包
+// @name         人人视频增强包
 // @namespace    http://tampermonkey.net/
-// @version      2.9.2
-// @description  反调试绕过 + 隐藏滚动条 + 无� �去广告(播放态自动续播/暂停态保 持/loading修复) + 豆瓣跳转 + 唤醒后 暂停(点播放即恢复) + 播放卡死自� ��(智能判定不误伤正常缓冲) + 播放器修复(轻seek+渲染层hack) + 豆瓣页跳转人人 | 菜� �可开关
+// @version      2.9.3
+// @description  反调试绕过 + 隐藏滚动条 + 无感去广告(播放态自动续播/暂停态保持/loading修复) + 豆瓣跳转 + 唤醒后暂停(点播放即恢复) + 播放卡死自愈(智能判定不误伤正常缓冲) + 播放器修复(轻seek+渲染层hack) + 豆瓣页跳转人人 | 菜单可开关
 // @author       opencode
 // @match        *://*.yichengwlkj.com/*
 // @match         *://*.rrmj.plus/*
@@ -39,10 +39,10 @@
 
   buildMenu('反调试自动绕过',     'antiDebug',   true);
   buildMenu('隐藏滚动条',         'scrollbar',   true);
-  buildMenu('去广告� ��无感）',    'adBlock',     true);
+  buildMenu('去广告无感）',    'adBlock',     true);
   buildMenu('豆瓣跳转',          'douban',       true);
   buildMenu('唤醒/刷新后暂停',    'pauseOnWake', true);
-  buildMenu('播放� ��死自愈',      'stallHeal',   true);
+  buildMenu('播放卡死自愈',      'stallHeal',   true);
   buildMenu('播放器修复',        'videoFix',    true);
   buildMenu('豆瓣页跳转人人',    'doubanJump',  true);
 
@@ -285,7 +285,7 @@
         if (!softTried) {
           // � ��一级：play() 重试（无损，很多卡 死只是播放器状态机停住）
            softTried = true;
-          console.log('[� ��强包] 播放停滞，尝试 play() 重试 ');
+          console.log('[增强包] 播放停滞，尝试 play() 重试 ');
           try { video.play().catch(function () {}); } catch (e) {}
           setTimeout(function () {
             if (video.isConnected && !video.paused && video.readyState < 3  &&
@@ -661,7 +661,7 @@
                   } else {
                     try { this.pause();  } catch (e) {}
                     try { this.setAttribute('data-rrmv-ad', 'hide'); } catch (e) {}
-                    console.log('[� ��强包] 拦截非主视频广告', val.slice(0, 80));
+                    console.log('[增强包] 拦截非主视频广告', val.slice(0, 80));
                     return;
                    }
                 }
