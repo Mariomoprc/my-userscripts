@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         人人视频增强包
 // @namespace    http://tampermonkey.net/
-// @version      2.9.3
-// @description  反调试绕过 + 隐藏滚动条 + 无感去广告(播放态自动续播/暂停态保持/loading修复) + 豆瓣跳转 + 唤醒后暂停(点播放即恢复) + 播放卡死自愈(智能判定不误伤正常缓冲) + 播放器修复(轻seek+渲染层hack) + 豆瓣页跳转人人 | 菜单可开关
+// @version      2.9.4
+// @description  反调试绕过 + 隐藏滚动条 + 无感去广告(播放态自动续播/暂停态保持/loading修复) + 豆瓣跳转 + 唤醒后暂停(点播放即恢复) + 播放卡死自愈(智能判定不误伤正常缓冲+慢速播放识别) + 播放器修复(轻seek+渲染层hack) + 豆瓣页跳转人人 | 菜单可开关
 // @author       opencode
 // @match        *://*.yichengwlkj.com/*
 // @match         *://*.rrmj.plus/*
@@ -262,13 +262,23 @@
         clearStallTimer(); 
         var lastTime = -1;
         var still  = 0;
+        var slowCount = 0;
         stallTimer = setInterval(function () {
           if (!video.isConnected || video.paused) { clearStallTimer(); return; }
-           if (video.seeking) { still = 0; return; } // seek 等数据不算卡死
-           if (Math.abs(video.currentTime - lastTime) >  0.01) {
+           if (video.seeking) { still = 0; slowCount = 0; return; } // seek 等数据不算卡死
+           var delta = Math.abs(video.currentTime - lastTime);
+           if (delta > 0.01) {
             lastTime = video.currentTime;
             still = 0;
-            // � ��全恢复（时间在走且数据充足）� �� 停止监控
+            // [v2.9.4] 慢速播放检测：推进速率远低于预期且数据不足 → 累计判定卡死
+            var expected = (video.playbackRate || 1) * 0.2;
+            if (delta < expected && video.readyState < 3) {
+              slowCount++;
+              if (slowCount >= noProgressSec) { clearStallTimer(); onStallTimeout(video); return; }
+            } else {
+              slowCount = 0;
+            }
+            // 判断全恢复（时间在走且数据充足）→ 停止监控
             if (video.readyState >= 3) clearStallTimer();
             return;
           }
@@ -287,23 +297,27 @@
            softTried = true;
           console.log('[增强包] 播放停滞，尝试 play() 重试 ');
           try { video.play().catch(function () {}); } catch (e) {}
-          setTimeout(function () {
-            if (video.isConnected && !video.paused && video.readyState < 3  &&
-                Math.abs(video.currentTime - (video.__rrmvLastCheck || 0)) < 0.01) {
-               // 第二级：软恢复（重� �加载源，会丢 buffer，最后手段）
-               if (!healCountOk()) return;
-               bumpHealCount();
-              console.log('[增强包] play() 重试无效，� ��恢复（重新加载视频源）');
-               var t = video.currentTime;
-               video.load();
-              video.addEventListener('loadedmetadata', function once() { 
-                video.removeEventListener('loadedmetadata', once);
-                try {  video.currentTime = t; } catch (e) {}
-                 video.play().catch(function () {});
-               });
+           setTimeout(function () {
+             if (!video.isConnected || video.paused) return;
+             var stillSlow = video.readyState < 3 && Math.abs(video.currentTime - (video.__rrmvLastCheck || 0)) < 0.2;
+             if (stillSlow) {
+                // 第二级：软恢复（重？加载源，会丢 buffer，最后手段）
+                if (!healCountOk()) { armStallWatch(video, 12); return; }
+                bumpHealCount();
+               console.log('[增强包] play() 重试无效，？恢复（重新加载视频源）');
+                var t = video.currentTime;
+                video.load();
+               video.addEventListener('loadedmetadata', function once() { 
+                 video.removeEventListener('loadedmetadata', once);
+                 try {  video.currentTime = t; } catch (e) {}
+                  video.play().catch(function () {});
+                });
               armStallWatch (video, 12);
-            }
-          }, 4000) ;
+             } else {
+              // 恢复或仍在慢速 → 重新监控（避免无人监控）
+              armStallWatch(video, 12);
+             }
+           }, 4000) ;
         } else if (healCountOk()) {
            // 第三级：刷新页面（网站有续 播，进度不丢）
           bumpHealCount ();
