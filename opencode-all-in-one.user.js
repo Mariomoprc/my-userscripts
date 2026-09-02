@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.8.8
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示 + 静音 opencode-mem capture(精准3s) | v1.8.8
+// @version      1.8.9
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(底部居中自适应+进度条自动刷新) + 静音 opencode-mem capture(精准3s) | v1.8.9
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -1254,15 +1254,75 @@
     var failCount = 0;
     var probeTimer = null;
     var origFetch = window.fetch;
+    var bannerEl = null;
+    var reloadTimer = null;
+    var countdownTimer = null;
+    var reconnectAt = 0;
+    function ensureStyle() {
+      if (document.getElementById('oc-conn-style')) return;
+      var st = document.createElement('style');
+      st.id = 'oc-conn-style';
+      st.textContent = '#oc-disconnected-banner{position:fixed;bottom:calc(20px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%) translateY(8px);opacity:0;z-index:2147483647;max-width:520px;width:calc(100% - 32px);padding:11px 14px;border-radius:12px;display:flex;align-items:center;gap:10px;font-size:12px;line-height:1.4;transition:opacity 180ms,transform 180ms,border-color 300ms,background 300ms;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);pointer-events:auto;box-shadow:0 12px 28px rgba(0,0,0,.18)}#oc-disconnected-banner.oc-visible{opacity:1;transform:translateX(-50%) translateY(0)}#oc-disconnected-banner .oc-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;animation:oc-pulse 1.6s infinite}#oc-disconnected-banner.oc-state-offline{border:1px solid rgba(248,81,73,.35);background:rgba(22,22,22,.88);color:#e6edf3;box-shadow:0 12px 28px rgba(0,0,0,.45)}#oc-disconnected-banner.oc-state-offline .oc-dot{background:#f85149;box-shadow:0 0 0 6px rgba(248,81,73,.18)}#oc-disconnected-banner.oc-state-online{border:1px solid rgba(46,160,67,.45);background:rgba(16,24,18,.92);color:#e6edf3;box-shadow:0 12px 28px rgba(0,0,0,.45)}#oc-disconnected-banner.oc-state-online .oc-dot{background:#2ea043;box-shadow:0 0 0 6px rgba(46,160,67,.18)}#oc-disconnected-banner .oc-text{flex:1;min-width:0}#oc-disconnected-banner .oc-actions{display:flex;gap:6px;align-items:center;flex-shrink:0}#oc-disconnected-banner .oc-retry{padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.08);color:inherit;font-size:11px;cursor:pointer}#oc-disconnected-banner .oc-retry:hover{background:rgba(255,255,255,.14)}#oc-disconnected-banner .oc-close{width:24px;height:24px;border-radius:6px;border:none;background:transparent;color:inherit;opacity:.6;cursor:pointer;font-size:14px;line-height:1}#oc-disconnected-banner .oc-close:hover{opacity:1;background:rgba(255,255,255,.08)}#oc-disconnected-banner .oc-progress-track{position:absolute;left:0;right:0;bottom:0;height:2px;background:rgba(255,255,255,.08);border-radius:0 0 12px 12px;overflow:hidden}#oc-disconnected-banner .oc-progress-fill{height:100%;width:0%;background:linear-gradient(90deg,#2ea043,#3fb950);transition:width 2s linear}@keyframes oc-pulse{0%{transform:scale(1)}50%{transform:scale(1.12)}100%{transform:scale(1)}}@media(prefers-color-scheme:light){#oc-disconnected-banner.oc-state-offline{background:rgba(255,255,255,.94);border-color:rgba(0,0,0,.08);color:#24292f;box-shadow:0 12px 28px rgba(0,0,0,.12)}#oc-disconnected-banner.oc-state-online{background:rgba(242,255,242,.96);border-color:rgba(46,160,67,.35);color:#24292f}#oc-disconnected-banner.oc-state-offline .oc-dot{box-shadow:0 0 0 6px rgba(248,81,73,.12)}#oc-disconnected-banner.oc-state-online .oc-dot{box-shadow:0 0 0 6px rgba(46,160,67,.12)}#oc-disconnected-banner .oc-retry{border-color:rgba(0,0,0,.08);background:rgba(0,0,0,.04)}#oc-disconnected-banner .oc-retry:hover{background:rgba(0,0,0,.08)}#oc-disconnected-banner .oc-progress-track{background:rgba(0,0,0,.06)}}';
+      (document.head || document.documentElement).appendChild(st);
+    }
+    function clearTimers() { if (reloadTimer) { clearTimeout(reloadTimer); reloadTimer = null; } if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; } }
+    function removeBanner() { clearTimers(); if (bannerEl && bannerEl.parentNode) bannerEl.remove(); bannerEl = null; reconnectAt = 0; }
+    function createBanner() {
+      if (bannerEl) return bannerEl;
+      ensureStyle();
+      var el = document.createElement('div');
+      el.id = 'oc-disconnected-banner';
+      el.className = 'oc-state-offline';
+      el.innerHTML = '<span class="oc-dot"></span><span class="oc-text"><span class="oc-title">后端已断开 (4096)</span><span style="opacity:.65;margin-left:6px">等待重连…</span></span><span class="oc-actions"><button class="oc-retry" title="立即重试">重试</button><button class="oc-close" title="关闭">✕</button></span><div class="oc-progress-track" style="display:none"><div class="oc-progress-fill"></div></div>';
+      var retry = el.querySelector('.oc-retry');
+      var close = el.querySelector('.oc-close');
+      if (retry) retry.addEventListener('click', function (e) { e.stopPropagation(); failCount = 0; probe(); toast('正在重试…', '#1f6feb'); });
+      if (close) close.addEventListener('click', function (e) { e.stopPropagation(); removeBanner(); disconnected = false; try { document.title = origTitle || document.title.replace(/^● 掉线 - /, ''); } catch (err) {} });
+      document.body.appendChild(el);
+      requestAnimationFrame(function () { requestAnimationFrame(function () { el.classList.add('oc-visible'); }); });
+      bannerEl = el;
+      return el;
+    }
+    function switchToReconnect() {
+      if (!bannerEl) bannerEl = createBanner();
+      bannerEl.className = 'oc-state-online oc-visible';
+      var track = bannerEl.querySelector('.oc-progress-track');
+      var fill = bannerEl.querySelector('.oc-progress-fill');
+      var text = bannerEl.querySelector('.oc-text');
+      if (track) track.style.display = 'block';
+      if (fill) { fill.style.transition = 'none'; fill.style.width = '0%'; void fill.offsetWidth; fill.style.transition = 'width 2s linear'; fill.style.width = '100%'; }
+      var remain = 2.0;
+      if (text) text.innerHTML = '<span class="oc-title">后端已重连</span><span style="opacity:.65;margin-left:6px" class="oc-countdown">' + remain.toFixed(1) + 's 后自动刷新</span>';
+      if (countdownTimer) clearInterval(countdownTimer);
+      countdownTimer = setInterval(function () {
+        remain -= 0.1;
+        if (remain < 0) remain = 0;
+        var cd = bannerEl && bannerEl.querySelector('.oc-countdown');
+        if (cd) cd.textContent = remain.toFixed(1) + 's 后自动刷新';
+        if (remain <= 0) clearInterval(countdownTimer);
+      }, 100);
+      // lock to avoid double reload within 10s
+      try { if (sessionStorage.getItem('oc_reload_lock') && Date.now() - Number(sessionStorage.getItem('oc_reload_lock')) < 10000) return; } catch (e) {}
+      if (reloadTimer) clearTimeout(reloadTimer);
+      reloadTimer = setTimeout(function () {
+        try { sessionStorage.setItem('oc_reload_lock', String(Date.now())); } catch (e2) {}
+        location.reload();
+      }, 2000);
+    }
     function setDisconnected(on) {
-      if (on === disconnected) return;
-      disconnected = on;
+      if (on === disconnected && on) return;
+      // if already disconnected and banner exists, keep banner
       if (on) {
-        toast('✗ 后端已断开 (4096) - 等待重连…', '#f85149');
-        try { document.title = '● 掉线 - ' + (origTitle || document.title); } catch (e) {}
+        if (disconnected && bannerEl) return;
+        disconnected = true;
+        createBanner();
+        try { if (document.title.indexOf('● 掉线') === -1) { origTitle = origTitle || document.title; document.title = '● 掉线 - ' + origTitle; } } catch (e) {}
       } else {
+        if (!disconnected) return;
+        disconnected = false;
+        try { document.title = origTitle || document.title.replace(/^● 掉线 - /, ''); } catch (e2) {}
         toast('✓ 后端已重连', '#2ea043');
-        try { document.title = origTitle || document.title.replace(/^● 掉线 - /, ''); } catch (e) {}
+        switchToReconnect();
       }
     }
     function probe() {
@@ -1295,7 +1355,7 @@
       window.addEventListener('offline', function () { setDisconnected(true); });
       probe();
       probeTimer = setInterval(probe, 5000);
-      console.log(TAG, '后端连接监测已启用 (localhost:4096)');
+      console.log(TAG, '后端连接监测已启用 (localhost:4096) 底部居中自适应');
     }
     return { init: init };
   })();
