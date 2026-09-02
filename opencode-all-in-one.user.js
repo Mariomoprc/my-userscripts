@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.8.7
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示 + 静音 opencode-mem capture | v1.8.7
+// @version      1.8.8
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示 + 静音 opencode-mem capture(精准3s) | v1.8.8
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -1312,6 +1312,16 @@
       return false;
     }
     function enabled() { return getSetting('memSilence', true); }
+    function isCaptureWindow() {
+      try {
+        if (!enabled()) return false;
+        if (!window.__oc_lastCaptureAt) return false;
+        if (Date.now() - window.__oc_lastCaptureAt > 3000) return false;
+        // precise: capture must be more recent than last normal session update
+        if (window.__oc_lastNormalAt && window.__oc_lastNormalAt > window.__oc_lastCaptureAt) return false;
+        return true;
+      } catch (e) { return false; }
+    }
     function hookAudio() {
       try {
         var proto = window.HTMLAudioElement && window.HTMLAudioElement.prototype;
@@ -1320,8 +1330,8 @@
           proto.__ocMemHooked = true;
           proto.play = function () {
             try {
-              if (enabled() && window.__oc_lastCaptureAt && Date.now() - window.__oc_lastCaptureAt < 12000) {
-                console.log(TAG, 'MEM silence: Audio.play suppressed (capture window)');
+              if (isCaptureWindow()) {
+                console.log(TAG, 'MEM silence: Audio.play suppressed (capture precise)');
                 return Promise.resolve();
               }
             } catch (e3) {}
@@ -1337,7 +1347,7 @@
             var origResume = AC.prototype.resume;
             if (origResume) {
               AC.prototype.resume = function () {
-                if (enabled() && window.__oc_lastCaptureAt && Date.now() - window.__oc_lastCaptureAt < 12000) {
+                if (isCaptureWindow()) {
                   console.log(TAG, 'MEM silence: AudioContext.resume suppressed');
                   return Promise.resolve();
                 }
@@ -1350,7 +1360,7 @@
                 var osc = origCreateOsc.apply(this, arguments);
                 var origStart = osc.start;
                 osc.start = function () {
-                  if (enabled() && window.__oc_lastCaptureAt && Date.now() - window.__oc_lastCaptureAt < 12000) {
+                  if (isCaptureWindow()) {
                     console.log(TAG, 'MEM silence: Oscillator.start suppressed');
                     return;
                   }
@@ -1361,21 +1371,23 @@
             }
           }
         } catch (e4) {}
-        // Notification
+        // Notification - only suppress when capture window and title indicates capture
         try {
           if (window.Notification && !window.Notification.__ocMemHooked) {
             window.Notification.__ocMemHooked = true;
             var OrigNotif = window.Notification;
             var WrappedNotif = function (title, opts) {
-              if (enabled() && window.__oc_lastCaptureAt && Date.now() - window.__oc_lastCaptureAt < 12000) {
+              if (isCaptureWindow()) {
                 var txt = (title || '') + ' ' + ((opts && opts.body) || '');
-                if (txt.indexOf('capture') !== -1 || txt.indexOf('opencode-mem') !== -1 || txt === '' ) {
+                if (txt.indexOf('capture') !== -1 || txt.indexOf('opencode-mem') !== -1) {
                   console.log(TAG, 'MEM silence: Notification suppressed');
                   return;
                 }
-                // still suppress any notification in capture window to be safe (conservative: only if title empty, suppress all)
-                console.log(TAG, 'MEM silence: Notification suppressed (capture window)');
-                return;
+                // in precise mode, normal notifications pass through even in window
+                if (txt.trim() === '') {
+                  console.log(TAG, 'MEM silence: empty Notification suppressed (capture window)');
+                  return;
+                }
               }
               return new OrigNotif(title, opts);
             };
@@ -1403,9 +1415,24 @@
           if (isCaptureCreate || url.indexOf('opencode-mem') !== -1) { try { window.__oc_lastCaptureAt = Date.now(); console.log(TAG, 'MEM silence: capture fetch detected', url); } catch (e) {} }
           return origFetch.apply(this, arguments).then(function (res) {
             try {
-              if (enabled() && (url.indexOf('/api/sessions') !== -1 || url.indexOf('/api/session') !== -1)) {
+              if (url.indexOf('/api/sessions') !== -1 || url.indexOf('/api/session') !== -1 || url.indexOf('/session') !== -1) {
                 var clone = res.clone();
                 return clone.json().then(function (data) {
+                  // track lastCapture vs lastNormal for precise window
+                  try {
+                    var sessions = null;
+                    if (Array.isArray(data)) sessions = data;
+                    else if (data && Array.isArray(data.sessions)) sessions = data.sessions;
+                    else if (data && data.data && Array.isArray(data.data)) sessions = data.data;
+                    if (sessions) {
+                      var hasCapture = false, hasNormal = false;
+                      for (var i = 0; i < sessions.length; i++) { if (isCaptureSession(sessions[i])) { hasCapture = true; break; } }
+                      for (var j = 0; j < sessions.length; j++) { if (!isCaptureSession(sessions[j])) { hasNormal = true; break; } }
+                      if (hasCapture) window.__oc_lastCaptureAt = Date.now();
+                      if (hasNormal) window.__oc_lastNormalAt = Date.now();
+                    }
+                  } catch (e6) {}
+                  if (!enabled()) return res;
                   var filtered = false;
                   if (Array.isArray(data)) {
                     var before = data.length;
@@ -1422,7 +1449,6 @@
                   }
                   if (filtered) {
                     console.log(TAG, 'MEM silence: filtered capture from', url);
-                    try { window.__oc_lastCaptureAt = Date.now(); } catch (e) {}
                     return new Response(JSON.stringify(data), { status: res.status, statusText: res.statusText, headers: res.headers });
                   }
                   return res;
