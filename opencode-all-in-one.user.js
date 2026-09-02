@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.8.9
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(底部居中自适应+进度条自动刷新) + 静音 opencode-mem capture(精准3s) | v1.8.9
+// @version      1.8.10
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(底部居中自适应+进度条自动刷新) + 静音 opencode-mem capture(无条件通知屏蔽) | v1.8.10
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -1431,30 +1431,65 @@
             }
           }
         } catch (e4) {}
-        // Notification - only suppress when capture window and title indicates capture
+        // Notification - unconditional for capture (no time window), to kill +20 spam
         try {
           if (window.Notification && !window.Notification.__ocMemHooked) {
             window.Notification.__ocMemHooked = true;
             var OrigNotif = window.Notification;
             var WrappedNotif = function (title, opts) {
-              if (isCaptureWindow()) {
-                var txt = (title || '') + ' ' + ((opts && opts.body) || '');
-                if (txt.indexOf('capture') !== -1 || txt.indexOf('opencode-mem') !== -1) {
-                  console.log(TAG, 'MEM silence: Notification suppressed');
-                  return;
+              try {
+                if (enabled()) {
+                  var txt = (title || '') + ' ' + ((opts && opts.body) || '');
+                  var low = txt.toLowerCase();
+                  if (low.indexOf('opencode-mem capture') !== -1 || low.indexOf('opencode-mem') !== -1 || low.indexOf('capture') !== -1 && low.indexOf('opencode') !== -1) {
+                    console.log(TAG, 'MEM silence: Notification suppressed (unconditional capture)');
+                    return;
+                  }
                 }
-                // in precise mode, normal notifications pass through even in window
-                if (txt.trim() === '') {
-                  console.log(TAG, 'MEM silence: empty Notification suppressed (capture window)');
-                  return;
+                // still respect precise window for empty notifications
+                if (isCaptureWindow()) {
+                  var txt2 = (title || '') + ' ' + ((opts && opts.body) || '');
+                  if (txt2.trim() === '') {
+                    console.log(TAG, 'MEM silence: empty Notification suppressed (capture window)');
+                    return;
+                  }
                 }
-              }
+              } catch (e6) {}
               return new OrigNotif(title, opts);
             };
             WrappedNotif.requestPermission = OrigNotif.requestPermission.bind(OrigNotif);
             WrappedNotif.permission = OrigNotif.permission;
+            WrappedNotif.requestPermission = OrigNotif.requestPermission ? OrigNotif.requestPermission.bind(OrigNotif) : function () { return Promise.resolve('granted'); };
+            try { WrappedNotif.permission = OrigNotif.permission; } catch (e) {}
             window.Notification = WrappedNotif;
           }
+          // ServiceWorker showNotification bypass
+          try {
+            if (navigator.serviceWorker && !navigator.serviceWorker.__ocMemHooked) {
+              navigator.serviceWorker.__ocMemHooked = true;
+              var origRegister = navigator.serviceWorker.register;
+              // hook registration's showNotification via prototype
+              if (window.ServiceWorkerRegistration && window.ServiceWorkerRegistration.prototype && !window.ServiceWorkerRegistration.prototype.__ocMemHooked) {
+                var origShow = window.ServiceWorkerRegistration.prototype.showNotification;
+                if (origShow) {
+                  window.ServiceWorkerRegistration.prototype.__ocMemHooked = true;
+                  window.ServiceWorkerRegistration.prototype.showNotification = function (title, opts) {
+                    try {
+                      if (enabled()) {
+                        var txt = (title || '') + ' ' + ((opts && opts.body) || '');
+                        var low = txt.toLowerCase();
+                        if (low.indexOf('opencode-mem capture') !== -1 || low.indexOf('opencode-mem') !== -1) {
+                          console.log(TAG, 'MEM silence: SW Notification suppressed');
+                          return Promise.resolve();
+                        }
+                      }
+                    } catch (e7) {}
+                    return origShow.apply(this, arguments);
+                  };
+                }
+              }
+            }
+          } catch (e8) {}
         } catch (e5) {}
       } catch (e) {}
     }
