@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.8.11
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(底部居中自适应+进度条自动刷新) + 静音 opencode-mem capture(无条件通知屏蔽) | v1.8.11
+// @version      1.8.12
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(底部居中自适应+进度条自动刷新) + 静音 opencode-mem capture(无条件通知屏蔽) | v1.8.12
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -1262,7 +1262,7 @@
       if (document.getElementById('oc-conn-style')) return;
       var st = document.createElement('style');
       st.id = 'oc-conn-style';
-      st.textContent = '#oc-disconnected-banner{position:fixed;bottom:calc(20px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%) translateY(8px);opacity:0;z-index:2147483647;max-width:520px;width:calc(100% - 32px);padding:11px 14px;border-radius:12px;display:flex;align-items:center;gap:10px;font-size:12px;line-height:1.4;transition:opacity 180ms,transform 180ms,border-color 300ms,background 300ms;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);pointer-events:auto;box-shadow:0 12px 28px rgba(0,0,0,.18)}#oc-disconnected-banner.oc-visible{opacity:1;transform:translateX(-50%) translateY(0)}#oc-disconnected-banner .oc-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;animation:oc-pulse 1.6s infinite}#oc-disconnected-banner.oc-state-offline{border:1px solid rgba(248,81,73,.35);background:rgba(22,22,22,.88);color:#e6edf3;box-shadow:0 12px 28px rgba(0,0,0,.45)}#oc-disconnected-banner.oc-state-offline .oc-dot{background:#f85149;box-shadow:0 0 0 6px rgba(248,81,73,.18)}#oc-disconnected-banner.oc-state-online{border:1px solid rgba(46,160,67,.45);background:rgba(16,24,18,.92);color:#e6edf3;box-shadow:0 12px 28px rgba(0,0,0,.45)}#oc-disconnected-banner.oc-state-online .oc-dot{background:#2ea043;box-shadow:0 0 0 6px rgba(46,160,67,.18)}#oc-disconnected-banner .oc-text{flex:1;min-width:0}#oc-disconnected-banner .oc-actions{display:flex;gap:6px;align-items:center;flex-shrink:0}#oc-disconnected-banner .oc-retry{padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.08);color:inherit;font-size:11px;cursor:pointer}#oc-disconnected-banner .oc-retry:hover{background:rgba(255,255,255,.14)}#oc-disconnected-banner .oc-close{width:24px;height:24px;border-radius:6px;border:none;background:transparent;color:inherit;opacity:.6;cursor:pointer;font-size:14px;line-height:1}#oc-disconnected-banner .oc-close:hover{opacity:1;background:rgba(255,255,255,.08)}#oc-disconnected-banner .oc-progress-track{position:absolute;left:0;right:0;bottom:0;height:2px;background:rgba(255,255,255,.08);border-radius:0 0 12px 12px;overflow:hidden}#oc-disconnected-banner .oc-progress-fill{height:100%;width:0%;background:linear-gradient(90deg,#2ea043,#3fb950);transition:width 2s linear}@keyframes oc-pulse{0%{transform:scale(1)}50%{transform:scale(1.12)}100%{transform:scale(1)}}@media(prefers-color-scheme:light){#oc-disconnected-banner.oc-state-offline{background:rgba(255,255,255,.94);border-color:rgba(0,0,0,.08);color:#24292f;box-shadow:0 12px 28px rgba(0,0,0,.12)}#oc-disconnected-banner.oc-state-online{background:rgba(242,255,242,.96);border-color:rgba(46,160,67,.35);color:#24292f}#oc-disconnected-banner.oc-state-offline .oc-dot{box-shadow:0 0 0 6px rgba(248,81,73,.12)}#oc-disconnected-banner.oc-state-online .oc-dot{box-shadow:0 0 0 6px rgba(46,160,67,.12)}#oc-disconnected-banner .oc-retry{border-color:rgba(0,0,0,.08);background:rgba(0,0,0,.04)}#oc-disconnected-banner .oc-retry:hover{background:rgba(0,0,0,.08)}#oc-disconnected-banner .oc-progress-track{background:rgba(0,0,0,.06)}}';
+      st.textContent = '#oc-disconnected-banner{position:fixed;bottom:calc(72px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%) translateY(8px);opacity:0;z-index:2147483647;max-width:520px;width:calc(100% - 32px);padding:11px 14px;border-radius:12px;display:flex;align-items:center;gap:10px;font-size:12px;line-height:1.4;transition:opacity 180ms,transform 180ms,border-color 300ms,background 300ms;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);pointer-events:auto;box-shadow:0 12px 28px rgba(0,0,0,.18)}#oc-disconnected-banner.oc-visible{opacity:1;transform:translateX(-50%) translateY(0)}#oc-disconnected-banner .oc-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;animation:oc-pulse 1.6s infinite}#oc-disconnected-banner.oc-state-offline{border:1px solid rgba(255,255,255,.10);background:rgba(22,22,22,.88);color:#e6edf3;box-shadow:0 12px 28px rgba(0,0,0,.45)}#oc-disconnected-banner.oc-state-offline .oc-dot{background:#f85149;box-shadow:0 0 0 6px rgba(248,81,73,.18)}#oc-disconnected-banner.oc-state-online{border:1px solid rgba(255,255,255,.10);background:rgba(16,24,18,.92);color:#e6edf3;box-shadow:0 12px 28px rgba(0,0,0,.45)}#oc-disconnected-banner.oc-state-online .oc-dot{background:#2ea043;box-shadow:0 0 0 6px rgba(46,160,67,.18)}#oc-disconnected-banner .oc-text{flex:1;min-width:0}#oc-disconnected-banner .oc-actions{display:flex;gap:6px;align-items:center;flex-shrink:0}#oc-disconnected-banner .oc-retry{padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.08);color:inherit;font-size:11px;cursor:pointer}#oc-disconnected-banner .oc-retry:hover{background:rgba(255,255,255,.14)}#oc-disconnected-banner .oc-close{width:24px;height:24px;border-radius:6px;border:none;background:transparent;color:inherit;opacity:.6;cursor:pointer;font-size:14px;line-height:1}#oc-disconnected-banner .oc-close:hover{opacity:1;background:rgba(255,255,255,.08)}#oc-disconnected-banner .oc-progress-track{position:absolute;left:0;right:0;bottom:0;height:2px;background:rgba(255,255,255,.08);border-radius:0 0 12px 12px;overflow:hidden}#oc-disconnected-banner .oc-progress-fill{height:100%;width:0%;background:linear-gradient(90deg,#2ea043,#3fb950);transition:width 2s linear}@keyframes oc-pulse{0%{transform:scale(1)}50%{transform:scale(1.12)}100%{transform:scale(1)}}@media(prefers-color-scheme:light){#oc-disconnected-banner.oc-state-offline{background:rgba(255,255,255,.94);border-color:rgba(0,0,0,.08);color:#24292f;box-shadow:0 12px 28px rgba(0,0,0,.12)}#oc-disconnected-banner.oc-state-online{background:rgba(242,255,242,.96);border-color:rgba(0,0,0,.08);color:#24292f}#oc-disconnected-banner.oc-state-offline .oc-dot{box-shadow:0 0 0 6px rgba(248,81,73,.12)}#oc-disconnected-banner.oc-state-online .oc-dot{box-shadow:0 0 0 6px rgba(46,160,67,.12)}#oc-disconnected-banner .oc-retry{border-color:rgba(0,0,0,.08);background:rgba(0,0,0,.04)}#oc-disconnected-banner .oc-retry:hover{background:rgba(0,0,0,.08)}#oc-disconnected-banner .oc-progress-track{background:rgba(0,0,0,.06)}}';
       (document.head || document.documentElement).appendChild(st);
     }
     function clearTimers() { if (reloadTimer) { clearTimeout(reloadTimer); reloadTimer = null; } if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; } }
@@ -1328,9 +1328,15 @@
     function probe() {
       if (!isLocalhost4096) return;
       fetch(location.origin + '/', { method: 'HEAD', cache: 'no-store' }).then(function (r) {
-        if (r.ok || r.status < 500) { failCount = 0; setDisconnected(false); }
+        // 401/403 是鉴权而非断线，视为存活；仅 5xx / 网络异常算断
+        var alive = r.ok || r.status === 401 || r.status === 403 || (r.status >= 200 && r.status < 500);
+        if (alive) { failCount = 0; setDisconnected(false); }
         else { failCount++; if (failCount >= 2) setDisconnected(true); }
-      }).catch(function () { failCount++; if (failCount >= 2) setDisconnected(true); });
+      }).catch(function (e) {
+        // 网络错误里若能取到状态 401/403 也算存活
+        try { var s = e && e.status ? e.status : 0; if (s === 401 || s === 403) { failCount = 0; setDisconnected(false); return; } } catch (err2) {}
+        failCount++; if (failCount >= 2) setDisconnected(true);
+      });
     }
     function wrapFetch() {
       if (!origFetch || window.__ocFetchWrapped) return;
@@ -1339,10 +1345,17 @@
         var url = typeof input === 'string' ? input : (input && input.url) || '';
         var isSelf = url.indexOf(location.origin) === 0 || url.indexOf('localhost:4096') !== -1;
         return origFetch.apply(this, arguments).then(function (r) {
-          if (isSelf) { if (r.ok || r.status < 500) { failCount = 0; if (disconnected) setDisconnected(false); } }
+          if (isSelf) {
+            var alive = r.ok || r.status === 401 || r.status === 403 || (r.status >= 200 && r.status < 500);
+            if (alive) { failCount = 0; if (disconnected) setDisconnected(false); }
+            else if (r.status >= 500) { failCount++; if (failCount >= 2) setDisconnected(true); }
+          }
           return r;
         }, function (err) {
-          if (isSelf) { failCount++; if (failCount >= 2) setDisconnected(true); }
+          if (isSelf) {
+            try { var s2 = err && err.status ? err.status : 0; if (s2 === 401 || s2 === 403) { failCount = 0; if (disconnected) setDisconnected(false); throw err; } } catch (err3) {}
+            failCount++; if (failCount >= 2) setDisconnected(true);
+          }
           throw err;
         });
       };
