@@ -1,0 +1,237 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // 零弹窗基线：全局 allow，仅高危 deny；plan 通过 agent.permission 限域
+  "permission": {
+    "*": "allow",
+    "external_directory": "allow",
+    "doom_loop": "ask",
+    "read": {
+      "*": "allow",
+      "*.env": "deny",
+      "*.env.*": "deny",
+      "*.env.example": "allow"
+    },
+    "bash": {
+      "*": "allow",
+      "rm -rf / *": "deny",
+      "rm -rf C:\\*": "deny",
+      "format *": "deny",
+      "shutdown *": "deny"
+    }
+  },
+  "default_agent": "build",
+
+  // plan/build 差异仅 temperature；权限由 permission + agent.permission 控制
+  // plan 限域：仅允许写计划目录，其余 deny（不弹窗、直接失败）；build 继承全局 allow 全自动
+  "agent": {
+    "plan": {
+      "mode": "primary",
+      "temperature": 0.2,
+      "prompt": "{file:./prompts/plan.txt}",
+      "permission": {
+        "edit": {
+          "*": "deny",
+          ".opencode/plans/**": "allow",
+          ".opencode/**": "allow",
+          "AGENTS.md": "allow",
+          "plans/**": "allow",
+          ".learnings/**": "allow",
+          "*.md": "allow"
+        },
+        "write": {
+          "*": "deny",
+          ".opencode/plans/**": "allow",
+          ".opencode/**": "allow",
+          "AGENTS.md": "allow",
+          "plans/**": "allow",
+          ".learnings/**": "allow"
+        },
+        "bash": "allow",
+        "read": "allow",
+        "glob": "allow",
+        "grep": "allow",
+        "question": "allow"
+      }
+    },
+    "build": {
+      "mode": "primary",
+      "temperature": 0.1,
+      "prompt": "{file:./prompts/build.txt}"
+    }
+  },
+
+  // 模型白名单：隐藏不常用模型，仅保留常用/性价比高/建议保留的
+  // 评分：AA Intelligence Index（OpenRouter benchmarks.artificial_analysis.intelligence_index）
+  "provider": {
+    // Zen 免费模型（opencode provider：6个免费模型，按 AA Intelligence 排名）
+    "opencode": {
+      "whitelist": ["muse-spark-1.2-contributor-free", "nemotron-3-ultra-free", "mimo-v2.5-free", "ling-3.0-flash-fin-free", "big-pickle", "nemotron-3.5-lightning-free"]
+    },
+    // 主力 Go 套餐（mario.mo.prc@gmail.com）— 额度最高2个 + 1个DS
+    // muse-spark-1.2-contributor 会用请求数据训练（标注）
+    "opencode-go": {
+      "whitelist": ["muse-spark-1.2-contributor", "mimo-v2.5", "deepseek-v4-flash"]
+    },
+    // 备用 Go 套餐（q16514208@gmail.com）
+    "opencode-go-2": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "OpenCode Go 2",
+      "options": {
+        "baseURL": "https://opencode.ai/zen/go/v1",
+        "apiKey": "{env:OPENCODE_GO2_API_KEY}"
+      },
+      "models": {
+        "muse-spark-1.2-contributor": { "name": "Muse Spark 1.2 Contributor", "limit": { "context": 1048576, "output": 131072 }, "attachment": true, "modalities": { "input": ["text", "image"] }, "temperature": true, "reasoning": true, "provider": { "npm": "@ai-sdk/openai", "api": "https://opencode.ai/zen/go/v1" } },
+        "mimo-v2.5": { "name": "MiMo V2.5", "limit": { "context": 1048576, "output": 131072 }, "attachment": true, "modalities": { "input": ["text", "image"] }, "temperature": true, "reasoning": true },
+        "deepseek-v4-flash": { "name": "DeepSeek V4 Flash", "limit": { "context": 1000000, "output": 384000 }, "temperature": true, "reasoning": true }
+      }
+    },
+    "openrouter": {
+      "whitelist": ["openrouter/auto", "openrouter/free"]
+    },
+    // 已隐藏：GitHub Copilot 模型（仅保留 GitHub MCP 的工具能力，模型选择里不出现）
+    "github-copilot": { "disabled": true },
+    // DeepSeek 官方 API（DEEPSEEK_API_KEY）— 按 AA 智力排名，放最后
+    "deepseek": {
+      "whitelist": ["deepseek-v4-pro", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp"]
+    }
+  },
+
+  "env": {
+    "OPENCODE_EXPERIMENTAL_EVENT_QUEUE_MAX": "10000",
+    "OPENCODE_SNAPSHOT_DAYS": "3"
+  },
+  "subagent_depth": 2,
+  "username": "pass",
+  "snapshot": true,
+  "watcher": {
+    "ignore": ["node_modules", "*.db", "*.db-shm", "*.db-wal", "*.db.gz", "*.backup*", "package-lock.json", ".playwright-mcp", "health-watchdog.log", "tool-output", "log", "snapshot", "backups", "backups_local", ".opencode-mem", "*.log", "*.tmp"]
+  },
+  "tool_output": {
+    "max_lines": 1000,
+    "max_bytes": 16384
+  },
+  "attachment": {
+    "image": {
+      "max_width": 1280,
+      "max_height": 1280,
+      "max_base64_bytes": 2097152
+    }
+  },
+  "compaction": {
+    "auto": true,
+    "prune": true,
+    "reserved": 12000
+  },
+  "autoupdate": true,
+  "experimental": {
+    "batch_tool": true,
+    // 只允许配置的 5 个 provider，隐藏其余内置 provider（web 界面模型选择器用全量 /provider）
+    // 顺序：opencode → opencode-go → opencode-go-2 → openrouter → deepseek(最后)
+    "policies": [
+      { "effect": "deny", "action": "provider.use", "resource": "*" },
+      { "effect": "allow", "action": "provider.use", "resource": "opencode" },
+      { "effect": "allow", "action": "provider.use", "resource": "opencode-go" },
+      { "effect": "allow", "action": "provider.use", "resource": "opencode-go-2" },
+      { "effect": "allow", "action": "provider.use", "resource": "openrouter" },
+      { "effect": "allow", "action": "provider.use", "resource": "deepseek" },
+      { "effect": "deny", "action": "provider.use", "resource": "github-copilot" }
+    ]
+  },
+  "skills": {
+    "paths": [
+      "~/.config/opencode/node_modules/superpowers/skills",
+      "~/.config/opencode/skills"
+    ]
+  },
+  "plugin": ["~/.config/opencode/node_modules/superpowers", "file://C:/Users/pass/.config/opencode/plugins/self-improvement.js", "file://C:/Users/pass/.config/opencode/plugins/hooks-automation.js"],
+  "mcp": {
+    // 隐形抓取：独立 Chromium 沙箱，无登录态，隔离下载 blob/无痕抓取（与 playwright-edge 二选一，默认用 edge；需用时临时改 enabled:true 重启）
+    "playwright": {
+      "type": "local",
+      "command": ["npx", "-y", "@playwright/mcp@latest", "--browser=chromium", "--headless"],
+      "enabled": false,
+      "timeout": 60000,
+      "environment": {
+        "HTTPS_PROXY": "{env:HTTPS_PROXY}",
+        "HTTP_PROXY": "{env:HTTP_PROXY}"
+      }
+    },
+    // 登录态浏览器：通过 Playwright Extension 连接 Edge（需要登录的网站用这个）
+    "playwright-edge": {
+      "type": "local",
+      "command": ["cmd", "/c", "npx", "-y", "@playwright/mcp@latest", "--extension", "--browser=msedge"],
+      "enabled": true,
+      "timeout": 60000,
+      "environment": {
+        "HTTPS_PROXY": "{env:HTTPS_PROXY}",
+        "HTTP_PROXY": "{env:HTTP_PROXY}",
+        "PLAYWRIGHT_MCP_EXTENSION_TOKEN": "{env:PLAYWRIGHT_MCP_EXTENSION_TOKEN}"
+      }
+    },
+    // 官方推荐 remote：https://mcp.context7.com/mcp （原 local @upstash/context7-mcp 已迁移）
+    "context7": {
+      "type": "remote",
+      "url": "https://mcp.context7.com/mcp",
+      "enabled": true,
+      "headers": {
+        "CONTEXT7_API_KEY": "{env:CONTEXT7_API_KEY}"
+      },
+      "timeout": 35000
+    },
+    "github": {
+      "type": "remote",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "oauth": false,
+      "enabled": true,
+      "headers": {
+        "Authorization": "Bearer {env:GITHUB_PERSONAL_ACCESS_TOKEN}"
+      },
+      "timeout": 20000
+    },
+    // AI 优化的网页搜索：search、searchContext、searchQNA、extract
+    "tavily": {
+      "type": "local",
+      "command": ["npx", "-y", "@mcptools/mcp-tavily"],
+      "enabled": true,
+      "environment": {
+        "TAVILY_API_KEY": "{env:TAVILY_API_KEY}"
+      },
+      "timeout": 25000
+    },
+    "exa": {
+      "type": "remote",
+      "url": "https://mcp.exa.ai/mcp?exaApiKey={env:EXA_API_KEY}",
+      "enabled": true,
+      "timeout": 35000
+    },
+    "firecrawl": {
+      "type": "local",
+      "command": ["npx", "-y", "firecrawl-mcp"],
+      "enabled": true,
+      "environment": {
+        "FIRECRAWL_API_KEY": "{env:FIRECRAWL_API_KEY}"
+      },
+      "timeout": 30000
+    },
+
+    // 桌面操控：Windows GUI 自动化（操控任意 Windows 软件，与 playwright-edge 互补）
+    "windows": {
+      "type": "local",
+      "command": ["uvx", "windows-mcp", "serve"],
+      "enabled": true,
+      "timeout": 45000
+    },
+
+    // 本地生图：ComfyUI MCP（generate_image / img2img / swap_face / face_restore）— 按需启用：git show e28632e:scripts/comfyui-mcp.py > scripts/comfyui-mcp.py → 改 venv Python 3.11 → enabled:true → 重启（image-web.py:8090 已覆盖 95% 需求）
+    "comfyui": {
+      "type": "local",
+      "command": ["C:\\Users\\pass\\AppData\\Local\\Programs\\Python\\Python314\\python.exe", "C:\\Users\\pass\\.config\\opencode\\scripts\\comfyui-mcp.py"],
+      "enabled": false,
+      "timeout": 60000
+    }
+  },
+  "instructions": ["AGENTS.md"],
+  "formatter": true,
+  "lsp": true
+}

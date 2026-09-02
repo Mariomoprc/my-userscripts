@@ -1,0 +1,8 @@
+// Syncthing version backup dir (never sync)
+.stversions
+
+// Temp / conflict leftovers
+*~
+#*
+~*
+.sync-conflict-*
