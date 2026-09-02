@@ -1,21 +1,21 @@
 // ==UserScript==
 // @name         人人视� ��增强包
-// @namespacehttp://tampermonkey.net/
-// @version2.9.1
+// @namespace    http://tampermonkey.net/
+// @version      2.9.1
 // @description  反调试绕过 + 隐藏滚动条 + 无� �去广告(播放态自动续播/暂停态保 持/loading修复) + 豆瓣跳转 + 唤醒后 暂停(点播放即恢复) + 播放卡死自� ��(智能判定不误伤正常缓冲) + 播放器修复(轻seek+渲染层hack) + 豆瓣页跳转人人 | 菜� �可开关
-// @authoropencode
+// @author       opencode
 // @match        *://*.yichengwlkj.com/*
 // @match         *://*.rrmj.plus/*
-// @match        *://* .bwcgee.cn/*
-// @matchhttps://movie.douban.com/subject/*
-// @grantGM_registerMenuCommand
-// @grantGM_setValue
-// @grantGM_getValue
+// @match        *://*.bwcgee.cn/*
+// @match        https://movie.douban.com/subject/*
+// @grant        GM_registerMenuCommand
+// @grant        GM_setValue
+// @grant        GM_getValue
 // @run-at       document-start
 // ==/UserScript==
 
 (function () {
-   'usestrict';
+   'use strict';
 
   // ============================================================
   //  设 置读写
