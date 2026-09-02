@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         人人视频增强包
 // @namespace    http://tampermonkey.net/
-// @version      2.9.5
-// @description  反调试绕过 + 隐藏滚动条 + 无感去广告(播放态自动续播/暂停态保持/loading修复) + 豆瓣跳转 + 唤醒后暂停(点播放即恢复) + 播放卡死自愈(智能判定不误伤正常缓冲+慢速播放识别+seek卡死识别) + 播放器修复(轻seek+渲染层hack) + 豆瓣页跳转人人 | 菜单可开关
+// @version      2.9.6
+// @description  反调试绕过 + 隐藏滚动条 + 无感去广告(播放态自动续播/暂停态保持/loading修复) + 豆瓣跳转 + 唤醒后暂停(点播放即恢复) + 播放卡死自愈(智能判定不误伤正常缓冲+慢速播放识别+seek卡死识别+seek循环识别) + 播放器修复(轻seek+渲染层hack) + 豆瓣页跳转人人 | 菜单可开关
 // @author       opencode
 // @match        *://*.yichengwlkj.com/*
 // @match         *://*.rrmj.plus/*
@@ -373,6 +373,23 @@
              if (e.target && e.target.tagName === 'VIDEO') clearStallTimer();
           }, true);
          });
+        // [v2.9.6] 反复 seek 循环检测：10 秒内 seek ≥ 5 次 → 判定卡死
+        var seekCount = 0;
+        var seekWindowStart = Date.now();
+        document.addEventListener('seeking', function (e) {
+          if (!e.target || e.target.tagName !== 'VIDEO') return;
+          try {
+            var lastAd = window.__rrmv_lastAdBlockAt || 0;
+            if (Date.now() - lastAd < 3000) return;
+          } catch (err) {}
+          seekCount++;
+          if (Date.now() - seekWindowStart > 10000) { seekWindowStart = Date.now(); seekCount = 0; }
+          if (seekCount >= 5) {
+            seekCount = 0;
+            console.log('[增强包] 检测到反复 seek 循环，触发自愈');
+            onStallTimeout(e.target);
+          }
+        }, true);
        });
     })();
   }
