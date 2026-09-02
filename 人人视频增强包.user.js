@@ -1,61 +1,61 @@
 // ==UserScript==
 // @name         人人视� ��增强包
-// @namespace    http://tampermon key.net/
-// @version      2.9.0
-// @descripti on  反调试绕过 + 隐藏滚动条 + 无� �去广告(播放态自动续播/暂停态保 持/loading修复) + 豆瓣跳转 + 唤醒后 暂停(点播放即恢复) + 播放卡死自� ��(智能判定不误伤正常缓冲) + 播放器修复(轻seek+渲染层hack) + 豆瓣页跳转人人 | 菜� �可开关
-// @author       opencode
-// @matc h        *://*.yichengwlkj.com/*
+// @namespacehttp://tampermonkey.net/
+// @version2.9.1
+// @description  反调试绕过 + 隐藏滚动条 + 无� �去广告(播放态自动续播/暂停态保 持/loading修复) + 豆瓣跳转 + 唤醒后 暂停(点播放即恢复) + 播放卡死自� ��(智能判定不误伤正常缓冲) + 播放器修复(轻seek+渲染层hack) + 豆瓣页跳转人人 | 菜� �可开关
+// @authoropencode
+// @match        *://*.yichengwlkj.com/*
 // @match         *://*.rrmj.plus/*
 // @match        *://* .bwcgee.cn/*
-// @match        https://movie.douban.com/subject/*
-// @grant        GM_registerMenu Command
-// @grant        GM_setValue
-// @gran t        GM_getValue
-// @run-at       documen t-start
+// @matchhttps://movie.douban.com/subject/*
+// @grantGM_registerMenuCommand
+// @grantGM_setValue
+// @grantGM_getValue
+// @run-at       document-start
 // ==/UserScript==
 
 (function () {
-   'use strict';
+   'usestrict';
 
-  // ========================= ===================================
+  // ============================================================
   //  设 置读写
-  // ============================== ==============================
+  // ============================================================
   var S = {
      get: function (k, d) { var v = localStorage .getItem('rrmv_' + k); return v !== null ? v  === '1' : d; },
-    set: function (k, v) { lo calStorage.setItem('rrmv_' + k, v ? '1' : '0' ); }
+    set: function (k, v) { localStorage.setItem('rrmv_' + k, v ? '1' : '0' ); }
   };
 
-  // ============================= ===============================
+  // ============================================================
   //  菜单
-   // ======================================== ====================
-  window.__rrmv_lastAdBl ockAt = 0;
-  function buildMenu(label, key, d ef) {
+   // ============================================================
+  window.__rrmv_lastAdBlockAt = 0;
+  function buildMenu(label, key, def) {
     var on = S.get(key, def);
-    GM_re gisterMenuCommand((on ? '✔ ' : '✘ ') + la bel, function () {
+    GM_registerMenuCommand((on ? '✔ ' : '✘ ') + label, function () {
       S.set(key, !on);
        location.reload();
     });
   }
 
-  buildMen u('反调试自动绕过',     'antiDebug',   true);
+  buildMenu('反调试自动绕过',     'antiDebug',   true);
   buildMenu('隐藏滚动条',         'scrollbar',   true);
   buildMenu('去广告� ��无感）',    'adBlock',     true);
-  buil dMenu('豆瓣跳转',          'douban',       true);
+  buildMenu('豆瓣跳转',          'douban',       true);
   buildMenu('唤醒/刷新后暂停',    'pauseOnWake', true);
   buildMenu('播放� ��死自愈',      'stallHeal',   true);
   buildMenu('播放器修复',        'videoFix',    true);
   buildMenu('豆瓣页跳转人人',    'doubanJump',  true);
 
-  / / =========================================== =================
+  // ============================================================
   //  1. 反调试自动绕 过
-  // ==================================== ========================
-  if (S.get('antiDeb ug', true)) {
+  // ============================================================
+  if (S.get('antiDebug', true)) {
     // 1. 设置绕过标记
-     localStorage.setItem('__internal_devtools_b ypass', '1');
-    sessionStorage.setItem('__i nternal_devtools_bypass', '1');
+     localStorage.setItem('__internal_devtools_bypass', '1');
+    sessionStorage.setItem('__internal_devtools_bypass', '1');
 
     // 2. � �存并恢复 document.onkeydown（防止网� ��反调试覆盖媒体键处理）
-    var o rigOnKeydown = document.onkeydown;
+    var origOnKeydown = document.onkeydown;
 
     // 3.  拦截 alert（阻断"请关闭控制台"弹 窗）
     var origAlert = window.alert;
@@ -64,43 +64,43 @@
       return origAlert.apply(window,  arguments);
     };
 
-    // 4. 清除已有� � debuggerInterval 定时器（通过覆写 s etInterval 捕获）
+    // 4. 清除已有� � debuggerInterval 定时器（通过覆写 setInterval 捕获）
     var origSetInterval  = window.setInterval;
     var debuggerTimers  = [];
     window.setInterval = function (fn,  ms) {
       var fnStr = fn.toString();
        // 检测反调试的 debugger 定时器（� � debugger 语句或执行间隔 <= 200ms）
        if (fnStr.indexOf('debugger') !== -1 ||  (ms && ms <= 200)) {
-        var id = origSe tInterval.call(window, function () {}, 999999 );
+        var id = origSetInterval.call(window, function () {}, 999999 );
         debuggerTimers.push(id);
-        r eturn id;
+        return id;
       }
-      return origSetInterva l.apply(window, arguments);
+      return origSetInterval.apply(window, arguments);
     };
 
     // 5.  更强力的 DevToolsDetector 补丁
-    var  patchTimer = origSetInterval.call(window, fu nction () {
+    var  patchTimer = origSetInterval.call(window, function () {
       // 清除 debugger 定时� �
       debuggerTimers.forEach(function (id)  { clearInterval(id); clearTimeout(id); });
        debuggerTimers = [];
 
-      // 恢复 doc ument.onkeydown（如果被网站反调试覆 盖了）
-      if (document.onkeydown && doc ument.onkeydown.toString().indexOf('debugger' ) !== -1) {
-        document.onkeydown = orig OnKeydown;
+      // 恢复 document.onkeydown（如果被网站反调试覆 盖了）
+      if (document.onkeydown && document.onkeydown.toString().indexOf('debugger' ) !== -1) {
+        document.onkeydown = origOnKeydown;
       }
 
-      // patch DevToolsDe tector
+      // patchDevToolsDetector
       if (typeof DevToolsDetector !==  'undefined') {
         // 完全禁用检测
-         DevToolsDetector.prototype.init = fun ction () {};
-        DevToolsDetector.prototy pe.start = function () {};
-        DevToolsDe tector.prototype.check = function () {};
-         DevToolsDetector.prototype.checkPerforman ce = function () {};
-        DevToolsDetector .prototype.showDebuggerAlertAndBlock = functi on () {};
+         DevToolsDetector.prototype.init = function () {};
+        DevToolsDetector.prototype.start = function () {};
+        DevToolsDetector.prototype.check = function () {};
+         DevToolsDetector.prototype.checkPerformance = function () {};
+        DevToolsDetector .prototype.showDebuggerAlertAndBlock = function () {};
 
         // 清除已有的检测� �时器
         if (this && this.checkTimer)  clearInterval(this.checkTimer);
-        if (t his && this.timer) clearInterval(this.timer); 
+        if (this && this.timer) clearInterval(this.timer); 
 
         clearInterval(patchTimer);
       }
@@ -112,119 +112,119 @@
      }, 5000);
   }
 
-  // ======================== ====================================
+  // ============================================================
   //  2.  隐藏滚动条
-  // ======================= =====================================
+  // ============================================================
   if (S .get('scrollbar', true)) {
-    var scrollbarS tyle = document.createElement('style');
-    s crollbarStyle.textContent = 'html, body { scr ollbar-width: none !important; -ms-overflow-s tyle: none !important; } html::-webkit-scroll bar, body::-webkit-scrollbar { display: none  !important; }';
-    (document.head || documen t.documentElement).appendChild(scrollbarStyle );
+    var scrollbarStyle = document.createElement('style');
+    scrollbarStyle.textContent = 'html, body { scrollbar-width: none !important; -ms-overflow-style: none !important; } html::-webkit-scrollbar, body::-webkit-scrollbar { display: none  !important; }';
+    (document.head || document.documentElement).appendChild(scrollbarStyle );
   }
 
-  // ================================ ============================
+  // ============================================================
   //  以下功� ��需要 DOM 就绪
-  // ==================== ========================================
-  fu nction onReady(fn) {
+  // ============================================================
+  function onReady(fn) {
     if (document.body) {  fn(); }
     else { document.addEventListener ('DOMContentLoaded', fn); }
   }
 
-  // ======= ============================================= ========
+  // ============================================================
   //  5. 唤醒/刷新后暂停（� �去广告之前执行）
-  // ============== ============================================= =
+  // ============================================================
   if (S.get('pauseOnWake', true)) {
-    (fu nction () {
-      var PAUSE_ONCE_KEY = 'rrmv_ paused_once';
-      var WATCHING_KEY = 'rrmv_ watching';
-      var needPause = sessionStora ge.getItem(WATCHING_KEY) === '1' &&
-                       sessionStorage.getItem(PAUSE_ONC E_KEY) !== '1';
+    (function () {
+      var PAUSE_ONCE_KEY = 'rrmv_paused_once';
+      var WATCHING_KEY = 'rrmv_watching';
+      var needPause = sessionStorage.getItem(WATCHING_KEY) === '1' &&
+                       sessionStorage.getItem(PAUSE_ONCE_KEY) !== '1';
       var pauseTime = 0;
 
        function pauseAllVideo() {
-        var fou nd = false;
+        var found = false;
         document.querySelectorAll ('video').forEach(function (v) {
-          tr y {
+          try {
             if (!v.paused && !v.ended) {
                v.pause();
-              v.setA ttribute('data-rrmv-paused', '1');
+              v.setAttribute('data-rrmv-paused', '1');
                found = true;
             }
-          } c atch (e) {}
+          } catch (e) {}
         });
-        if (found) pa useTime = Date.now();
+        if (found) pauseTime = Date.now();
         return found;
        }
 
       var wakeMO = null;
-      var wa keTimer = null;
+      var wakeTimer = null;
 
       function watchForVideo () {
         if (!needPause) return;
          if (pauseAllVideo()) return;
 
         wakeMO  = new MutationObserver(function () {
-           if (!needPause) { wakeMO.disconnect(); wake MO = null; return; }
-          if (pauseAllVi deo()) { wakeMO.disconnect(); wakeMO = null;  }
+           if (!needPause) { wakeMO.disconnect(); wakeMO = null; return; }
+          if (pauseAllVideo()) { wakeMO.disconnect(); wakeMO = null;  }
         });
         wakeMO.observe(document .documentElement, { childList: true, subtree:  true });
 
         var checkCount = 0;
          wakeTimer = setInterval(function () {
            checkCount++;
-          if (!needPause | | checkCount > 60) { clearInterval(wakeTimer) ; wakeTimer = null; if (wakeMO) { wakeMO.disc onnect(); wakeMO = null; } return; }
-           if (pauseAllVideo()) { clearInterval(wakeTi mer); wakeTimer = null; if (wakeMO) { wakeMO. disconnect(); wakeMO = null; } }
-        }, 5 00);
+          if (!needPause || checkCount > 60) { clearInterval(wakeTimer) ; wakeTimer = null; if (wakeMO) { wakeMO.disconnect(); wakeMO = null; } return; }
+           if (pauseAllVideo()) { clearInterval(wakeTimer); wakeTimer = null; if (wakeMO) { wakeMO. disconnect(); wakeMO = null; } }
+        }, 500);
       }
 
       function cleanupWake() {
-         if (wakeMO) { wakeMO.disconnect(); wa keMO = null; }
-        if (wakeTimer) { clear Interval(wakeTimer); wakeTimer = null; }
+         if (wakeMO) { wakeMO.disconnect(); wakeMO = null; }
+        if (wakeTimer) { clearInterval(wakeTimer); wakeTimer = null; }
        }
 
       var hiddenAt = 0;
-      document.a ddEventListener('visibilitychange', function  () {
+      document.addEventListener('visibilitychange', function  () {
         if (document.hidden) {
            hiddenAt = Date.now();
-        } else if (hi ddenAt > 0) {
+        } else if (hiddenAt > 0) {
           var gap = Date.now()  - hiddenAt;
           hiddenAt = 0;
-           if (gap > 10000 && !sessionStorage.getItem(P AUSE_ONCE_KEY)) {
+           if (gap > 10000 && !sessionStorage.getItem(PAUSE_ONCE_KEY)) {
             sessionStorage. setItem(PAUSE_ONCE_KEY, '1');
-            nee dPause = true;
+            needPause = true;
             watchForVideo();
            }
         }
       }, { passive: true  });
 
       if (needPause) {
-        sessionS torage.setItem(PAUSE_ONCE_KEY, '1');
+        sessionStorage.setItem(PAUSE_ONCE_KEY, '1');
          onReady(watchForVideo);
       }
 
-      onRead y(function () {
-        document.addEventList ener('play', function (e) {
-          if (e.t arget && e.target.tagName === 'VIDEO') {
+      onReady(function () {
+        document.addEventListener('play', function (e) {
+          if (e.target && e.target.tagName === 'VIDEO') {
              sessionStorage.setItem(WATCHING_KEY,  '1');
             // 用户点播放立即恢 复（不再二次按停），只清除本次 唤醒暂停状态
-            needPause = fa lse;
-            sessionStorage.removeItem(PA USE_ONCE_KEY);
+            needPause = false;
+            sessionStorage.removeItem(PAUSE_ONCE_KEY);
             cleanupWake();
            }
         }, true);
       });
 
-      w indow.addEventListener('beforeunload', functi on () {
-        sessionStorage.removeItem(PAU SE_ONCE_KEY);
+      window.addEventListener('beforeunload', function () {
+        sessionStorage.removeItem(PAUSE_ONCE_KEY);
         cleanupWake();
       },  { passive: true });
     })();
   }
 
-  // ==== ============================================= ===========
-  //  6. 播放卡死自愈（cur rentTime 零进展才判定真卡死 → play 重试 → 软重载 → 刷新页面）
+  // ============================================================
+  //  6. 播放卡死自愈（currentTime 零进展才判定真卡死 → play 重试 → 软重载 → 刷新页面）
   //      不再用固定超时触发 video.load() ：暂停恢复/seek 后的正常缓冲
   //      （currentTime 几秒内恢复推进）� �会被误判，避免短等待被放大成� �量重载
-  // ============================= ===============================
+  // ============================================================
   if (S.get(' stallHeal', true)) {
     (function () {
        var HEAL_COUNT_KEY = 'rrmv_heal_count';
@@ -234,19 +234,19 @@
 
       function healCountOk() {
          var now = Date.now();
-        var last = p arseInt(sessionStorage.getItem(HEAL_TIME_KEY)  || '0', 10);
-        if (now - last > 10 * 6 0 * 1000) {
+        var last = parseInt(sessionStorage.getItem(HEAL_TIME_KEY)  || '0', 10);
+        if (now - last > 10 * 60 * 1000) {
           sessionStorage.setItem( HEAL_TIME_KEY, String(now));
-          sessio nStorage.setItem(HEAL_COUNT_KEY, '0');
+          sessionStorage.setItem(HEAL_COUNT_KEY, '0');
            return true;
         }
-        var n = pa rseInt(sessionStorage.getItem(HEAL_COUNT_KEY)  || '0', 10);
+        var n = parseInt(sessionStorage.getItem(HEAL_COUNT_KEY)  || '0', 10);
         return n < 2;
       }
 
        function bumpHealCount() {
-        var  n = parseInt(sessionStorage.getItem(HEAL_COUN T_KEY) || '0', 10);
-        sessionStorage.se tItem(HEAL_COUNT_KEY, String(n + 1));
+        var  n = parseInt(sessionStorage.getItem(HEAL_COUNT_KEY) || '0', 10);
+        sessionStorage.setItem(HEAL_COUNT_KEY, String(n + 1));
       } 
 
       function clearStallTimer() {
@@ -254,50 +254,50 @@
       }
 
       // 监控  currentTime 推进：连续 noProgressSec � �零进展且未暂停 → 判定真卡死
-       function armStallWatch(video, noProgressS ec) {
+       function armStallWatch(video, noProgressSec) {
         try {
-          var lastAd2 = w indow.__rrmv_lastAdBlockAt || 0;
+          var lastAd2 = window.__rrmv_lastAdBlockAt || 0;
           if  (Date.now() - lastAd2 < 3000) return;
          } catch (err) {}
         clearStallTimer(); 
         var lastTime = -1;
         var still  = 0;
-        stallTimer = setInterval(functi on () {
-          if (!video.isConnected || v ideo.paused) { clearStallTimer(); return; }
-           if (video.seeking) { still = 0; retu rn; } // seek 等数据不算卡死
+        stallTimer = setInterval(function () {
+          if (!video.isConnected || video.paused) { clearStallTimer(); return; }
+           if (video.seeking) { still = 0; return; } // seek 等数据不算卡死
            if (Math.abs(video.currentTime - lastTime) >  0.01) {
-            lastTime = video.current Time;
+            lastTime = video.currentTime;
             still = 0;
             // � ��全恢复（时间在走且数据充足）� �� 停止监控
-            if (video.readySt ate >= 3) clearStallTimer();
-            retu rn;
+            if (video.readyState >= 3) clearStallTimer();
+            return;
           }
           still++;
            if (still >= noProgressSec) {
-            cle arStallTimer();
-            onStallTimeout(vi deo);
+            clearStallTimer();
+            onStallTimeout(video);
           }
         }, 1000);
       }
 
        function onStallTimeout(video) {
-         if (!video.isConnected || video.paused) ret urn;
+         if (!video.isConnected || video.paused) return;
         if (!softTried) {
           // � ��一级：play() 重试（无损，很多卡 死只是播放器状态机停住）
            softTried = true;
           console.log('[� ��强包] 播放停滞，尝试 play() 重试 ');
-          try { video.play().catch(functi on () {}); } catch (e) {}
-          setTimeou t(function () {
-            if (video.isConne cted && !video.paused && video.readyState < 3  &&
-                Math.abs(video.currentTim e - (video.__rrmvLastCheck || 0)) < 0.01) {
+          try { video.play().catch(function () {}); } catch (e) {}
+          setTimeout(function () {
+            if (video.isConnected && !video.paused && video.readyState < 3  &&
+                Math.abs(video.currentTime - (video.__rrmvLastCheck || 0)) < 0.01) {
                // 第二级：软恢复（重� �加载源，会丢 buffer，最后手段）
                if (!healCountOk()) return;
                bumpHealCount();
-              con sole.log('[增强包] play() 重试无效，� ��恢复（重新加载视频源）');
+              console.log('[增强包] play() 重试无效，� ��恢复（重新加载视频源）');
                var t = video.currentTime;
                video.load();
-              video.addEven tListener('loadedmetadata', function once() { 
-                video.removeEventListener('l oadedmetadata', once);
+              video.addEventListener('loadedmetadata', function once() { 
+                video.removeEventListener('loadedmetadata', once);
                 try {  video.currentTime = t; } catch (e) {}
                  video.play().catch(function () {});
                });
@@ -308,49 +308,113 @@
            // 第三级：刷新页面（网站有续 播，进度不丢）
           bumpHealCount ();
           console.log('[增强包] 软恢 复无效，刷新页面');
-          locatio n.reload();
+          
+          // [v2.9.1] 刷新前快照：保存进度与沉浸状态，刷新后还原窗口大小
+          try {
+            var __rrmv_v = document.querySelector('video');
+            var __rrmv_t = (__rrmv_v && !isNaN(__rrmv_v.currentTime)) ? __rrmv_v.currentTime : 0;
+            var __rrmv_isTheater = !!document.querySelector('.xgplayer-theater-btn.active, .xgplayer-enter-theater, [class*="theater"].active, .player-theater-active');
+            var __rrmv_isFull = !!document.fullscreenElement;
+            sessionStorage.setItem('rrmv_restore', JSON.stringify({t: __rrmv_t, theater: __rrmv_isTheater, isFull: __rrmv_isFull, ts: Date.now(), url: location.href}));
+            sessionStorage.setItem('rrmv_expected_reload', String(Date.now()));
+            console.log('[增强包] 刷新前快照 t=' + __rrmv_t.toFixed(1) + ' theater=' + __rrmv_isTheater);
+          } catch(e) {}
+          location.reload();
         }
       }
 
       onReady( function () {
         // 记录恢复播放时间，用于 waiting 宽限判断
-        document.add EventListener('play', function (e) {
-          if (e.target && e.target.tagName === 'VID EO') {
+        document.addEventListener('play', function (e) {
+          if (e.target && e.target.tagName === 'VIDEO') {
             e.target.__rrmvResumeAt = Date.now();
           }
         }, true);
 
         // waiting：缓冲不� ��（转圈出现）→ 开始监控时间推 进，而非固定超时
         // 暂停恢复后 5 秒内触发的 waiting → 更长宽限（20 秒），避免 CDN 重连耗时误触发重载
-        document.add EventListener('waiting', function (e) {
-           if (!e.target || e.target.tagName !== 'V IDEO') return;
+        document.addEventListener('waiting', function (e) {
+           if (!e.target || e.target.tagName !== 'VIDEO') return;
           try {
-            va r lastAd = window.__rrmv_lastAdBlockAt || 0;
-             if (Date.now() - lastAd < 3000) r eturn;
+            var lastAd = window.__rrmv_lastAdBlockAt || 0;
+             if (Date.now() - lastAd < 3000) return;
           } catch (err) {}
-          s oftTried = false;
-          e.target.__rrmvLa stCheck = e.target.currentTime;
+          softTried = false;
+          e.target.__rrmvLastCheck = e.target.currentTime;
           var justResumed = Date.now() - (e.target.__rrmvResumeAt || 0) < 5000;
-          arm StallWatch(e.target, justResumed ? 20 : 8);
+          armStallWatch(e.target, justResumed ? 20 : 8);
         }, true);
 
          // 暂停/换源/出错 → 取消监� ��（恢复播放由 currentTime 推进自动 判定）
         ['pause', 'emptied', 'error '].forEach(function (ev) {
           document .addEventListener(ev, function (e) {
-             if (e.target && e.target.tagName === 'VID EO') clearStallTimer();
+             if (e.target && e.target.tagName === 'VIDEO') clearStallTimer();
           }, true);
          });
        });
     })();
   }
 
-  // ==== ============================================= ===========
+
+  // [v2.9.1] 刷新后还原：窗口大小+进度+去广告二次扫荡
+  (function restoreAfterReload(){
+    try {
+      var raw = sessionStorage.getItem('rrmv_restore');
+      var exp = sessionStorage.getItem('rrmv_expected_reload');
+      if (!raw || !exp) return;
+      if (Date.now() - parseInt(exp,10) > 60000) { sessionStorage.removeItem('rrmv_restore'); sessionStorage.removeItem('rrmv_expected_reload'); return; }
+      var info = JSON.parse(raw);
+      if (!info || typeof info.t !== 'number') return;
+      sessionStorage.removeItem('rrmv_expected_reload');
+      console.log('[增强包] 检测到刷新还原 t=' + info.t);
+      onReady(function(){
+        var tries = 0;
+        var timer = setInterval(function(){
+          tries++;
+          var v = document.querySelector('video');
+          var player = document.querySelector('.xgplayer, #player, .player-container, #ve-player-container, .video-player');
+          if (v && player) {
+            try {
+              if (Math.abs(v.currentTime - info.t) > 0.5) { v.currentTime = info.t; }
+              if (info.theater || info.isFull) {
+                var btn = document.querySelector('.xgplayer-theater-btn:not(.active), [class*="theater"]:not(.active), .xgplayer-fullscreen-btn');
+                if (btn) { try{ btn.click(); }catch(e){} }
+                if (player) { player.style.width = '100%'; player.style.maxWidth = '100%'; }
+                window.scrollTo(0,0);
+              }
+              var adSelectors = '#adPlayContainer, [class*="QH_SSP"], [class*="openWindowAd"], .xgplayer-ads, [class*="member-modal"], [class*="vip-modal"], [class*="pay-modal"]';
+              document.querySelectorAll(adSelectors).forEach(function(el){ el.style.display='none'; el.setAttribute('data-rrmv-ad','hide'); });
+            } catch(e){}
+            clearInterval(timer);
+            var sweep = 0;
+            var mo = new MutationObserver(function(muts){
+              muts.forEach(function(m){ m.addedNodes.forEach(function(n){
+                if (n.nodeType!==1) return;
+                if (n.matches && n.matches(adSelectors)) n.setAttribute('data-rrmv-ad','hide');
+                if (n.querySelectorAll) n.querySelectorAll(adSelectors).forEach(function(e){ e.setAttribute('data-rrmv-ad','hide'); });
+              });});
+            });
+            try{ mo.observe(document.documentElement,{childList:true,subtree:true}); }catch(e){}
+            var sw = setInterval(function(){
+              sweep++;
+              document.querySelectorAll(adSelectors).forEach(function(el){ el.setAttribute('data-rrmv-ad','hide'); });
+              if (sweep>16) { clearInterval(sw); mo.disconnect(); }
+            },500);
+            setTimeout(function(){ try{ sessionStorage.removeItem('rrmv_restore'); }catch(e){} }, 3000);
+          }
+          if (tries>40) clearInterval(timer);
+        },500);
+      });
+    } catch(e) {}
+  })();
+
+  // ============================================================
   //  3. 去广告（无感版） 
-  // ======================================= =====================
+  // ============================================================
   if (S.get('adBlock',  true)) {
     onReady(function () {
 
-      //  --- Phase A: CSS 隐藏广告元素 ---
+      //  --- PhaseA: CSS 隐藏广告元素 ---
        var adCSS = document.createElement('style'); 
       adCSS.id = 'rrmv-ad-css';
       adCSS. textContent = [
@@ -358,7 +422,7 @@
          '[class*="QH_SSP_OPENWINDOW_AD"],',
          '[class*="openWindowAd"],',
         '[ class*="popupAd"],',
-        '[class*="banner Ad"],',
+        '[class*="bannerAd"],',
         '[class*="iconAdContainer"],' ,
         '[class*="textLinkAd"],',
         ' [class*="adSignWrapper"],',
@@ -370,78 +434,78 @@
         '#QH_SSP_AD_WINDOW_MAX, ',
         '[class*="ad-container"],',
          '[class*="prism-ad"],',
-        '[class*="a d-overlay"],',
+        '[class*="ad-overlay"],',
         '[class*="ad-mask"],', 
         '[data-rrmv-ad="hide"],',
         '[ class*="member-modal"],',
-        '[class*="v ip-modal"],',
-        '[class*="membership-mo dal"],',
+        '[class*="vip-modal"],',
+        '[class*="membership-modal"],',
         '[class*="pay-modal"],',
          '[class*="upgrade-modal"],',
-        '[c lass*="subscribe-modal"],',
+        '[class*="subscribe-modal"],',
         '[class*= "union-member"],',
-        '[class*="joint-vi p"],',
+        '[class*="joint-vip"],',
         '[class*="promo-modal"],',
          '[class*="promotion-modal"],',
         ' [class*="open-window-ad"],',
         '[class* ="float-ad"],',
         '[class*="pop-ad"],', 
         '[class*="modal-mask"][data-rrmv-ad= "hide"],',
-        '[class*="dialog-mask"][da ta-rrmv-ad="hide"],',
-        '.xgplayer-load ing[data-rrmv-ad="hide"],',
-        '.xgplaye r-enter-loading[data-rrmv-ad="hide"],',
+        '[class*="dialog-mask"][data-rrmv-ad="hide"],',
+        '.xgplayer-loading[data-rrmv-ad="hide"],',
+        '.xgplayer-enter-loading[data-rrmv-ad="hide"],',
          '.xg-loading[data-rrmv-ad="hide"],',
          '.xgplayer-is-loading [data-rrmv-ad="hide" ],',
-        'html.rrmv-ad-active .xgplayer-l oading,',
-        'html.rrmv-ad-active .xgpla yer-enter-loading,',
-        'html.rrmv-ad-ac tive .xg-loading,',
-        'html.rrmv-ad-act ive [class*="animate-spinner"],',
-        'ht ml.rrmv-ad-active [class*="spinner-spin"],',
+        'html.rrmv-ad-active .xgplayer-loading,',
+        'html.rrmv-ad-active .xgplayer-enter-loading,',
+        'html.rrmv-ad-active .xg-loading,',
+        'html.rrmv-ad-active [class*="animate-spinner"],',
+        'html.rrmv-ad-active [class*="spinner-spin"],',
          '  opacity: 0 !important;',
         '   pointer-events: none !important;',
          '  visibility: hidden !important;',
         '   display: none !important;',
-        '  anim ation: none !important;',
+        '  animation: none !important;',
         '}'
       ] .join('\n');
       (document.head || document .documentElement).appendChild(adCSS);
 
-       // --- Phase B: 动态隐藏广告提示文� � ---
+       // --- PhaseB: 动态隐藏广告提示文� � ---
       var AD_TIP_KEYWORDS = ['秒后展 示广告', '开通VIP免广告', '联合会� ��', '立即前往', '开通会员', 'VIP特� ��', '免广告'];
       function hideAdTips( node) {
-        if (node.nodeType !== 1) retu rn;
+        if (node.nodeType !== 1) return;
         var text = node.textContent || '' ;
         for (var k = 0; k < AD_TIP_KEYWORDS .length; k++) {
-          if (text.includes(A D_TIP_KEYWORDS[k])) {
-            node.setAtt ribute('data-rrmv-ad', 'hide');
-            r eturn;
+          if (text.includes(AD_TIP_KEYWORDS[k])) {
+            node.setAttribute('data-rrmv-ad', 'hide');
+            return;
           }
         }
-        var chil dren = node.querySelectorAll('*');
-        fo r (var i = 0; i < children.length; i++) {
+        var children = node.querySelectorAll('*');
+        for (var i = 0; i < children.length; i++) {
            var t = children[i].textContent || ''; 
-          for (var k2 = 0; k2 < AD_TIP_KEYWO RDS.length; k2++) {
-            if (t.include s(AD_TIP_KEYWORDS[k2]) && children[i].childre n.length < 5) {
-              children[i].set Attribute('data-rrmv-ad', 'hide');
+          for (var k2 = 0; k2 < AD_TIP_KEYWORDS.length; k2++) {
+            if (t.includes(AD_TIP_KEYWORDS[k2]) && children[i].children.length < 5) {
+              children[i].setAttribute('data-rrmv-ad', 'hide');
                break;
             }
           }
          }
       }
 
-      // --- Phase C: 拦截 360 S SP SDK（用完即弃，不长期覆写 creat eElement） ---
-      var sspIntercepted = fa lse;
-      var origCreateEl = document.create Element.bind(document);
-      document.create Element = function (tag) {
-        var el = o rigCreateEl(tag);
+      // --- PhaseC: 拦截 360SSPSDK（用完即弃，不长期覆写 createElement） ---
+      var sspIntercepted = false;
+      var origCreateEl = document.createElement.bind(document);
+      document.createElement = function (tag) {
+        var el = origCreateEl(tag);
         if (!sspIntercepted  && tag.toLowerCase() === 'script') {
-           var origSrcDesc = Object.getOwnPropertyDes criptor(HTMLScriptElement.prototype, 'src');
+           var origSrcDesc = Object.getOwnPropertyDescriptor(HTMLScriptElement.prototype, 'src');
            if (origSrcDesc && origSrcDesc.set)  {
             Object.defineProperty(el, 'src ', {
               get: function () { return  origSrcDesc.get.call(this); },
                set: function (val) {
-                if (typ eof val === 'string' && (val.indexOf('ssp_sdk ') !== -1 || val.indexOf('ssp.360.cn') !== -1 )) {
-                  this.type = 'text/java script'; return;
+                if (typeof val === 'string' && (val.indexOf('ssp_sdk ') !== -1 || val.indexOf('ssp.360.cn') !== -1 )) {
+                  this.type = 'text/javascript'; return;
                 }
                  return origSrcDesc.set.call(this, val); 
               }
@@ -450,154 +514,154 @@
          }
         return el;
       };
-      / / 5秒后恢复原始 createElement，避免� ��期影响性能
+      // 5秒后恢复原始 createElement，避免� ��期影响性能
       setTimeout(function ( ) {
-        document.createElement = origCrea teEl;
+        document.createElement = origCreateEl;
         sspIntercepted = true;
-      },  5000);
+      }, (sessionStorage.getItem("rrmv_expected_reload") ? 10000 : 5000));
 
       function removeExistingSspSdk( ) {
         document.querySelectorAll('script [src*="ssp_sdk"], script[src*="ssp.360.cn"]') .forEach(function (el) { el.remove(); });
        }
       removeExistingSspSdk();
 
-      //  --- Phase D: 拦截广告请求 (fetch / XHR)  ---
-      var AD_DOMAINS = ['ssp.360.cn', 'm ediav.com', 'sspweb', 'doubleclick', 'googles yndication', 'pagead', 'googleadservices', 'i masdk.googleapis.com', 'fengkongcloud.cn', 'o penfpcdn.io'];
+      //  --- PhaseD: 拦截广告请求 (fetch / XHR)  ---
+      var AD_DOMAINS = ['ssp.360.cn', 'mediav.com', 'sspweb', 'doubleclick', 'googlesyndication', 'pagead', 'googleadservices', 'imasdk.googleapis.com', 'fengkongcloud.cn', 'openfpcdn.io'];
 
       function isAdUrl(url) { 
         if (typeof url !== 'string') return  false;
         var lower = url.toLowerCase(); 
-        for (var i = 0; i < AD_DOMAINS.lengt h; i++) {
-          if (lower.indexOf(AD_DOMA INS[i]) !== -1) return true;
+        for (var i = 0; i < AD_DOMAINS.length; i++) {
+          if (lower.indexOf(AD_DOMAINS[i]) !== -1) return true;
         }
          return false;
       }
 
-      var AD_VIDEO_D OMAINS = ['mediav.com', 'live-s3m.mediav', 's 3m.mediav.com', 'doubleclick.net', 'googlesyn dication.com', 'pagead2.googlesyndication.com '];
+      var AD_VIDEO_DOMAINS = ['mediav.com', 'live-s3m.mediav', 's3m.mediav.com', 'doubleclick.net', 'googlesyndication.com', 'pagead2.googlesyndication.com '];
 
       function isAdVideoUrl(url) {
          if (typeof url !== 'string') return false; 
         var lower = url.toLowerCase();
-         for (var i = 0; i < AD_VIDEO_DOMAINS.lengt h; i++) {
-          if (lower.indexOf(AD_VIDE O_DOMAINS[i]) !== -1) return true;
+         for (var i = 0; i < AD_VIDEO_DOMAINS.length; i++) {
+          if (lower.indexOf(AD_VIDEO_DOMAINS[i]) !== -1) return true;
         }
          return false;
       }
 
-      var save dContentSrc = null;
+      var savedContentSrc = null;
 
       // 广告拦截状 态：用于无感续播（播放态自动续 /暂停态保持）
-      var adState = new W eakMap();
+      var adState = new WeakMap();
       var lastAdBlockAt = 0;
        var AD_RESUME_WINDOW = 10000;
 
       function  setAdActive(video, on) {
-        if (on) doc ument.documentElement.classList.add('rrmv-ad- active');
-        else document.documentEleme nt.classList.remove('rrmv-ad-active');
+        if (on) document.documentElement.classList.add('rrmv-ad- active');
+        else document.documentElement.classList.remove('rrmv-ad-active');
        }
 
       function hideLoading(video) {
-         document.querySelectorAll('.xgplayer-loadin g, .xgplayer-enter-loading, .xg-loading, .xgp layer-loading-spinner').forEach(function (el)  {
+         document.querySelectorAll('.xgplayer-loading, .xgplayer-enter-loading, .xg-loading, .xgplayer-loading-spinner').forEach(function (el)  {
           el.setAttribute('data-rrmv-ad',  'hide');
         });
-        document.querySe lectorAll('[class*="animate-spinner"], [class *="spinner-spin"]').forEach(function (el) {
-           el.setAttribute('data-rrmv-ad', 'hid e');
+        document.querySelectorAll('[class*="animate-spinner"], [class *="spinner-spin"]').forEach(function (el) {
+           el.setAttribute('data-rrmv-ad', 'hide');
         });
-        var xp = document.qu erySelector('.xgplayer');
-        if (xp && x p.classList.contains('xgplayer-isloading')) x p.classList.remove('xgplayer-isloading');
-         if (Date.now() - lastAdBlockAt < AD_RESU ME_WINDOW) setAdActive(video, true);
+        var xp = document.querySelector('.xgplayer');
+        if (xp && xp.classList.contains('xgplayer-isloading')) xp.classList.remove('xgplayer-isloading');
+         if (Date.now() - lastAdBlockAt < AD_RESUME_WINDOW) setAdActive(video, true);
       }
  
       function resumeIfNeeded(video, reason)  {
         try {
           video = (video &&  video.isConnected) ? video : findMainVideo(); 
         } catch (e) { video = findMainVideo( ); }
-        if (!video || video.ended) retur n;
+        if (!video || video.ended) return;
         var st = adState.get(video);
-         var wasPlaying = st ? st.wasPlaying : !use rPaused;
-        if (!wasPlaying || userPause d) { hideLoading(video); return; }
-        if  (Date.now() - (st ? st.blockedAt : lastAdBlo ckAt) > AD_RESUME_WINDOW) return;
-        if  (!video.paused && video.readyState >= 2) { hi deLoading(video); return; }
+         var wasPlaying = st ? st.wasPlaying : !userPaused;
+        if (!wasPlaying || userPaused) { hideLoading(video); return; }
+        if  (Date.now() - (st ? st.blockedAt : lastAdBlockAt) > AD_RESUME_WINDOW) return;
+        if  (!video.paused && video.readyState >= 2) { hideLoading(video); return; }
         try {
-           if (sessionStorage.getItem('rrmv_pause d_once') === '1') {
-            try { hideLoa ding(video); } catch (e) {}
+           if (sessionStorage.getItem('rrmv_paused_once') === '1') {
+            try { hideLoading(video); } catch (e) {}
             try {  sessionStorage.removeItem('rrmv_paused_once' ); } catch (e) {}
             return;
            }
         } catch (e) {}
-        hideLoadi ng(video);
-        try { if (typeof stealthCl eanup === 'function') stealthCleanup(); } cat ch (e) {}
+        hideLoading(video);
+        try { if (typeof stealthCleanup === 'function') stealthCleanup(); } catch (e) {}
         try {
-          var xp = wi ndow.player || window.__xgplayer__ ||
+          var xp = window.player || window.__xgplayer__ ||
                     (video && (video.__xgplayer__ ||  video.xgplayer)) ||
-                   (docum ent.querySelector('.xgplayer') && document.qu erySelector('.xgplayer').__xgplayer__);
+                   (document.querySelector('.xgplayer') && document.querySelector('.xgplayer').__xgplayer__);
            if (xp && typeof xp.play === 'function'  && xp !== video) xp.play();
         } catch ( e) {}
-        try { video.play().catch(functi on () {}); } catch (e) {}
+        try { video.play().catch(function () {}); } catch (e) {}
         setTimeout( function () {
           try {
-            if  (Date.now() - lastAdBlockAt >= AD_RESUME_WIND OW) setAdActive(video, false);
-          } ca tch (e) {}
+            if  (Date.now() - lastAdBlockAt >= AD_RESUME_WINDOW) setAdActive(video, false);
+          } catch (e) {}
         }, 500);
-        console.l og('[增强包] 无感续播 (' + reason + ')  wasPlaying=' + wasPlaying);
+        console.log('[增强包] 无感续播 (' + reason + ')  wasPlaying=' + wasPlaying);
       }
 
-      f unction scheduleResume(video, reason) {
+      function scheduleResume(video, reason) {
          try {
-          var v = (video && video.is Connected) ? video : findMainVideo();
+          var v = (video && video.isConnected) ? video : findMainVideo();
            if (!v) v = video;
           var st = v ?  adState.get(v) : null;
           if (st && st .timer) {
-            if (Array.isArray(st.ti mer)) st.timer.forEach(function (id) { clearT imeout(id); });
+            if (Array.isArray(st.timer)) st.timer.forEach(function (id) { clearTimeout(id); });
             else clearTimeout (st.timer);
           }
-          var delays  = reason === 'src-intercept' ? [120, 800, 200 0] : [200, 1000];
-          var timers = dela ys.map(function (d, i) {
-            return s etTimeout(function () { resumeIfNeeded(v, rea son + (i > 0 ? '-r' + i : '')); }, d);
+          var delays  = reason === 'src-intercept' ? [120, 800, 2000] : [200, 1000];
+          var timers = delays.map(function (d, i) {
+            return setTimeout(function () { resumeIfNeeded(v, reason + (i > 0 ? '-r' + i : '')); }, d);
            });
           if (v) {
             if (st ) st.timer = timers;
-            else adState .set(v, { wasPlaying: v ? (!v.paused && !v.en ded) : !userPaused, blockedAt: Date.now(), ad Url: st ? st.adUrl : '', timer: timers });
+            else adState .set(v, { wasPlaying: v ? (!v.paused && !v.ended) : !userPaused, blockedAt: Date.now(), adUrl: st ? st.adUrl : '', timer: timers });
              var cur = adState.get(v);
              if (cur && !cur.blockedAt) cur.blockedAt =  Date.now();
-            try { window.__rrmv_ lastAdBlockAt = cur ? cur.blockedAt : Date.no w(); } catch (e) {}
+            try { window.__rrmv_lastAdBlockAt = cur ? cur.blockedAt : Date.now(); } catch (e) {}
           }
-        } cat ch (e) {}
+        } catch (e) {}
       }
 
-      // --- Phase E: vide o.src 拦截 ---
-      var origSrcDesc = Obje ct.getOwnPropertyDescriptor(HTMLMediaElement. prototype, 'src');
-      if (origSrcDesc && o rigSrcDesc.set) {
-        Object.defineProper ty(HTMLMediaElement.prototype, 'src', {
+      // --- PhaseE: video.src 拦截 ---
+      var origSrcDesc = Object.getOwnPropertyDescriptor(HTMLMediaElement. prototype, 'src');
+      if (origSrcDesc && origSrcDesc.set) {
+        Object.defineProperty(HTMLMediaElement.prototype, 'src', {
            get: function () {
-            try { ret urn origSrcDesc.get.call(this); }
+            try { return origSrcDesc.get.call(this); }
              catch (e) { return ''; }
           },
            set: function (val) {
             try {
-               if (typeof val === 'string' && v al.length > 0) {
-                if (isAdVide oUrl(val)) {
-                  var isMain = f alse;
+               if (typeof val === 'string' && val.length > 0) {
+                if (isAdVideoUrl(val)) {
+                  var isMain = false;
                   try {
                      var mainV = findMainVideo();
-                     isMain = (this === mainV) || (this.t agName === 'VIDEO') && ( !this.closest || thi s.closest('#ve-player-container, #player-cont ainer, .xgplayer, video'));
-                   } catch (e) { isMain = (this.tagName === 'VI DEO'); }
+                     isMain = (this === mainV) || (this.tagName === 'VIDEO') && ( !this.closest || this.closest('#ve-player-container, #player-container, .xgplayer, video'));
+                   } catch (e) { isMain = (this.tagName === 'VIDEO'); }
                   if (isMain) {
                      var wasPlaying = false;
-                     try { wasPlaying = !this.pause d && !this.ended && !document.hidden; } catch  (e) {}
-                    adState.set(this,  { wasPlaying: wasPlaying, blockedAt: Date.no w(), adUrl: val, timer: null });
-                     lastAdBlockAt = Date.now(); window.__ rrmv_lastAdBlockAt = lastAdBlockAt;
+                     try { wasPlaying = !this.paused && !this.ended && !document.hidden; } catch  (e) {}
+                    adState.set(this,  { wasPlaying: wasPlaying, blockedAt: Date.now(), adUrl: val, timer: null });
+                     lastAdBlockAt = Date.now(); window.__rrmv_lastAdBlockAt = lastAdBlockAt;
                      if (wasPlaying && !savedContentSrc ) {
-                      try { savedContentS rc = this.currentSrc || this.src || savedCont entSrc; } catch (e) {}
+                      try { savedContentSrc = this.currentSrc || this.src || savedContentSrc; } catch (e) {}
                     }
-                     console.log('[增强包]  拦截主视频广告 src wasPlaying=' + wasP laying, val.slice(0, 80));
+                     console.log('[增强包]  拦截主视频广告 src wasPlaying=' + wasPlaying, val.slice(0, 80));
                      setAdActive(this, true);
                      scheduleResume(this, 'src-intercept');
                      return;
-                  } e lse {
+                  } else {
                     try { this.pause();  } catch (e) {}
-                    try { thi s.setAttribute('data-rrmv-ad', 'hide'); } cat ch (e) {}
-                    console.log('[� ��强包] 拦截非主视频广告', val.slic e(0, 80));
+                    try { this.setAttribute('data-rrmv-ad', 'hide'); } catch (e) {}
+                    console.log('[� ��强包] 拦截非主视频广告', val.slice(0, 80));
                     return;
                    }
                 }
@@ -616,122 +680,122 @@
       var origFetch = window.fetch ;
       window.fetch = function () {
          var url = (arguments[0] && typeof arguments[0 ] === 'string') ? arguments[0] :
-                   (arguments[0] && arguments[0].url) ? ar guments[0].url : '';
-        if (isAdUrl(url) ) return Promise.resolve(new Response('', { s tatus: 204 }));
-        return origFetch.appl y(this, arguments);
+                   (arguments[0] && arguments[0].url) ? arguments[0].url : '';
+        if (isAdUrl(url) ) return Promise.resolve(new Response('', { status: 204 }));
+        return origFetch.apply(this, arguments);
       };
 
-      var origX hrOpen = XMLHttpRequest.prototype.open;
-       var origXhrSend = XMLHttpRequest.prototype.s end;
-      XMLHttpRequest.prototype.open = fu nction (method, url) {
-        if (isAdUrl(ur l)) { this._blocked = true; return; }
+      var origXhrOpen = XMLHttpRequest.prototype.open;
+       var origXhrSend = XMLHttpRequest.prototype.send;
+      XMLHttpRequest.prototype.open = function (method, url) {
+        if (isAdUrl(url)) { this._blocked = true; return; }
          return origXhrOpen.apply(this, arguments);
        };
       XMLHttpRequest.prototype.send =  function () {
-        if (this._blocked) ret urn;
-        return origXhrSend.apply(this, a rguments);
+        if (this._blocked) return;
+        return origXhrSend.apply(this, arguments);
       };
 
-      // --- Phase F: � �频监控 + 广告恢复 ---
-      var userP aused = false;
+      // --- PhaseF: � �频监控 + 广告恢复 ---
+      var userPaused = false;
 
       function findMainVideo( ) {
-        return document.querySelector('#v e-player-container video') ||
-                document.querySelector('#player-container vid eo') ||
-               document.querySelector ('.xgplayer video') ||
-               documen t.querySelector('#ve-player video');
+        return document.querySelector('#ve-player-containervideo') ||
+                document.querySelector('#player-containervideo') ||
+               document.querySelector ('.xgplayervideo') ||
+               document.querySelector('#ve-playervideo');
       }
  
       function isAdElement(el) {
-        if  (!el || (!el.classList && !el.id)) return fal se;
-        var cls = el.className ? el.class Name.toString() : '';
+        if  (!el || (!el.classList && !el.id)) return false;
+        var cls = el.className ? el.className.toString() : '';
         var id = el.id  || '';
         return (
-          cls.indexOf ('openWindowAd') !== -1 || cls.indexOf('popup Ad') !== -1 ||
-          cls.indexOf('bannerA d') !== -1 || cls.indexOf('iconAdContainer')  !== -1 ||
+          cls.indexOf ('openWindowAd') !== -1 || cls.indexOf('popupAd') !== -1 ||
+          cls.indexOf('bannerAd') !== -1 || cls.indexOf('iconAdContainer')  !== -1 ||
           cls.indexOf('textLinkAd')  !== -1 || cls.indexOf('adSignWrapper') !== - 1 ||
           cls.indexOf('closeAdSign') !==  -1 || cls.indexOf('sssdk-ad') !== -1 ||
-           cls.indexOf('xgplayer-ads') !== -1 || i d === 'QH_SSP_AD_WINDOW_MAX' ||
-          id. indexOf('ssp_ad') !== -1 || id.indexOf('QH_SS P') !== -1 ||
+           cls.indexOf('xgplayer-ads') !== -1 || id === 'QH_SSP_AD_WINDOW_MAX' ||
+          id. indexOf('ssp_ad') !== -1 || id.indexOf('QH_SSP') !== -1 ||
           el.tagName === 'XG-AD ' || el.tagName === 'XG-AD-STUB' ||
-           cls.indexOf('member-modal') !== -1 || cls.in dexOf('vip-modal') !== -1 ||
-          cls.in dexOf('membership-modal') !== -1 || cls.index Of('pay-modal') !== -1 ||
-          cls.index Of('upgrade-modal') !== -1 || cls.indexOf('su bscribe-modal') !== -1 ||
-          cls.index Of('union-member') !== -1 || cls.indexOf('joi nt-vip') !== -1 ||
-          cls.indexOf('pro mo-modal') !== -1 || cls.indexOf('promotion-m odal') !== -1 ||
+           cls.indexOf('member-modal') !== -1 || cls.indexOf('vip-modal') !== -1 ||
+          cls.indexOf('membership-modal') !== -1 || cls.indexOf('pay-modal') !== -1 ||
+          cls.indexOf('upgrade-modal') !== -1 || cls.indexOf('subscribe-modal') !== -1 ||
+          cls.indexOf('union-member') !== -1 || cls.indexOf('joint-vip') !== -1 ||
+          cls.indexOf('promo-modal') !== -1 || cls.indexOf('promotion-modal') !== -1 ||
           cls.indexOf('float -ad') !== -1 || cls.indexOf('pop-ad') !== -1
          );
       }
 
-      function hideElemen t(el) {
-        if (el && el.style) el.setAtt ribute('data-rrmv-ad', 'hide');
+      function hideElement(el) {
+        if (el && el.style) el.setAttribute('data-rrmv-ad', 'hide');
       }
 
        var pageLoadTime = Date.now();
-      var se en = new WeakSet();
+      var seen = new WeakSet();
 
-      // --- Media Sessi on API：全局媒体按键支持 ---
-      f unction setupMediaSession(video) {
+      // --- MediaSession API：全局媒体按键支持 ---
+      function setupMediaSession(video) {
         if  (!navigator.mediaSession) return;
 
-        / / 设置元数据
-        var title = documen t.title.replace(/-人人视频$/, '').trim(); 
+        // 设置元数据
+        var title = document.title.replace(/-人人视频$/, '').trim(); 
         if (title && !navigator.mediaSession .metadata) {
           navigator.mediaSession .metadata = new MediaMetadata({
-            t itle: title,
+            title: title,
             artist: '人人视� �',
             album: '人人视频'
            });
         }
 
-        // 注册 action ha ndler（用 findMainVideo 动态查找，不� ��闭包引用）
+        // 注册 actionhandler（用 findMainVideo 动态查找，不� ��闭包引用）
         try {
-          nav igator.mediaSession.setActionHandler('play',  function () {
-            var v = findMainVid eo();
-            if (v) v.play().catch(funct ion () {});
+          navigator.mediaSession.setActionHandler('play',  function () {
+            var v = findMainVideo();
+            if (v) v.play().catch(function () {});
           });
-          navigator .mediaSession.setActionHandler('pause', funct ion () {
+          navigator .mediaSession.setActionHandler('pause', function () {
             var v = findMainVideo(); 
             if (v) v.pause();
           });
-           navigator.mediaSession.setActionHan dler('previoustrack', function () {
+           navigator.mediaSession.setActionHandler('previoustrack', function () {
              var v = findMainVideo();
             if (v ) v.currentTime = Math.max(0, v.currentTime -  10);
           });
-          navigator.media Session.setActionHandler('nexttrack', functio n () {
+          navigator.mediaSession.setActionHandler('nexttrack', function () {
             var v = findMainVideo();
              if (v) v.currentTime = Math.min(v. duration || 0, v.currentTime + 10);
            });
-          navigator.mediaSession.setActi onHandler('seekbackward', function (details)  {
+          navigator.mediaSession.setActionHandler('seekbackward', function (details)  {
             var v = findMainVideo();
-             if (v) v.currentTime = Math.max(0, v.cu rrentTime - (details.seekOffset || 10));
+             if (v) v.currentTime = Math.max(0, v.currentTime - (details.seekOffset || 10));
            });
-          navigator.mediaSession.se tActionHandler('seekforward', function (detai ls) {
+          navigator.mediaSession.setActionHandler('seekforward', function (details) {
             var v = findMainVideo();
-             if (v) v.currentTime = Math.min(v.d uration || 0, v.currentTime + (details.seekOf fset || 10));
+             if (v) v.currentTime = Math.min(v.duration || 0, v.currentTime + (details.seekOffset || 10));
           });
         } catch ( e) {}
 
-        // 同步播放状态（用 fi ndMainVideo 动态查找）
-        video.add EventListener('play', function () {
-           navigator.mediaSession.playbackState = 'play ing';
+        // 同步播放状态（用 findMainVideo 动态查找）
+        video.addEventListener('play', function () {
+           navigator.mediaSession.playbackState = 'playing';
         }, { passive: true });
          video.addEventListener('pause', function () { 
-          navigator.mediaSession.playbackSta te = 'paused';
+          navigator.mediaSession.playbackState = 'paused';
         }, { passive: true }); 
-        video.addEventListener('ended', func tion () {
-          navigator.mediaSession.pl aybackState = 'none';
-        }, { passive: t rue });
+        video.addEventListener('ended', function () {
+          navigator.mediaSession.playbackState = 'none';
+        }, { passive: true });
       }
 
       // --- 备选方案： keydown 事件直接捕获媒体键 ---
        var mediaKeyHandled = false;
       function  setupMediaKeyListener() {
-        if (mediaKe yHandled) return;
-        mediaKeyHandled = t rue;
+        if (mediaKeyHandled) return;
+        mediaKeyHandled = true;
 
-        document.addEventListener('keyd own', function (e) {
-          var video = fi ndMainVideo();
+        document.addEventListener('keydown', function (e) {
+          var video = findMainVideo();
           if (!video) return;
  
           // MediaPlayPause: 播放/暂停� �换
@@ -740,7 +804,7 @@
              e.stopPropagation();
             if  (video.paused) {
               video.play(). catch(function (err) {
-                consol e.warn('[增强包] 媒体键 play 失败:',  err.message);
+                console.warn('[增强包] 媒体键 play 失败:',  err.message);
               });
             }  else {
               video.pause();
@@ -752,15 +816,15 @@
            if (e.key === 'MediaTrackNext' || e.code  === 'MediaTrackNext' || e.keyCode === 176) { 
             e.preventDefault();
              e.stopPropagation();
-            video.curren tTime = Math.min(video.duration || 0, video.c urrentTime + 10);
+            video.currentTime = Math.min(video.duration || 0, video.currentTime + 10);
             return;
            }
 
           // MediaTrackPrevious: 上一 曲/后退
-          if (e.key === 'MediaTrac kPrevious' || e.code === 'MediaTrackPrevious'  || e.keyCode === 177) {
-            e.preven tDefault();
+          if (e.key === 'MediaTrackPrevious' || e.code === 'MediaTrackPrevious'  || e.keyCode === 177) {
+            e.preventDefault();
             e.stopPropagation();
-             video.currentTime = Math.max(0, v ideo.currentTime - 10);
+             video.currentTime = Math.max(0, video.currentTime - 10);
             return;
            }
         }, true); // capture 阶� �，最先拦截
@@ -769,57 +833,56 @@
       // 初始化� ��就设置 keydown 监听（不等视频出� ��）
       setupMediaKeyListener();
 
-      f unction hookVideo(video) {
-        if (seen.h as(video)) return;
+      function hookVideo(video) {
+        if (seen.has(video)) return;
         seen.add(video);
 
          if (video.src && !isAdVideoUrl(video. src)) savedContentSrc = video.src;
 
-        / / 设置 MediaSession
-        setupMediaSessi on(video);
+        // 设置 MediaSessionsetupMediaSessi on(video);
 
-        video.addEventListener('p lay', function () {
-          userPaused = fa lse;
+        video.addEventListener('play', function () {
+          userPaused = false;
           if (video.src && !isAdVideoUrl (video.src)) savedContentSrc = video.src;
          }, { passive: true });
 
-        video.ad dEventListener('pause', function () {
+        video.addEventListener('pause', function () {
            if (video.src && isAdVideoUrl(video.src))  return;
-          if (video.ended || video.se eking) return;
-          if (Date.now() - pag eLoadTime < 3000) return;
-          if (Date. now() - lastAdBlockAt < AD_RESUME_WINDOW) ret urn;
+          if (video.ended || video.seeking) return;
+          if (Date.now() - pageLoadTime < 3000) return;
+          if (Date. now() - lastAdBlockAt < AD_RESUME_WINDOW) return;
           // 标签不可见时的暂停 是浏览器行为（切标签/最小化）� �不是用户手动暂停
-          if (docum ent.hidden) return;
+          if (document.hidden) return;
           // 广告覆盖 层存在时的暂停是网站行为，不是 用户手动暂停
           var adOverlay =  document.querySelector('#adPlayContainer');
            if (adOverlay) return;
-          use rPaused = true;
+          userPaused = true;
         }, { passive: true }) ;
 
         video.addEventListener('timeupdate ', function () {
-          if (video.src && ! isAdVideoUrl(video.src) && video.readyState > = 2) savedContentSrc = video.src;
+          if (video.src && ! isAdVideoUrl(video.src) && video.readyState >= 2) savedContentSrc = video.src;
         },  { passive: true });
-        video.addEventLis tener('loadeddata', function () {
-          i f (video.src && !isAdVideoUrl(video.src)) sav edContentSrc = video.src;
-        }, { passiv e: true });
+        video.addEventListener('loadeddata', function () {
+          if (video.src && !isAdVideoUrl(video.src)) savedContentSrc = video.src;
+        }, { passive: true });
       }
 
-      function stealthCl eanup() {
+      function stealthCleanup() {
         var video = findMainVideo() ;
 
         document.querySelectorAll(
            '[class*="openWindowAd"], [class*="popupAd "], [class*="bannerAd"],' +
           '[class *="iconAdContainer"], [class*="textLinkAd"],  [class*="adSignWrapper"],' +
-          '[clas s*="closeAdSign"], #QH_SSP_AD_WINDOW_MAX, [cl ass*="sssdk-ad"],' +
-          '[id*="ssp_ad" ], [id*="QH_SSP"], .xgplayer-ads, xg-ad, xg-a d-stub,' +
-          '[class*="member-modal"] , [class*="vip-modal"], [class*="membership-m odal"],' +
-          '[class*="pay-modal"], [ class*="upgrade-modal"], [class*="subscribe-m odal"],' +
+          '[class*="closeAdSign"], #QH_SSP_AD_WINDOW_MAX, [class*="sssdk-ad"],' +
+          '[id*="ssp_ad" ], [id*="QH_SSP"], .xgplayer-ads, xg-ad, xg-ad-stub,' +
+          '[class*="member-modal"] , [class*="vip-modal"], [class*="membership-modal"],' +
+          '[class*="pay-modal"], [ class*="upgrade-modal"], [class*="subscribe-modal"],' +
           '[class*="union-member"] , [class*="joint-vip"], [class*="promo-modal" ],' +
           '[class*="promotion-modal"],  [class*="float-ad"], [class*="pop-ad"]'
          ).forEach(hideElement);
 
         // 广告 窗口期内隐藏 loading + spinner（统一 走 hideLoading）
-        if (Date.now() - l astAdBlockAt < AD_RESUME_WINDOW) hideLoading( video);
+        if (Date.now() - lastAdBlockAt < AD_RESUME_WINDOW) hideLoading( video);
 
         // 自动关闭会员/VIP推 广弹窗
         document.querySelectorAll(' [data-rrmv-ad="hide"]').forEach(function (el)  {
@@ -830,10 +893,10 @@
 
         document.querySelectorAll( 'video').forEach(function (v) {
           if  (v !== video) {
-            var src = v.src | | (v.querySelector('source') && v.querySelect or('source').src) || '';
-            if (isAd VideoUrl(src)) {
+            var src = v.src || (v.querySelector('source') && v.querySelector('source').src) || '';
+            if (isAdVideoUrl(src)) {
               v.pause();
-               v.setAttribute('data-rrmv-ad', 'hi de');
+               v.setAttribute('data-rrmv-ad', 'hide');
             }
           }
         });
@@ -843,17 +906,17 @@
       }
 
       // --- DOM 变化监控� ��只监听播放器容器，不监听整个  document ---
-      var playerContainer = docu ment.querySelector('#ve-player-container') || 
-                            document.querySe lector('#player-container');
+      var playerContainer = document.querySelector('#ve-player-container') || 
+                            document.querySelector('#player-container');
 
-      if (playe rContainer) {
-        var observer = new Muta tionObserver(function (mutations) {
+      if (playerContainer) {
+        var observer = new MutationObserver(function (mutations) {
            var needResume = false;
           for (var i  = 0; i < mutations.length; i++) {
              var m = mutations[i];
-            if (m.typ e === 'attributes' && m.target) {
-               if (m.target.classList && (m.target.classL ist.contains('xgplayer-is-loading') || isAdEl ement(m.target))) {
-                hideLoadi ng(findMainVideo());
+            if (m.type === 'attributes' && m.target) {
+               if (m.target.classList && (m.target.classList.contains('xgplayer-is-loading') || isAdElement(m.target))) {
+                hideLoading(findMainVideo());
               }
                continue;
             }
@@ -861,92 +924,92 @@
                var node = m.addedNodes[j];
                if (node.nodeType !== 1) continue; 
               var videos = node.tagName ===  'VIDEO' ? [node] :
-                (node.quer ySelectorAll ? Array.from(node.querySelectorA ll('video')) : []);
-              videos.forE ach(function (v) { hookVideo(v); });
+                (node.querySelectorAll ? Array.from(node.querySelectorAll('video')) : []);
+              videos.forEach(function (v) { hookVideo(v); });
                if (node.classList && isAdElement(node) ) {
                 hideElement(node);
                  needResume = true;
               }
-               if (node.id === 'adPlayContaine r' || (node.querySelector && node.querySelect or('#adPlayContainer'))) {
-                ne edResume = true;
+               if (node.id === 'adPlayContainer' || (node.querySelector && node.querySelector('#adPlayContainer'))) {
+                needResume = true;
               }
                hideAdTips(node);
             }
           } 
-          if (needResume && Date.now() - las tAdBlockAt < AD_RESUME_WINDOW * 2) scheduleRe sume(findMainVideo(), 'ad-dom');
+          if (needResume && Date.now() - lastAdBlockAt < AD_RESUME_WINDOW * 2) scheduleResume(findMainVideo(), 'ad-dom');
         });
  
         observer.observe(playerContainer, {
-           childList: true, subtree: true, att ributes: true, attributeFilter: ['class']
+           childList: true, subtree: true, attributes: true, attributeFilter: ['class']
          });
       } else {
         // 播放器� ��器还没出现，等它出现后再监听
          onReady(function () {
-          var w aitContainer = setInterval(function () {
+          var waitContainer = setInterval(function () {
              var pc = document.querySelector('#ve- player-container') ||
-                     do cument.querySelector('#player-container');
+                     document.querySelector('#player-container');
              if (pc) {
-              clearInterv al(waitContainer);
-              var obs = ne w MutationObserver(function (mutations) {
+              clearInterval(waitContainer);
+              var obs = new MutationObserver(function (mutations) {
                  var needResume = false;
                  for (var i = 0; i < mutations.length;  i++) {
                   var m = mutations[i ];
-                  if (m.type === 'attribut es' && m.target) {
-                    if (m. target.classList && (m.target.classList.conta ins('xgplayer-is-loading') || isAdElement(m.t arget))) {
+                  if (m.type === 'attributes' && m.target) {
+                    if (m. target.classList && (m.target.classList.contains('xgplayer-is-loading') || isAdElement(m.target))) {
                       hideLoading( findMainVideo());
                     }
                      continue;
                   }
-                   for (var j = 0; j < m.added Nodes.length; j++) {
+                   for (var j = 0; j < m.addedNodes.length; j++) {
                     var  node = m.addedNodes[j];
-                    i f (node.nodeType !== 1) continue;
+                    if (node.nodeType !== 1) continue;
                      var videos = node.tagName === 'VIDEO ' ? [node] :
-                      (node.quer ySelectorAll ? Array.from(node.querySelectorA ll('video')) : []);
-                    video s.forEach(function (v) { hookVideo(v); });
-                     if (node.classList && isAdE lement(node)) {
-                      hideEle ment(node);
+                      (node.querySelectorAll ? Array.from(node.querySelectorAll('video')) : []);
+                    videos.forEach(function (v) { hookVideo(v); });
+                     if (node.classList && isAdElement(node)) {
+                      hideElement(node);
                       needResume  = true;
                     }
-                     if (node.id === 'adPlayContainer' || (no de.querySelector && node.querySelector('#adPl ayContainer'))) {
-                      needR esume = true;
+                     if (node.id === 'adPlayContainer' || (node.querySelector && node.querySelector('#adPlayContainer'))) {
+                      needResume = true;
                     }
                      hideAdTips(node);
                    }
                 }
-                if (nee dResume && Date.now() - lastAdBlockAt < AD_RE SUME_WINDOW * 2) scheduleResume(findMainVideo (), 'ad-dom');
+                if (needResume && Date.now() - lastAdBlockAt < AD_RESUME_WINDOW * 2) scheduleResume(findMainVideo (), 'ad-dom');
               });
                obs.observe(pc, {
                 childList : true, subtree: true,
-                attrib utes: true, attributeFilter: ['class']
+                attributes: true, attributeFilter: ['class']
                });
             }
           }, 500);
          });
       }
 
-      // --- Phase G: � �页面弹窗自动隐藏（会员/VIP 推广 弹窗） ---
+      // --- PhaseG: � �页面弹窗自动隐藏（会员/VIP 推广 弹窗） ---
       var POPUP_KEYWORDS = ['� �合会员', '立即前往', '开通VIP', '� �通会员', 'VIP特惠', '免广告', '附� �', '不限量'];
-      var CLOSE_BTN_SELECTO RS = [
-        '[class*="close"]', '[class*=" Close"]', '[aria-label="close"]', '[aria-labe l="Close"]',
-        'button svg', '.modal-cl ose', '.dialog-close', '.popup-close'
+      var CLOSE_BTN_SELECTORS = [
+        '[class*="close"]', '[class*=" Close"]', '[aria-label="close"]', '[aria-label="Close"]',
+        'buttonsvg', '.modal-close', '.dialog-close', '.popup-close'
       ] ;
 
       function isPopupAd(el) {
         if  (!el || el.nodeType !== 1) return false;
-         var cls = (el.className && el.className.t oString()) || '';
+         var cls = (el.className && el.className.toString()) || '';
         var id = el.id || ' ';
         // 已知广告 class
-        if ( cls.indexOf('member-modal') !== -1 || cls.ind exOf('vip-modal') !== -1 ||
-            cls.i ndexOf('membership-modal') !== -1 || cls.inde xOf('pay-modal') !== -1 ||
-            cls.in dexOf('upgrade-modal') !== -1 || cls.indexOf( 'subscribe-modal') !== -1 ||
+        if ( cls.indexOf('member-modal') !== -1 || cls.indexOf('vip-modal') !== -1 ||
+            cls.indexOf('membership-modal') !== -1 || cls.indexOf('pay-modal') !== -1 ||
+            cls.indexOf('upgrade-modal') !== -1 || cls.indexOf( 'subscribe-modal') !== -1 ||
             cls. indexOf('union-member') !== -1 || cls.indexOf ('joint-vip') !== -1 ||
-            cls.index Of('promo-modal') !== -1 || cls.indexOf('prom otion-modal') !== -1 ||
-            cls.index Of('popupAd') !== -1 || cls.indexOf('openWind owAd') !== -1) {
+            cls.indexOf('promo-modal') !== -1 || cls.indexOf('promotion-modal') !== -1 ||
+            cls.indexOf('popupAd') !== -1 || cls.indexOf('openWindowAd') !== -1) {
           return true;
          }
         // 检查文本内容是否包� �推广关键词
-        var text = el.textCo ntent || '';
-        for (var k = 0; k < POPU P_KEYWORDS.length; k++) {
+        var text = el.textContent || '';
+        for (var k = 0; k < POPUP_KEYWORDS.length; k++) {
           if (text. includes(POPUP_KEYWORDS[k])) {
             //  再检查是否是模态框/弹窗样式（� ��定定位 + 高 z-index）
             var  style = window.getComputedStyle(el);
@@ -962,8 +1025,8 @@
       function tryClosePopup(el) {
          // 尝试点击关闭按钮
         for (var  s = 0; s < CLOSE_BTN_SELECTORS.length; s++)  {
-          var btn = el.querySelector(CLOSE_ BTN_SELECTORS[s]);
-          if (btn && btn.o ffsetParent !== null) {
+          var btn = el.querySelector(CLOSE_BTN_SELECTORS[s]);
+          if (btn && btn.offsetParent !== null) {
             btn.click ();
             return true;
           }
@@ -971,64 +1034,64 @@
         return false;
       }
 
-      fu nction hidePopupAd(el) {
-        if (tryClose Popup(el)) return;
-        el.setAttribute('d ata-rrmv-ad', 'hide');
+      function hidePopupAd(el) {
+        if (tryClosePopup(el)) return;
+        el.setAttribute('data-rrmv-ad', 'hide');
       }
 
-      var ful lPageObserver = new MutationObserver(function  (mutations) {
-        for (var i = 0; i < mu tations.length; i++) {
-          var m = muta tions[i];
-          for (var j = 0; j < m.add edNodes.length; j++) {
+      var fullPageObserver = new MutationObserver(function  (mutations) {
+        for (var i = 0; i < mutations.length; i++) {
+          var m = mutations[i];
+          for (var j = 0; j < m.addedNodes.length; j++) {
             var node =  m.addedNodes[j];
-            if (node.nodeTy pe !== 1) continue;
+            if (node.nodeType !== 1) continue;
             if (isPopupAd (node)) {
               hidePopupAd(node);
                continue;
             }
              // 检查子元素中的弹窗
              if (node.querySelectorAll) {
-              v ar popups = node.querySelectorAll(
+              var popups = node.querySelectorAll(
                  '[class*="member-modal"], [class*="vip- modal"], [class*="membership-modal"],' +
-                 '[class*="pay-modal"], [class*="u pgrade-modal"], [class*="subscribe-modal"],'  +
+                 '[class*="pay-modal"], [class*="upgrade-modal"], [class*="subscribe-modal"],'  +
                 '[class*="union-member"], [ class*="joint-vip"], [class*="promo-modal"],'  +
                 '[class*="promotion-modal" ], [class*="popupAd"], [class*="openWindowAd" ]'
               );
-              popups.forE ach(function (p) { hidePopupAd(p); });
+              popups.forEach(function (p) { hidePopupAd(p); });
              }
           }
         }
       });
 
        if (document.body) {
-        fullPageObserv er.observe(document.body, { childList: true,  subtree: true });
+        fullPageObserver.observe(document.body, { childList: true,  subtree: true });
       } else {
-        docu ment.addEventListener('DOMContentLoaded', fun ction () {
-          fullPageObserver.observe (document.body, { childList: true, subtree: t rue });
+        document.addEventListener('DOMContentLoaded', function () {
+          fullPageObserver.observe (document.body, { childList: true, subtree: true });
         });
       }
 
       // 初始  hook + 巡检定时器（带清理保护）
-       document.querySelectorAll('video').forEa ch(function (v) { hookVideo(v); });
+       document.querySelectorAll('video').forEach(function (v) { hookVideo(v); });
 
       //  广告诱发的 waiting 立即尝试无感� �播
       document.addEventListener('waiting ', function (e) {
         if (!e.target || e. target.tagName !== 'VIDEO') return;
-        i f (Date.now() - lastAdBlockAt < AD_RESUME_WIN DOW && !userPaused) {
+        if (Date.now() - lastAdBlockAt < AD_RESUME_WINDOW && !userPaused) {
           hideLoading(e .target);
           scheduleResume(e.target,  'waiting');
-        } else if (Date.now() - l astAdBlockAt < AD_RESUME_WINDOW) {
+        } else if (Date.now() - lastAdBlockAt < AD_RESUME_WINDOW) {
            hideLoading(e.target);
         }
-      }, tru e);
+      }, true);
 
       var lastCheckTime = 0, stuckCount  = 0;
-      var cleanupTimer = setInterval(ste althCleanup, 2000);
-      var stuckTimer = se tInterval(function () {
-        var video = f indMainVideo();
-        if (!video || video.p aused || video.ended) return;
+      var cleanupTimer = setInterval(stealthCleanup, 2000);
+      var stuckTimer = setInterval(function () {
+        var video = findMainVideo();
+        if (!video || video.paused || video.ended) return;
         var ct  = video.currentTime;
-        if (ct === lastC heckTime) {
+        if (ct === lastCheckTime) {
           stuckCount++;
            if (stuckCount > 4) {
             stuckCount  = 0;
@@ -1040,63 +1103,63 @@
 
 
        // 页面卸载时清理定时器
-      windo w.addEventListener('beforeunload', function ( ) {
+      window.addEventListener('beforeunload', function ( ) {
         clearInterval(cleanupTimer);
          clearInterval(stuckTimer);
-        if (ob server) observer.disconnect();
-        if (fu llPageObserver) fullPageObserver.disconnect() ;
+        if (observer) observer.disconnect();
+        if (fullPageObserver) fullPageObserver.disconnect() ;
       }, { passive: true });
     });
   }
 
-   // ========================================= ===================
+   // ============================================================
   //  4. 豆瓣跳转
-  / / =========================================== =================
+  // ============================================================
   if (S.get('douban', true) ) {
     onReady(function () {
 
       function  getDramaName() {
-        var title = documen t.title;
+        var title = document.title;
         if (title) {
-          var m atch = title.match(/^(.+?)[\s-]*人人视频/ );
+          var match = title.match(/^(.+?)[\s-]*人人视频/ );
           if (match) return match[1].trim( );
         }
-        var nameEl = document.qu erySelector('[class*="text-xl"], [class*="tex t-2xl"], [class*="font-bold"]');
+        var nameEl = document.querySelector('[class*="text-xl"], [class*="text-2xl"], [class*="font-bold"]');
         if ( nameEl) return nameEl.textContent.trim();
          return null;
       }
 
-      function cre ateDoubanButton(dramaName) {
+      function createDoubanButton(dramaName) {
         var btn  = document.createElement('a');
-        btn.hr ef = 'https://search.douban.com/movie/subject _search?search_text=' + encodeURIComponent(dr amaName);
+        btn.href = 'https://search.douban.com/movie/subject_search?search_text=' + encodeURIComponent(dramaName);
         btn.target = '_blank';
-         btn.rel = 'noopener noreferrer';
-         btn.style.cssText = 'display:inline-flex;alig n-items:center;gap:4px;padding:4px 8px;margin -left:8px;font-size:12px;color:#00b51d;backgr ound:rgba(0,181,29,0.1);border:1px solid rgba (0,181,29,0.3);border-radius:4px;text-decorat ion:none;cursor:pointer;transition:all 0.2s'; 
-        btn.innerHTML = '<svg viewBox="0 0 2 4 24" width="14" height="14" fill="currentCol or"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10  10 10 10-4.48 10-10S17.52 2 12 2zm-1 15l-4-4  1.41-1.41L11 14.17l6.59-6.59L19 9l-8 8z"/></ svg> 豆瓣';
-        btn.onmouseenter = func tion () { btn.style.background = 'rgba(0,181, 29,0.2)'; };
-        btn.onmouseleave = funct ion () { btn.style.background = 'rgba(0,181,2 9,0.1)'; };
+         btn.rel = 'noopenernoreferrer';
+         btn.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:4px8px;margin -left:8px;font-size:12px;color:#00b51d;background:rgba(0,181,29,0.1);border:1pxsolidrgba (0,181,29,0.3);border-radius:4px;text-decoration:none;cursor:pointer;transition:all0.2s'; 
+        btn.innerHTML = '<svgviewBox="002424" width="14" height="14" fill="currentCol or"><pathd="M122C6.48226.48212s4.4810101010-4.4810-10S17.522122zm-115l-4-41.41-1.41L1114.17l6.59-6.59L199l-88z"/></ svg> 豆瓣';
+        btn.onmouseenter = function () { btn.style.background = 'rgba(0,181, 29,0.2)'; };
+        btn.onmouseleave = function () { btn.style.background = 'rgba(0,181,29,0.1)'; };
         return btn;
       }
 
        function injectDoubanButton() {
         var  dramaName = getDramaName();
-        if (!dra maName) return;
+        if (!dramaName) return;
 
         var titleContainers  = document.querySelectorAll('div');
-        f or (var i = 0; i < titleContainers.length; i+ +) {
-          var container = titleContainer s[i];
-          var children = Array.from(con tainer.children);
-          if (children.leng th < 2) continue;
+        for (var i = 0; i < titleContainers.length; i++) {
+          var container = titleContainers[i];
+          var children = Array.from(container.children);
+          if (children.length < 2) continue;
 
-          var hasTitle = c hildren.some(function (el) { return el.textCo ntent.trim() === dramaName; });
-          var  hasIntro = children.some(function (el) { ret urn el.textContent.trim() === '简介'; });
+          var hasTitle = children.some(function (el) { return el.textContent.trim() === dramaName; });
+          var  hasIntro = children.some(function (el) { return el.textContent.trim() === '简介'; });
 
            if (hasTitle && hasIntro) {
-             if (container.querySelector('[data-douba n]')) return;
-            var introBtn = chil dren.find(function (el) { return el.textConte nt.trim() === '简介'; });
-            if (i ntroBtn) {
-              var doubanBtn = crea teDoubanButton(dramaName);
-              doub anBtn.setAttribute('data-douban', 'true');
+             if (container.querySelector('[data-douban]')) return;
+            var introBtn = children.find(function (el) { return el.textContent.trim() === '简介'; });
+            if (introBtn) {
+              var doubanBtn = createDoubanButton(dramaName);
+              doubanBtn.setAttribute('data-douban', 'true');
                introBtn.parentNode.insertBefore( doubanBtn, introBtn.nextSibling);
              }
             break;
@@ -1104,8 +1167,8 @@
         }
        }
 
-      var doubanObserver = new Mutati onObserver(function () { injectDoubanButton() ; });
-      doubanObserver.observe(document.b ody, { childList: true, subtree: true });
+      var doubanObserver = new MutationObserver(function () { injectDoubanButton() ; });
+      doubanObserver.observe(document.body, { childList: true, subtree: true });
        injectDoubanButton();
     });
   }
@@ -1118,7 +1181,7 @@
     onReady(function () {
       // 渲染层 hack：给 video 提升为 GPU 合成层
       var fixStyle = document.createElement('style');
-      fixStyle.textContent = '.xgplayer video { will-change: transform !important; transform: translateZ(0) !important; }';
+      fixStyle.textContent = '.xgplayervideo { will-change: transform !important; transform: translateZ(0) !important; }';
       (document.head || document.documentElement).appendChild(fixStyle);
 
       var fixSeen = new WeakSet();
@@ -1158,16 +1221,16 @@
 
       // 等待 video 出现并 hook
       function waitForVideo() {
-        var video = document.querySelector('.xgplayer video') ||
-                    document.querySelector('#ve-player-container video') ||
+        var video = document.querySelector('.xgplayervideo') ||
+                    document.querySelector('#ve-player-containervideo') ||
                     document.querySelector('video');
         if (video) {
           hookVideoForFix(video);
           return;
         }
         var mo = new MutationObserver(function () {
-          var v = document.querySelector('.xgplayer video') ||
-                  document.querySelector('#ve-player-container video') ||
+          var v = document.querySelector('.xgplayervideo') ||
+                  document.querySelector('#ve-player-containervideo') ||
                   document.querySelector('video');
           if (v) {
             mo.disconnect();
@@ -1192,7 +1255,7 @@
       var ICON_URL = 'https://mh.yichengwlkj.com/favicon.ico';
 
       function getSearchKeyword() {
-        var h1 = document.querySelector('#content h1 span');
+        var h1 = document.querySelector('#contenth1span');
         if (!h1) return null;
         var title = h1.textContent.trim();
         var chMatch = title.match(/^([\u4e00-\u9fa5]+)/);
@@ -1203,7 +1266,7 @@
       }
 
       function createLink() {
-        var h1 = document.querySelector('#content h1');
+        var h1 = document.querySelector('#contenth1');
         if (!h1 || document.querySelector('#reren-video-link')) return;
         var keyword = getSearchKeyword();
         if (!keyword) return;
@@ -1214,7 +1277,7 @@
         link.target = '_blank';
         link.rel = 'noopener';
         link.title = '在人人视频搜索: ' + keyword;
-        link.style.cssText = 'display:inline-flex;align-items:center;margin-left:12px;padding:4px 10px;background:linear-gradient(135deg,#ff6b6b,#ee5a24);border-radius:16px;text-decoration:none;font-size:12px;color:#fff;vertical-align:middle;transition:all 0.3s;box-shadow:0 2px 8px rgba(238,90,36,0.3);';
+        link.style.cssText = 'display:inline-flex;align-items:center;margin-left:12px;padding:4px10px;background:linear-gradient(135deg,#ff6b6b,#ee5a24);border-radius:16px;text-decoration:none;font-size:12px;color:#fff;vertical-align:middle;transition:all0.3s;box-shadow:02px8pxrgba(238,90,36,0.3);';
         var icon = document.createElement('img');
         icon.src = ICON_URL;
         icon.style.cssText = 'width:16px;height:16px;margin-right:6px;border-radius:3px;';
@@ -1225,11 +1288,11 @@
         link.appendChild(text);
         link.onmouseover = function() {
           this.style.transform = 'translateY(-2px)';
-          this.style.boxShadow = '0 4px 12px rgba(238,90,36,0.4)';
+          this.style.boxShadow = '04px12pxrgba(238,90,36,0.4)';
         };
         link.onmouseout = function() {
           this.style.transform = 'translateY(0)';
-          this.style.boxShadow = '0 2px 8px rgba(238,90,36,0.3)';
+          this.style.boxShadow = '02px8pxrgba(238,90,36,0.3)';
         };
         h1.appendChild(link);
       }
