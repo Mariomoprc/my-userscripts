@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.8.6
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示 + 静音 opencode-mem capture | v1.8.6
+// @version      1.8.7
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示 + 静音 opencode-mem capture | v1.8.7
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -1314,33 +1314,76 @@
     function enabled() { return getSetting('memSilence', true); }
     function hookAudio() {
       try {
-        var proto = (window.HTMLAudioElement && window.HTMLAudioElement.prototype) || (window.Audio && window.Audio.prototype);
-        if (!proto || proto.__ocMemHooked) return;
-        var origPlay = proto.play;
-        proto.__ocMemHooked = true;
-        proto.play = function () {
-          try {
-            if (enabled()) {
-              var src = this.src || this.currentSrc || '';
-              var isDing = src.indexOf('ding') !== -1 || src.indexOf('audio') !== -1 || src === '' || this.getAttribute && this.getAttribute('src') && this.getAttribute('src').indexOf('ding') !== -1;
-              if (isDing) {
-                var isCap = false;
-                try {
-                  if (window.__oc_lastCaptureAt && Date.now() - window.__oc_lastCaptureAt < 8000) isCap = true;
-                  if (!isCap && document.body) {
-                    var els = document.querySelectorAll('[data-title="opencode-mem capture"], [title="opencode-mem capture"]');
-                    if (els.length) isCap = true;
-                  }
-                } catch (e2) {}
-                if (isCap) {
-                  console.log(TAG, 'MEM silence: ding suppressed for capture');
+        var proto = window.HTMLAudioElement && window.HTMLAudioElement.prototype;
+        if (proto && !proto.__ocMemHooked) {
+          var origPlay = proto.play;
+          proto.__ocMemHooked = true;
+          proto.play = function () {
+            try {
+              if (enabled() && window.__oc_lastCaptureAt && Date.now() - window.__oc_lastCaptureAt < 12000) {
+                console.log(TAG, 'MEM silence: Audio.play suppressed (capture window)');
+                return Promise.resolve();
+              }
+            } catch (e3) {}
+            return origPlay.apply(this, arguments);
+          };
+          try { Audio.prototype.play = proto.play; } catch (e) {}
+        }
+        // AudioContext (Web Audio API) - opencode web may use oscillator/beep
+        try {
+          var AC = window.AudioContext || window.webkitAudioContext;
+          if (AC && AC.prototype && !AC.prototype.__ocMemHooked) {
+            AC.prototype.__ocMemHooked = true;
+            var origResume = AC.prototype.resume;
+            if (origResume) {
+              AC.prototype.resume = function () {
+                if (enabled() && window.__oc_lastCaptureAt && Date.now() - window.__oc_lastCaptureAt < 12000) {
+                  console.log(TAG, 'MEM silence: AudioContext.resume suppressed');
                   return Promise.resolve();
                 }
-              }
+                return origResume.apply(this, arguments);
+              };
             }
-          } catch (e3) {}
-          return origPlay.apply(this, arguments);
-        };
+            var origCreateOsc = AC.prototype.createOscillator;
+            if (origCreateOsc) {
+              AC.prototype.createOscillator = function () {
+                var osc = origCreateOsc.apply(this, arguments);
+                var origStart = osc.start;
+                osc.start = function () {
+                  if (enabled() && window.__oc_lastCaptureAt && Date.now() - window.__oc_lastCaptureAt < 12000) {
+                    console.log(TAG, 'MEM silence: Oscillator.start suppressed');
+                    return;
+                  }
+                  return origStart.apply(this, arguments);
+                };
+                return osc;
+              };
+            }
+          }
+        } catch (e4) {}
+        // Notification
+        try {
+          if (window.Notification && !window.Notification.__ocMemHooked) {
+            window.Notification.__ocMemHooked = true;
+            var OrigNotif = window.Notification;
+            var WrappedNotif = function (title, opts) {
+              if (enabled() && window.__oc_lastCaptureAt && Date.now() - window.__oc_lastCaptureAt < 12000) {
+                var txt = (title || '') + ' ' + ((opts && opts.body) || '');
+                if (txt.indexOf('capture') !== -1 || txt.indexOf('opencode-mem') !== -1 || txt === '' ) {
+                  console.log(TAG, 'MEM silence: Notification suppressed');
+                  return;
+                }
+                // still suppress any notification in capture window to be safe (conservative: only if title empty, suppress all)
+                console.log(TAG, 'MEM silence: Notification suppressed (capture window)');
+                return;
+              }
+              return new OrigNotif(title, opts);
+            };
+            WrappedNotif.requestPermission = OrigNotif.requestPermission.bind(OrigNotif);
+            WrappedNotif.permission = OrigNotif.permission;
+            window.Notification = WrappedNotif;
+          }
+        } catch (e5) {}
       } catch (e) {}
     }
     function hookFetch() {
@@ -1350,7 +1393,14 @@
         window.__ocFetchMemHooked = true;
         window.fetch = function (input, init) {
           var url = typeof input === 'string' ? input : (input && input.url) || '';
-          if (url.indexOf('opencode-mem') !== -1) { try { window.__oc_lastCaptureAt = Date.now(); } catch (e) {} }
+          var bodyStr = '';
+          try { bodyStr = init && init.body ? (typeof init.body === 'string' ? init.body : JSON.stringify(init.body)) : ''; } catch (e) {}
+          // detect capture session creation: POST /session with title or internal metadata
+          var isCaptureCreate = false;
+          if (url.indexOf('/session') !== -1 && init && init.method === 'POST' && bodyStr) {
+            if (bodyStr.indexOf('opencode-mem capture') !== -1 || bodyStr.indexOf('"internal":true') !== -1 || bodyStr.indexOf('opencode-mem') !== -1) isCaptureCreate = true;
+          }
+          if (isCaptureCreate || url.indexOf('opencode-mem') !== -1) { try { window.__oc_lastCaptureAt = Date.now(); console.log(TAG, 'MEM silence: capture fetch detected', url); } catch (e) {} }
           return origFetch.apply(this, arguments).then(function (res) {
             try {
               if (enabled() && (url.indexOf('/api/sessions') !== -1 || url.indexOf('/api/session') !== -1)) {
