@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.8.5
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示 | v1.8.5
+// @version      1.8.6
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示 + 静音 opencode-mem capture | v1.8.6
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -48,7 +48,8 @@
     { key: 'tabCycle', label: 'Tab 键切换代理', def: true },
     { key: 'pasteImg', label: '粘贴图片', def: true },
     { key: 'dragDrop', label: '拖拽链接/文字', def: true },
-    { key: 'questionKeys', label: '选项键盘导航', def: true }
+    { key: 'questionKeys', label: '选项键盘导航', def: true },
+    { key: 'memSilence', label: '静音 capture 会话', def: true }
   ];
 
   function toast(text, color) {
@@ -1300,6 +1301,116 @@
   })();
 
   // ════════════════════════════════════════════════════════════
+  //  静音 opencode-mem capture (仅 localhost:4096, 前端静音不改后端写入)
+  // ════════════════════════════════════════════════════════════
+  var MEM_CAPTURE_SILENCE_MODULE = (function () {
+    var CAPTURE_TITLE = 'opencode-mem capture';
+    function isCaptureSession(s) {
+      if (!s) return false;
+      if (s.title === CAPTURE_TITLE) return true;
+      try { var m = s.metadata && s.metadata['opencode-mem']; if (m && m.internal) return true; } catch (e) {}
+      return false;
+    }
+    function enabled() { return getSetting('memSilence', true); }
+    function hookAudio() {
+      try {
+        var proto = (window.HTMLAudioElement && window.HTMLAudioElement.prototype) || (window.Audio && window.Audio.prototype);
+        if (!proto || proto.__ocMemHooked) return;
+        var origPlay = proto.play;
+        proto.__ocMemHooked = true;
+        proto.play = function () {
+          try {
+            if (enabled()) {
+              var src = this.src || this.currentSrc || '';
+              var isDing = src.indexOf('ding') !== -1 || src.indexOf('audio') !== -1 || src === '' || this.getAttribute && this.getAttribute('src') && this.getAttribute('src').indexOf('ding') !== -1;
+              if (isDing) {
+                var isCap = false;
+                try {
+                  if (window.__oc_lastCaptureAt && Date.now() - window.__oc_lastCaptureAt < 8000) isCap = true;
+                  if (!isCap && document.body) {
+                    var els = document.querySelectorAll('[data-title="opencode-mem capture"], [title="opencode-mem capture"]');
+                    if (els.length) isCap = true;
+                  }
+                } catch (e2) {}
+                if (isCap) {
+                  console.log(TAG, 'MEM silence: ding suppressed for capture');
+                  return Promise.resolve();
+                }
+              }
+            }
+          } catch (e3) {}
+          return origPlay.apply(this, arguments);
+        };
+      } catch (e) {}
+    }
+    function hookFetch() {
+      try {
+        if (window.__ocFetchMemHooked || !window.fetch) return;
+        var origFetch = window.fetch;
+        window.__ocFetchMemHooked = true;
+        window.fetch = function (input, init) {
+          var url = typeof input === 'string' ? input : (input && input.url) || '';
+          if (url.indexOf('opencode-mem') !== -1) { try { window.__oc_lastCaptureAt = Date.now(); } catch (e) {} }
+          return origFetch.apply(this, arguments).then(function (res) {
+            try {
+              if (enabled() && (url.indexOf('/api/sessions') !== -1 || url.indexOf('/api/session') !== -1)) {
+                var clone = res.clone();
+                return clone.json().then(function (data) {
+                  var filtered = false;
+                  if (Array.isArray(data)) {
+                    var before = data.length;
+                    data = data.filter(function (s) { return !isCaptureSession(s); });
+                    filtered = data.length !== before;
+                  } else if (data && Array.isArray(data.sessions)) {
+                    var b = data.sessions.length;
+                    data.sessions = data.sessions.filter(function (s) { return !isCaptureSession(s); });
+                    filtered = data.sessions.length !== b;
+                  } else if (data && data.data && Array.isArray(data.data)) {
+                    var b2 = data.data.length;
+                    data.data = data.data.filter(function (s) { return !isCaptureSession(s); });
+                    filtered = data.data.length !== b2;
+                  }
+                  if (filtered) {
+                    console.log(TAG, 'MEM silence: filtered capture from', url);
+                    try { window.__oc_lastCaptureAt = Date.now(); } catch (e) {}
+                    return new Response(JSON.stringify(data), { status: res.status, statusText: res.statusText, headers: res.headers });
+                  }
+                  return res;
+                }).catch(function () { return res; });
+              }
+            } catch (e2) {}
+            return res;
+          });
+        };
+      } catch (e) {}
+    }
+    function hideCaptureDOM() {
+      if (!enabled()) return;
+      try {
+        document.querySelectorAll('[data-title="opencode-mem capture"], [title="opencode-mem capture"]').forEach(function (el) {
+          var row = el.closest ? (el.closest('[data-session-id]') || el.closest('li') || el.closest('[role="row"]') || el) : el;
+          if (row) row.style.display = 'none';
+        });
+      } catch (e) {}
+    }
+    function init() {
+      if (!isLocalhost4096) return;
+      hookAudio();
+      hookFetch();
+      try {
+        var st = document.createElement('style');
+        st.id = 'oc-mem-silence-style';
+        st.textContent = '[data-title="opencode-mem capture"]{display:none !important}';
+        (document.head || document.documentElement).appendChild(st);
+      } catch (e) {}
+      setInterval(hideCaptureDOM, 2000);
+      try { var mo = new MutationObserver(hideCaptureDOM); mo.observe(document.body, { childList: true, subtree: true }); } catch (e) {}
+      console.log(TAG, 'MEM capture silence enabled');
+    }
+    return { init: init };
+  })();
+
+  // ════════════════════════════════════════════════════════════
   //  Main entry
   // ════════════════════════════════════════════════════════════
 
@@ -1328,6 +1439,7 @@
         QUESTION_MODULE.init();
       }
       CONNECTION_MODULE.init();
+      MEM_CAPTURE_SILENCE_MODULE.init();
     } else if (isLocalWeb) {
       // Fallback for other local ports if script ever runs there (should not due to @include)
       if (getSetting('goPanel', true)) MODEL_QUOTA.init();

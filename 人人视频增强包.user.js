@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         人人视� ��增强包
 // @namespace    http://tampermonkey.net/
-// @version      2.9.1
+// @version      2.9.2
 // @description  反调试绕过 + 隐藏滚动条 + 无� �去广告(播放态自动续播/暂停态保 持/loading修复) + 豆瓣跳转 + 唤醒后 暂停(点播放即恢复) + 播放卡死自� ��(智能判定不误伤正常缓冲) + 播放器修复(轻seek+渲染层hack) + 豆瓣页跳转人人 | 菜� �可开关
 // @author       opencode
 // @match        *://*.yichengwlkj.com/*
@@ -225,7 +225,7 @@
   //      不再用固定超时触发 video.load() ：暂停恢复/seek 后的正常缓冲
   //      （currentTime 几秒内恢复推进）� �会被误判，避免短等待被放大成� �量重载
   // ============================================================
-  if (S.get(' stallHeal', true)) {
+  if (S.get('stallHeal', true)) {
     (function () {
        var HEAL_COUNT_KEY = 'rrmv_heal_count';
        var HEAL_TIME_KEY = 'rrmv_heal_time';
@@ -421,13 +421,13 @@
         '#adPlayContainer,',
          '[class*="QH_SSP_OPENWINDOW_AD"],',
          '[class*="openWindowAd"],',
-        '[ class*="popupAd"],',
+        '[class*="popupAd"],',
         '[class*="bannerAd"],',
         '[class*="iconAdContainer"],' ,
         '[class*="textLinkAd"],',
         ' [class*="adSignWrapper"],',
-        '[class*= "closeAdSign"],',
-        '.xgplayer-ads, xg- ad, xg-ad-stub,',
+        '[class*="closeAdSign"],',
+        '.xgplayer-ads, xg-ad, xg-ad-stub,',
         '[class*="sssdk-ad" ],',
         '[id*="ssp_ad"],',
         '[id* ="QH_SSP"],',
@@ -448,7 +448,7 @@
         '[class*="promo-modal"],',
          '[class*="promotion-modal"],',
         ' [class*="open-window-ad"],',
-        '[class* ="float-ad"],',
+        '[class*="float-ad"],',
         '[class*="pop-ad"],', 
         '[class*="modal-mask"][data-rrmv-ad= "hide"],',
         '[class*="dialog-mask"][data-rrmv-ad="hide"],',
@@ -504,7 +504,7 @@
             Object.defineProperty(el, 'src ', {
               get: function () { return  origSrcDesc.get.call(this); },
                set: function (val) {
-                if (typeof val === 'string' && (val.indexOf('ssp_sdk ') !== -1 || val.indexOf('ssp.360.cn') !== -1 )) {
+                if (typeof val === 'string' && (val.indexOf('ssp_sdk') !== -1 || val.indexOf('ssp.360.cn') !== -1 )) {
                   this.type = 'text/javascript'; return;
                 }
                  return origSrcDesc.set.call(this, val); 
@@ -521,7 +521,7 @@
       }, (sessionStorage.getItem("rrmv_expected_reload") ? 10000 : 5000));
 
       function removeExistingSspSdk( ) {
-        document.querySelectorAll('script [src*="ssp_sdk"], script[src*="ssp.360.cn"]') .forEach(function (el) { el.remove(); });
+        document.querySelectorAll('script[src*="ssp_sdk"], script[src*="ssp.360.cn"]') .forEach(function (el) { el.remove(); });
        }
       removeExistingSspSdk();
 
