@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         人人视频增强包
 // @namespace    http://tampermonkey.net/
-// @version      2.9.6
-// @description  反调试绕过 + 隐藏滚动条 + 无感去广告(播放态自动续播/暂停态保持/loading修复) + 豆瓣跳转 + 唤醒后暂停(点播放即恢复) + 播放卡死自愈(智能判定不误伤正常缓冲+慢速播放识别+seek卡死识别+seek循环识别) + 播放器修复(轻seek+渲染层hack) + 豆瓣页跳转人人 | 菜单可开关
+// @version      2.9.7
+// @description  反调试绕过 + 隐藏滚动条 + 无感去广告(播放态自动续播/暂停态保持/loading修复) + 豆瓣跳转 + 唤醒后暂停(点播放即恢复) + 播放卡死自愈(智能判定不误伤正常缓冲+慢速播放识别含慢动作+seek卡死识别+seek循环识别) + 播放器修复(轻seek+渲染层hack) + 豆瓣页跳转人人 | 菜单可开关
 // @author       opencode
 // @match        *://*.yichengwlkj.com/*
 // @match         *://*.rrmj.plus/*
@@ -278,16 +278,16 @@
            if (delta > 0.01) {
             lastTime = video.currentTime;
             still = 0;
-            // [v2.9.4] 慢速播放检测：推进速率远低于预期且数据不足 → 累计判定卡死
+            // [v2.9.7] 慢速播放检测：推进速率远低于预期 → 累计判定卡死（不再要求 readyState<3，覆盖慢动作卡顿）
             var expected = (video.playbackRate || 1) * 0.2;
-            if (delta < expected && video.readyState < 3) {
+            if (delta < expected) {
               slowCount++;
               if (slowCount >= noProgressSec) { clearStallTimer(); onStallTimeout(video); return; }
             } else {
               slowCount = 0;
+              // 正常速率且数据充足 → 停止监控
+              if (video.readyState >= 3) clearStallTimer();
             }
-            // 判断全恢复（时间在走且数据充足）→ 停止监控
-            if (video.readyState >= 3) clearStallTimer();
             return;
           }
           still++;
