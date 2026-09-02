@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         人人视频增强包
 // @namespace    http://tampermonkey.net/
-// @version      2.9.4
-// @description  反调试绕过 + 隐藏滚动条 + 无感去广告(播放态自动续播/暂停态保持/loading修复) + 豆瓣跳转 + 唤醒后暂停(点播放即恢复) + 播放卡死自愈(智能判定不误伤正常缓冲+慢速播放识别) + 播放器修复(轻seek+渲染层hack) + 豆瓣页跳转人人 | 菜单可开关
+// @version      2.9.5
+// @description  反调试绕过 + 隐藏滚动条 + 无感去广告(播放态自动续播/暂停态保持/loading修复) + 豆瓣跳转 + 唤醒后暂停(点播放即恢复) + 播放卡死自愈(智能判定不误伤正常缓冲+慢速播放识别+seek卡死识别) + 播放器修复(轻seek+渲染层hack) + 豆瓣页跳转人人 | 菜单可开关
 // @author       opencode
 // @match        *://*.yichengwlkj.com/*
 // @match         *://*.rrmj.plus/*
@@ -263,9 +263,17 @@
         var lastTime = -1;
         var still  = 0;
         var slowCount = 0;
+        var seekStart = 0;
         stallTimer = setInterval(function () {
           if (!video.isConnected || video.paused) { clearStallTimer(); return; }
-           if (video.seeking) { still = 0; slowCount = 0; return; } // seek 等数据不算卡死
+           if (video.seeking) {
+            // [v2.9.5] seeking 卡死检测：seek 超过 10 秒未完成 → 判定卡死
+            if (!seekStart) seekStart = Date.now();
+            if (Date.now() - seekStart > 10000) { clearStallTimer(); onStallTimeout(video); return; }
+            still = 0; slowCount = 0;
+            return;
+          }
+          seekStart = 0;
            var delta = Math.abs(video.currentTime - lastTime);
            if (delta > 0.01) {
             lastTime = video.currentTime;
@@ -299,7 +307,7 @@
           try { video.play().catch(function () {}); } catch (e) {}
            setTimeout(function () {
              if (!video.isConnected || video.paused) return;
-             var stillSlow = video.readyState < 3 && Math.abs(video.currentTime - (video.__rrmvLastCheck || 0)) < 0.2;
+             var stillSlow = video.readyState < 3 && (video.seeking || Math.abs(video.currentTime - (video.__rrmvLastCheck || 0)) < 0.2);
              if (stillSlow) {
                 // 第二级：软恢复（重？加载源，会丢 buffer，最后手段）
                 if (!healCountOk()) { armStallWatch(video, 12); return; }
