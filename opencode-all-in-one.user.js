@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.8.12
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(底部居中自适应+进度条自动刷新) + 静音 opencode-mem capture(无条件通知屏蔽) | v1.8.12
+// @version      1.8.13
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(底部居中自适应+进度条自动刷新) + 静音 opencode-mem capture(无条件通知屏蔽) + DS峰时提醒(轻跟随opencode) | v1.8.13
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -14,6 +14,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.8.13 DS峰时提醒(轻跟随opencode)：下拉/badge+倒计时 + 面板时钟条 + 底部胶囊，三处全加，解析 opencode.ai/docs/go 文案自动跟随，回退硬编码 09-12/14-18 BJT
 // v1.8.5 修复拖拽文字黑屏（精确定位浮层+栈式还原）
 // v1.8.4 拖拽文字遮挡修复（types快判+虚线框隐藏）
 // v1.8.3 拖拽网页/链接恢复 + 额度显示加国家 + 粘贴图片去成功提示 + 仅保留 localhost:4096
@@ -49,7 +50,8 @@
     { key: 'pasteImg', label: '粘贴图片', def: true },
     { key: 'dragDrop', label: '拖拽链接/文字', def: true },
     { key: 'questionKeys', label: '选项键盘导航', def: true },
-    { key: 'memSilence', label: '静音 capture 会话', def: true }
+    { key: 'memSilence', label: '静音 capture 会话', def: true },
+    { key: 'peakHint', label: 'DS峰时提醒', def: true }
   ];
 
   function toast(text, color) {
@@ -106,6 +108,147 @@
       });
     } catch (err) {}
   }
+
+  // ════════════════════════════════════════════════════════════
+  //  DS 峰谷时钟（轻跟随 opencode.ai/docs/go 文案，回退硬编码）
+  // ════════════════════════════════════════════════════════════
+  var PEAK_MODULE = (function () {
+    var CACHE_KEY = 'oc_peak_rule';
+    var CACHE_TTL = 6 * 60 * 60 * 1000;
+    var DEFAULT_RULE = { segs: [[1, 4], [6, 10]], weekdays: [1, 2, 3, 4, 5] }; // UTC hours
+    var _rule = null;
+    var _cachedAt = 0;
+
+    function parsePeakRule(html) {
+      if (!html) return null;
+      try {
+        // strip tags to plain text for robust match, keep numbers and UTC
+        var text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+        // Try English: Peak hours are 01:00-04:00 and 06:00-10:00 UTC, Monday through Friday
+        var re = /Peak[^0-9]*?(\d{1,2}):(\d{2})\s*[—\-–to]+\s*(\d{1,2}):(\d{2})[^0-9]+(\d{1,2}):(\d{2})\s*[—\-–to]+\s*(\d{1,2}):(\d{2})\s*UTC/i;
+        var m = text.match(re);
+        if (m) {
+          var s1 = Number(m[1]) + Number(m[2]) / 60;
+          var e1 = Number(m[3]) + Number(m[4]) / 60;
+          var s2 = Number(m[5]) + Number(m[6]) / 60;
+          var e2 = Number(m[7]) + Number(m[8]) / 60;
+          // weekday check: if text mentions Monday through Friday or 周一至周五 -> weekdays 1-5 else all
+          var wd = [1, 2, 3, 4, 5];
+          if (/weekend/i.test(text) && /including weekends/i.test(text)) wd = [1, 2, 3, 4, 5];
+          // if explicitly says weekends are Off-Peak we keep 1-5
+          return { segs: [[s1, e1], [s2, e2]], weekdays: wd };
+        }
+        // Fallback simple: find 4 times near UTC
+        var simple = text.match(/(\d{1,2}):(\d{2})[^0-9]+(\d{1,2}):(\d{2})[^0-9]+(\d{1,2}):(\d{2})[^0-9]+(\d{1,2}):(\d{2})[^]*?UTC/i);
+        if (simple) {
+          var ss1 = Number(simple[1]) + Number(simple[2]) / 60;
+          var ee1 = Number(simple[3]) + Number(simple[4]) / 60;
+          var ss2 = Number(simple[5]) + Number(simple[6]) / 60;
+          var ee2 = Number(simple[7]) + Number(simple[8]) / 60;
+          return { segs: [[ss1, ee1], [ss2, ee2]], weekdays: [1, 2, 3, 4, 5] };
+        }
+      } catch (e2) {}
+      return null;
+    }
+
+    function loadRuleFromCache() {
+      try {
+        var raw = localStorage.getItem(CACHE_KEY);
+        if (!raw) return null;
+        var obj = JSON.parse(raw);
+        if (!obj || !obj.rule || !obj.ts) return null;
+        if (Date.now() - obj.ts > CACHE_TTL) return null;
+        return obj.rule;
+      } catch (e3) { return null; }
+    }
+    function saveRule(rule) {
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify({ rule: rule, ts: Date.now() })); } catch (e4) {}
+      _rule = rule; _cachedAt = Date.now();
+    }
+    function getRule() {
+      if (_rule && (Date.now() - _cachedAt < CACHE_TTL)) return _rule;
+      var cached = loadRuleFromCache();
+      if (cached) { _rule = cached; _cachedAt = Date.now(); return cached; }
+      return DEFAULT_RULE;
+    }
+    function updateFromHtml(html) {
+      var parsed = parsePeakRule(html);
+      if (parsed) saveRule(parsed);
+      return parsed || getRule();
+    }
+    function isPeakAt(date, rule) {
+      rule = rule || getRule();
+      var d = date || new Date();
+      var wd = d.getUTCDay(); // 0 Sun - 6 Sat
+      if (rule.weekdays.indexOf(wd) === -1) return false;
+      var h = d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
+      for (var i = 0; i < rule.segs.length; i++) {
+        var s = rule.segs[i][0], e = rule.segs[i][1];
+        if (h >= s && h < e) return true;
+      }
+      return false;
+    }
+    function nextSwitchAt(date, rule) {
+      rule = rule || getRule();
+      var cur = date ? new Date(date.getTime()) : new Date();
+      // look ahead up to 8 days, minute granularity
+      for (var step = 0; step < 8 * 24 * 60; step++) {
+        var test = new Date(cur.getTime() + step * 60 * 1000);
+        var curPeak = isPeakAt(cur, rule);
+        var testPeak = isPeakAt(test, rule);
+        if (curPeak !== testPeak) return test;
+      }
+      return null;
+    }
+    function formatCountdown(ms) {
+      if (ms == null || ms < 0) return '-';
+      var total = Math.floor(ms / 1000);
+      var h = Math.floor(total / 3600);
+      var m = Math.floor((total % 3600) / 60);
+      var s = total % 60;
+      if (h > 0) return h + '时' + (m < 10 ? '0' : '') + m + '分';
+      if (m > 0) return m + '分' + (s < 10 ? '0' : '') + s + '秒';
+      return s + '秒';
+    }
+    function formatCountdownShort(ms) {
+      if (ms == null || ms < 0) return '-';
+      var total = Math.floor(ms / 1000);
+      var h = Math.floor(total / 3600);
+      var m = Math.floor((total % 3600) / 60);
+      if (h > 0) return h + '时' + m + '分';
+      return m + '分';
+    }
+    function getState(date, rule) {
+      rule = rule || getRule();
+      date = date || new Date();
+      var peak = isPeakAt(date, rule);
+      var next = nextSwitchAt(date, rule);
+      var remain = next ? (next.getTime() - date.getTime()) : null;
+      var wd = date.getUTCDay();
+      var isWeekend = (wd === 0 || wd === 6);
+      return { isPeak: peak, isWeekend: isWeekend, nextAt: next, remainMs: remain, rule: rule, countdown: formatCountdownShort(remain), countdownFull: formatCountdown(remain) };
+    }
+    function ruleToBJTText(rule) {
+      rule = rule || getRule();
+      // Convert UTC segs to BJT (UTC+8)
+      function toBJT(h) { var b = (h + 8) % 24; var hh = Math.floor(b); var mm = Math.round((b - hh) * 60); return (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm; }
+      var a = toBJT(rule.segs[0][0]) + '-' + toBJT(rule.segs[0][1]);
+      var b = toBJT(rule.segs[1][0]) + '-' + toBJT(rule.segs[1][1]);
+      return a + ' / ' + b + ' BJT';
+    }
+    return {
+      DEFAULT_RULE: DEFAULT_RULE,
+      parsePeakRule: parsePeakRule,
+      getRule: getRule,
+      updateFromHtml: updateFromHtml,
+      isPeakAt: isPeakAt,
+      nextSwitchAt: nextSwitchAt,
+      formatCountdown: formatCountdown,
+      formatCountdownShort: formatCountdownShort,
+      getState: getState,
+      ruleToBJTText: ruleToBJTText
+    };
+  })();
 
   var GO_MODULE = (function () {
     var DOCS_URL = 'https://opencode.ai/docs/go/';
@@ -431,6 +574,75 @@
         '<span style="background:rgba(255,255,255,.08);padding:3px 8px;border-radius:4px;color:#ccc;">识图: <span style="color:#1f6feb;">' + imgModels + '</span> 个</span>';
       panel.appendChild(stats);
 
+      // DS 峰谷时钟条（B）
+      var peakBar = null;
+      if (getSetting('peakHint', true)) {
+        peakBar = document.createElement('div');
+        peakBar.id = 'oc-peak-bar';
+        peakBar.style.cssText = 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;padding:8px 10px;border:1px solid #333;border-radius:8px;background:rgba(255,255,255,.04);font-size:11px;line-height:1.4;';
+        panel.appendChild(peakBar);
+        (function updatePeakBar() {
+          if (!peakBar || !peakBar.parentNode) return;
+          var st = PEAK_MODULE.getState(new Date());
+          var isPeak = st.isPeak;
+          var bjtText = PEAK_MODULE.ruleToBJTText(st.rule);
+          if (isPeak) {
+            peakBar.style.borderColor = 'rgba(248,81,73,.35)';
+            peakBar.style.background = 'rgba(248,81,73,.08)';
+            peakBar.innerHTML = '<span style="display:inline-block;padding:2px 6px;border-radius:4px;font-weight:700;color:#fff;background:#f85149;">🔥 峰时·2x</span>' +
+              '<span style="color:#e0e0e0;">距谷时 <strong style="color:#fff;">' + st.countdown + '</strong></span>' +
+              '<span style="opacity:.6;">| 峰时 ' + bjtText + ' 周末全谷 · 峰时计费翻倍，建议切 MiMo/Qwen</span>';
+          } else {
+            var warn = st.remainMs != null && st.remainMs < 30 * 60 * 1000;
+            if (warn) {
+              peakBar.style.borderColor = 'rgba(210,153,34,.35)';
+              peakBar.style.background = 'rgba(210,153,34,.08)';
+              peakBar.innerHTML = '<span style="display:inline-block;padding:2px 6px;border-radius:4px;font-weight:700;color:#111;background:#d29922;">⏰ ' + st.countdown + '后峰时</span>' +
+                '<span style="color:#e0e0e0;">🌙 谷时</span>' +
+                '<span style="opacity:.6;">| ' + bjtText + ' 周末全谷 · 谷时 0.5x 抓紧用 DS</span>';
+            } else {
+              peakBar.style.borderColor = 'rgba(46,160,67,.35)';
+              peakBar.style.background = 'rgba(46,160,67,.08)';
+              peakBar.innerHTML = '<span style="display:inline-block;padding:2px 6px;border-radius:4px;font-weight:700;color:#fff;background:#2ea043;">🌙 谷时</span>' +
+                '<span style="color:#e0e0e0;">距峰时 <strong style="color:#fff;">' + st.countdown + '</strong></span>' +
+                '<span style="opacity:.6;">| ' + bjtText + ' 周末全谷 · 峰时×2 轻跟随 opencode.ai/docs/go</span>';
+            }
+          }
+        })();
+        // store timer on panel for cleanup
+        var peakTimer = setInterval(function () {
+          if (!document.getElementById('oc-go-panel') || !document.getElementById('oc-peak-bar')) { clearInterval(peakTimer); return; }
+          var bar = document.getElementById('oc-peak-bar');
+          if (!bar) { clearInterval(peakTimer); return; }
+          var st2 = PEAK_MODULE.getState(new Date());
+          var isPeak2 = st2.isPeak;
+          var bjt2 = PEAK_MODULE.ruleToBJTText(st2.rule);
+          if (isPeak2) {
+            bar.style.borderColor = 'rgba(248,81,73,.35)';
+            bar.style.background = 'rgba(248,81,73,.08)';
+            bar.innerHTML = '<span style="display:inline-block;padding:2px 6px;border-radius:4px;font-weight:700;color:#fff;background:#f85149;">🔥 峰时·2x</span>' +
+              '<span style="color:#e0e0e0;">距谷时 <strong style="color:#fff;">' + st2.countdown + '</strong></span>' +
+              '<span style="opacity:.6;">| 峰时 ' + bjt2 + ' 周末全谷 · 峰时计费翻倍，建议切 MiMo/Qwen</span>';
+          } else {
+            var warn2 = st2.remainMs != null && st2.remainMs < 30 * 60 * 1000;
+            if (warn2) {
+              bar.style.borderColor = 'rgba(210,153,34,.35)';
+              bar.style.background = 'rgba(210,153,34,.08)';
+              bar.innerHTML = '<span style="display:inline-block;padding:2px 6px;border-radius:4px;font-weight:700;color:#111;background:#d29922;">⏰ ' + st2.countdown + '后峰时</span>' +
+                '<span style="color:#e0e0e0;">🌙 谷时</span>' +
+                '<span style="opacity:.6;">| ' + bjt2 + ' 周末全谷 · 谷时 0.5x 抓紧用 DS</span>';
+            } else {
+              bar.style.borderColor = 'rgba(46,160,67,.35)';
+              bar.style.background = 'rgba(46,160,67,.08)';
+              bar.innerHTML = '<span style="display:inline-block;padding:2px 6px;border-radius:4px;font-weight:700;color:#fff;background:#2ea043;">🌙 谷时</span>' +
+                '<span style="color:#e0e0e0;">距峰时 <strong style="color:#fff;">' + st2.countdown + '</strong></span>' +
+                '<span style="opacity:.6;">| ' + bjt2 + ' 周末全谷 · 峰时×2 轻跟随 opencode.ai/docs/go</span>';
+            }
+          }
+        }, 10000);
+        peakBar._timer = peakTimer;
+      }
+
       var controls = document.createElement('div');
       controls.style.cssText = 'display:flex;gap:8px;margin-bottom:10px;align-items:center;';
       controls.innerHTML =
@@ -647,6 +859,7 @@
       ]).then(function (results) {
         var html = results[0], apiData = results[1], orData = results[2], zenFree = results[3];
         if (html) {
+          try { PEAK_MODULE.updateFromHtml(html); } catch (ePeak) {}
           var tables = parseTables(html);
           if (tables.requests && tables.requests.length > 0) {
             var apiModels = (apiData && apiData.data) ? apiData.data : [];
@@ -1155,6 +1368,7 @@
             onload: function (res) {
               if (res.status !== 200) { resolve(); return; }
               var html = res.responseText;
+              try { PEAK_MODULE.updateFromHtml(html); } catch (eP) {}
               var tables = GO_MODULE.__parseTables(html);
               if (!tables || !tables.requests) { resolve(); return; }
               tables.requests.forEach(function (r) {
@@ -1173,6 +1387,7 @@
             .catch(function () { return null; })
             .then(function (html) {
               if (!html) { resolve(); return; }
+              try { PEAK_MODULE.updateFromHtml(html); } catch (eP2) {}
               var tables = GO_MODULE.__parseTables(html);
               if (!tables || !tables.requests) { resolve(); return; }
               tables.requests.forEach(function (r) {
@@ -1182,6 +1397,56 @@
               });
               resolve();
             });
+        }
+      });
+    }
+
+    function isDeepSeekModel(modelId) {
+      if (!modelId) return false;
+      return modelId.indexOf('deepseek') !== -1;
+    }
+    function buildPeakBadge(modelId) {
+      if (!getSetting('peakHint', true)) return null;
+      if (!isDeepSeekModel(modelId)) return null;
+      var st = PEAK_MODULE.getState(new Date());
+      var span = document.createElement('span');
+      span.className = 'oc-peak-tag';
+      var remain = st.countdown;
+      var warn = st.remainMs != null && st.remainMs < 30 * 60 * 1000;
+      if (st.isPeak) {
+        span.style.cssText = 'display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;color:#fff;background:#f85149;margin-left:5px;white-space:nowrap;';
+        span.textContent = '🔥 峰时·2x ' + remain + '后谷时';
+        span.title = '北京时间 09:00-12:00 / 14:00-18:00 峰时（' + PEAK_MODULE.ruleToBJTText(st.rule) + '），周末全谷。峰时计费翻倍';
+      } else if (warn) {
+        span.style.cssText = 'display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;color:#111;background:#d29922;margin-left:5px;white-space:nowrap;';
+        span.textContent = '⏰ ' + remain + '后峰时';
+        span.title = '即将进入峰时，峰时计费×2，' + PEAK_MODULE.ruleToBJTText(st.rule) + ' 周末全谷';
+      } else {
+        span.style.cssText = 'display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;color:#fff;background:#2ea043;margin-left:5px;white-space:nowrap;';
+        span.textContent = '🌙 谷时 ' + remain + '后峰时';
+        span.title = '谷时 0.5x，' + PEAK_MODULE.ruleToBJTText(st.rule) + ' 周末全谷 · 轻跟随 opencode.ai/docs/go';
+      }
+      return span;
+    }
+    function refreshPeakTags() {
+      if (!getSetting('peakHint', true)) {
+        document.querySelectorAll('.oc-peak-tag').forEach(function (el) { el.style.display = 'none'; });
+        return;
+      }
+      document.querySelectorAll('.oc-peak-tag').forEach(function (el) {
+        var mid = el.getAttribute('data-peak-model') || '';
+        var st = PEAK_MODULE.getState(new Date());
+        var remain = st.countdown;
+        var warn = st.remainMs != null && st.remainMs < 30 * 60 * 1000;
+        if (st.isPeak) {
+          el.style.cssText = 'display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;color:#fff;background:#f85149;margin-left:5px;white-space:nowrap;';
+          el.textContent = '🔥 峰时·2x ' + remain + '后谷时';
+        } else if (warn) {
+          el.style.cssText = 'display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;color:#111;background:#d29922;margin-left:5px;white-space:nowrap;';
+          el.textContent = '⏰ ' + remain + '后峰时';
+        } else {
+          el.style.cssText = 'display:inline-block;padding:1px 5px;border-radius:4px;font-size:10px;font-weight:700;color:#fff;background:#2ea043;margin-left:5px;white-space:nowrap;';
+          el.textContent = '🌙 谷时 ' + remain + '后峰时';
         }
       });
     }
@@ -1219,30 +1484,108 @@
         tag.style.cssText = 'color:#666;font-size:10px;margin-left:6px;white-space:nowrap;flex-shrink:0;';
         tag.innerHTML = quota.reqMonth.toLocaleString() + '/月' + (country ? ' <span style="color:#888;">(' + country + ')</span>' : '') + (scoreInfo ? ' <span style="color:' + scoreInfo.color + ';font-weight:600;">' + scoreInfo.score + '分</span>' : '') + (privacyInfo && privacyInfo.trainedOnUserData ? ' <span style="color:#f85149;font-weight:600;">⚠ 训练</span>' : '');
         item.appendChild(tag);
+        // DS 峰时 badge (A)
+        var peakBadge = buildPeakBadge(modelId);
+        if (peakBadge) {
+          peakBadge.setAttribute('data-peak-model', modelId);
+          item.appendChild(peakBadge);
+        }
       });
       console.log(TAG, 'Injected quotas into', items.length, 'dropdown items');
+    }
+
+    function findBottomModelEl() {
+      // Heuristic: bottom bar model button - try a few selectors, fallback to text scan near bottom
+      var el = document.querySelector('[data-component="model-selector"]') ||
+               document.querySelector('[data-testid="model-selector"]') ||
+               document.querySelector('button[aria-label*="model" i]') ||
+               null;
+      if (el) return el;
+      // fallback: scan buttons near bottom (last 150px)
+      var btns = document.querySelectorAll('button');
+      var best = null;
+      var bestY = -1;
+      for (var i = 0; i < btns.length; i++) {
+        try {
+          var r = btns[i].getBoundingClientRect();
+          if (r.top > window.innerHeight - 160 && r.width > 80 && r.height > 20) {
+            var txt = (btns[i].textContent || '').toLowerCase();
+            if (txt.indexOf('muse') !== -1 || txt.indexOf('deepseek') !== -1 || txt.indexOf('mimo') !== -1 || txt.indexOf('qwen') !== -1 || txt.indexOf('glm') !== -1 || txt.indexOf('kimi') !== -1 || txt.indexOf('grok') !== -1 || txt.indexOf('minimax') !== -1 || txt.indexOf('hy') !== -1) {
+              if (r.top > bestY) { bestY = r.top; best = btns[i]; }
+            }
+          }
+        } catch (e2) {}
+      }
+      return best;
+    }
+    function updateBottomBadge() {
+      if (!getSetting('peakHint', true)) {
+        var old = document.getElementById('oc-bottom-peak');
+        if (old) old.remove();
+        return;
+      }
+      var btn = findBottomModelEl();
+      if (!btn) return;
+      var txt = (btn.textContent || '').toLowerCase();
+      var isDS = txt.indexOf('deepseek') !== -1;
+      var existing = document.getElementById('oc-bottom-peak');
+      if (!isDS) {
+        if (existing) existing.remove();
+        return;
+      }
+      var st = PEAK_MODULE.getState(new Date());
+      var label = st.isPeak ? '🔥 峰时·2x ' + st.countdown + '后谷时' : (st.remainMs < 30 * 60 * 1000 ? '⏰ ' + st.countdown + '后峰时' : '🌙 谷时 ' + st.countdown + '后峰时');
+      var bg = st.isPeak ? '#f85149' : (st.remainMs < 30 * 60 * 1000 ? '#d29922' : '#2ea043');
+      var fg = (st.remainMs < 30 * 60 * 1000 && !st.isPeak) ? '#111' : '#fff';
+      if (!existing) {
+        existing = document.createElement('span');
+        existing.id = 'oc-bottom-peak';
+        existing.style.cssText = 'display:inline-flex;align-items:center;padding:2px 7px;border-radius:999px;font-size:10px;font-weight:700;white-space:nowrap;margin-left:6px;vertical-align:middle;';
+        existing.title = '北京时间 09:00-12:00 / 14:00-18:00 峰时，周末全谷 · ' + PEAK_MODULE.ruleToBJTText(st.rule);
+        // insert after button or inside
+        try { btn.parentNode.insertBefore(existing, btn.nextSibling); } catch (e3) { btn.appendChild(existing); }
+      }
+      existing.style.background = bg;
+      existing.style.color = fg;
+      existing.textContent = label;
+      existing.title = (st.isPeak ? '峰时计费×2，' : '谷时 0.5x，') + PEAK_MODULE.ruleToBJTText(st.rule) + ' 周末全谷';
     }
 
     function init() {
       fetchQuotaMap().then(function () {
         // Also try injecting if dropdown already open
         injectQuotasIntoDropdown();
+        try { updateBottomBadge(); } catch (eB) {}
       });
 
       // Watch for dropdown opening
       var observer = new MutationObserver(function () {
         var dropdown = document.querySelector('[data-option-key]');
         if (dropdown) setTimeout(injectQuotasIntoDropdown, 100);
+        // also check bottom badge on any DOM change
+        try { updateBottomBadge(); } catch (eB2) {}
       });
 
       if (document.body) {
         observer.observe(document.body, { childList: true, subtree: true });
       }
 
-      console.log(TAG, 'MODEL_QUOTA initialized (dropdown mode)');
+      // Refresh peak countdowns every 30s (A) + bottom badge (D)
+      setInterval(function () {
+        try { refreshPeakTags(); } catch (eR) {}
+        try { updateBottomBadge(); } catch (eB3) {}
+      }, 30000);
+      // also immediate 60s timer for dropdown already open
+      setInterval(function () {
+        if (document.querySelector('[data-option-key]')) {
+          try { refreshPeakTags(); } catch (eR2) {}
+        }
+      }, 15000);
+
+      console.log(TAG, 'MODEL_QUOTA initialized (dropdown+peak mode) A+B+D');
     }
 
-    return { init: init };
+    return { init: init, _refreshPeakTags: refreshPeakTags, _updateBottomBadge: updateBottomBadge };
   })();
 
   // ════════════════════════════════════════════════════════════
