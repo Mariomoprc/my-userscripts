@@ -1,11 +1,15 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.9.3
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(底部居中自适应+指数退避重连) + 静音 opencode-mem capture + DS峰时提醒 + 大图懒加载(>200KB降采样) + 长输出折叠(>50行默认折叠) + 智能滚动(手动暂停) + 推理折叠 + token用量胶囊 + 草稿持久化 + 代码换行切换 | v1.9.3
+// @version      1.9.5
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(底部居中自适应+指数退避重连) + 静音 opencode-mem capture(12s窗口, 覆盖局域网/Tailscale) + 4747记忆入口(服务旁黑白logo) + DS峰时提醒 + 大图懒加载(>200KB降采样) + 长输出折叠(>50行默认折叠) + 智能滚动(手动暂停) + 推理折叠 + token用量胶囊 + 草稿持久化 + 代码换行切换 | v1.9.5
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
+// @include      /^https?:\/\/127\.0\.0\.1:4096/
+// @include      /^https?:\/\/192\.168\.\d+\.\d+:4096/
+// @include      /^https?:\/\/100\.\d+\.\d+\.\d+:4096/
+// @include      /^https?:\/\/.*\.ts\.net:4096/
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_registerMenuCommand
@@ -14,6 +18,8 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.9.5 新增 服务旁 4747 记忆入口（黑白 logo，点击直达 127.0.0.1:4747，健康绿点） + 静默覆盖局域网/Tailscale
+// v1.9.4 修复 capture 静默局域网/Tailscale 不生效 + 静音窗口 3s→12s 对齐文档 | 覆盖 192.168.*/100.*/*.ts.net:4096
 // v1.9.3 修复拖拽文字到输入框双插/蓝底选中（输入框统一受控 execCommand）+ CODE_WRAP 右移 48px避让复制 + 默认换行
 // v1.9.2 修复 CODE_WRAP 按钮与复制重叠（右移 40px+悬浮）+ 默认换行
 // v1.9.1 修复草稿串台（事件驱动+切换隔离+发送清空）+ ESC 提速（fetch 透传 signal + 4 个 Observer 节流）
@@ -87,7 +93,7 @@
   var port = location.port;
   var isOpencodeAi = host === 'opencode.ai';
   var isLocalWeb = /^(localhost|127\.0\.0\.1|192\.168\.|(\d+\.){3}\d+)/.test(host);
-  var isLocalhost4096 = host === 'localhost' && port === '4096';
+  var isLocalhost4096 = (host === 'localhost' || host === '127.0.0.1' || /^192\.168\.\d+\.\d+$/.test(host) || /^100\.\d+\.\d+\.\d+$/.test(host) || /\.ts\.net$/.test(host)) && port === '4096';
 
   if (isLocalWeb && typeof crypto !== 'undefined' && !crypto.subtle) {
     try {
@@ -1788,7 +1794,7 @@
       try {
         if (!enabled()) return false;
         if (!window.__oc_lastCaptureAt) return false;
-        if (Date.now() - window.__oc_lastCaptureAt > 3000) return false;
+        if (Date.now() - window.__oc_lastCaptureAt > 12000) return false;
         // precise: capture must be more recent than last normal session update
         if (window.__oc_lastNormalAt && window.__oc_lastNormalAt > window.__oc_lastCaptureAt) return false;
         return true;
@@ -2721,6 +2727,112 @@
   })();
 
   // ════════════════════════════════════════════════════════════
+  //  MEM_4747_ENTRY — 服务旁 4747 入口（黑白 logo，直连 4747 timeline）
+  // ════════════════════════════════════════════════════════════
+  var MEM_4747_MODULE = (function () {
+    var MEM_PORT = '4747';
+    var MEM_URL = 'http://127.0.0.1:' + MEM_PORT;
+    var BTN_ID = 'oc-mem-4747-btn';
+    var STYLE_ID = 'oc-mem-4747-style';
+    var ICON_B64 = 'AAABAAEAEBAAAAAAIAB9AQAAFgAAAIlQTkcNChoKAAAADUlIRFIAAAAQAAAAEAgGAAAAH/P/YQAAAURJREFUeJyFU7tuwkAQ3F2fXUSIyiWRUrhJvgNFooCfyOML+JhE8BGIIkXaVKloUpGPQLZQJO610SIgx3F2RrrCs6O52bGNAADvy+XjVa83a5rGIqKCDjCz7ff76me7fbqfTOZtYt/CU0yomEBEKPL8QijQxkiCtAF7D0qpzFr7vbP2wTmHWZbt1YSI3hgGopdcqVvRJhMQEQJAMxqPP1IJ3haL+qBp34mIzjMGyBIzFSwv+/m6rm9Gw+ErEZ31YoyBzWZTlWXpAZHaSvRa6zLP8+fYQM5Oa2AAGyZXcSRmZmOMiw2stTLL2lf4g5TU+TGFUCnyGLntudOAmUFrLW8jtUK3ATNDURRwPRgARgbOuf1MNJ+rldAzAJjvc4U/ExGp8PYQ3nv4Wq//X0HiRqXIINlD8qpjaadz4AR3VXVyn06n+AsCvIwwSqLNMAAAAABJRU5ErkJggg==';
+    function ensureStyle() {
+      if (document.getElementById(STYLE_ID)) return;
+      var st = document.createElement('style');
+      st.id = STYLE_ID;
+      st.textContent = '#' + BTN_ID + '{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid rgba(255,255,255,.14);border-radius:8px;background:rgba(255,255,255,.06);color:#e6edf3;font-size:12px;font-weight:600;cursor:pointer;transition:background .15s,transform .15s;margin-left:8px;white-space:nowrap}#' + BTN_ID + ':hover{background:rgba(255,255,255,.12);transform:translateY(-1px)}#' + BTN_ID + ' img{width:16px;height:16px;filter:grayscale(100%) brightness(1.15);border-radius:3px}#' + BTN_ID + '.oc-mem-ok{border-color:rgba(46,160,67,.35)}#' + BTN_ID + '.oc-mem-ok .oc-dot{background:#2ea043}#' + BTN_ID + ' .oc-dot{width:7px;height:7px;border-radius:50%;background:#6e7681;box-shadow:0 0 0 4px rgba(110,118,129,.15);flex-shrink:0}#' + BTN_ID + '.oc-mem-ok .oc-dot{box-shadow:0 0 0 4px rgba(46,160,67,.18)}';
+      (document.head || document.documentElement).appendChild(st);
+    }
+    function buildBtn() {
+      var btn = document.createElement('button');
+      btn.id = BTN_ID;
+      btn.title = '记忆 4747 · timeline/profile (opencode-mem)';
+      var img = document.createElement('img');
+      try { img.src = 'data:image/x-icon;base64,' + ICON_B64; } catch (e) { img.style.display='none'; }
+      img.alt = '';
+      var label = document.createElement('span');
+      label.textContent = '4747';
+      var dot = document.createElement('span');
+      dot.className = 'oc-dot';
+      dot.title = '4747 未检测';
+      btn.appendChild(img);
+      btn.appendChild(label);
+      btn.appendChild(dot);
+      btn.addEventListener('click', function () { window.open(MEM_URL, '_blank'); });
+      return btn;
+    }
+    function findServiceEl() {
+      var candidates = document.querySelectorAll('button, a, [role="button"], [data-testid], [title]');
+      for (var i = 0; i < candidates.length; i++) {
+        var el = candidates[i];
+        var txt = (el.textContent || '').trim();
+        var title = el.getAttribute('title') || '';
+        var aria = el.getAttribute('aria-label') || '';
+        var testId = el.getAttribute('data-testid') || '';
+        if (txt === '服务' || txt.indexOf('服务') !== -1) return el;
+        if (title.indexOf('服务') !== -1 || aria.indexOf('服务') !== -1) return el;
+        if (/service/i.test(testId) || /service/i.test(title)) return el;
+      }
+      var all = document.querySelectorAll('*');
+      for (var j = 0; j < all.length; j++) {
+        if ((all[j].textContent || '').trim() === '服务' && all[j].children.length === 0) return all[j].parentElement || all[j];
+      }
+      return null;
+    }
+    function inject() {
+      if (document.getElementById(BTN_ID)) return true;
+      var svc = findServiceEl();
+      var btn = buildBtn();
+      if (svc && svc.parentElement) {
+        svc.insertAdjacentElement('afterend', btn);
+        console.log(TAG, '4747 entry injected next to 服务');
+        return true;
+      }
+      var header = document.querySelector('header') || document.querySelector('[class*="header"]') || document.body;
+      if (header && header !== document.body) {
+        header.appendChild(btn);
+        btn.style.marginLeft = '12px';
+        console.log(TAG, '4747 entry fallback injected to header');
+        return true;
+      }
+      var fabArea = document.getElementById('oc-go-btn');
+      if (fabArea && fabArea.parentElement) {
+        fabArea.parentElement.insertBefore(btn, fabArea);
+        console.log(TAG, '4747 entry fallback near Go button');
+        return true;
+      }
+      return false;
+    }
+    function probeHealth() {
+      var btn = document.getElementById(BTN_ID);
+      if (!btn) return;
+      var dot = btn.querySelector('.oc-dot');
+      try {
+        fetch(MEM_URL, { method: 'HEAD', mode: 'no-cors', cache: 'no-store' }).then(function () {
+          btn.classList.add('oc-mem-ok');
+          if (dot) dot.title = '4747 在线';
+        }).catch(function () {
+          btn.classList.remove('oc-mem-ok');
+          if (dot) dot.title = '4747 未检测';
+        });
+      } catch (e) {}
+    }
+    function init4747() {
+      if (!isLocalhost4096) return;
+      ensureStyle();
+      var tries = 0;
+      var timer = setInterval(function () {
+        tries++;
+        if (inject()) { clearInterval(timer); probeHealth(); setInterval(probeHealth, 30000); return; }
+        if (tries > 20) { clearInterval(timer); if (!document.getElementById(BTN_ID)) { var fb = buildBtn(); (document.body || document.documentElement).appendChild(fb); fb.style.position='fixed'; fb.style.top='12px'; fb.style.right='120px'; fb.style.zIndex='2147483646'; console.log(TAG,'4747 entry fixed fallback'); probeHealth(); } }
+      }, 600);
+      var obs = new MutationObserver(function () { if (!document.getElementById(BTN_ID)) inject(); });
+      try { if (document.body) obs.observe(document.body, { childList: true, subtree: true }); } catch (e2) {}
+      console.log(TAG, 'MEM 4747 entry module enabled');
+    }
+    return { init: init4747 };
+  })();
+
+  // ════════════════════════════════════════════════════════════
   //  Main entry
   // ════════════════════════════════════════════════════════════
 
@@ -2750,6 +2862,7 @@
       }
       CONNECTION_MODULE.init();
       MEM_CAPTURE_SILENCE_MODULE.init();
+      try { MEM_4747_MODULE.init(); } catch (e) {}
       if (getSetting('largeImg', true)) {
         try { LARGE_IMAGE_MODULE.init(); } catch (e) {}
       }
