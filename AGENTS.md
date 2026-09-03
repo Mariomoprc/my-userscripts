@@ -71,7 +71,7 @@
 
 > 托盘/后台问题见 `opencode-maintenance` skill。手机端：回复精简、diff 折叠、操作前 `qmd-lite`。关联 `AGENTS.md:3.4` 先网后本。
 
-> **A 方案说明（2026-09-02 体检校正）**：capture 通知静默由 `opencode-all-in-one.user.js`（v1.8.7+，`POST /session` 标记后 12s 静音窗口拦截 Audio/Notification）实现，仅覆盖 web 端；桌面客户端声音走 Settings → Sounds。CLI 侧不存在 `tui.json`，`patches/` 方案亦未落地——旧文“已按 B1 插件侧实现 + tui.json 全局静默”失实，已废弃。
+> **A 方案说明（2026-09-03 体检校正）**：capture 通知静默由 `opencode-all-in-one.user.js`（v1.9.6+，`POST /session` 标记后 12s 静音窗口拦截 Audio/Notification）实现，覆盖 `localhost|127.0.0.1|192.168.*|100.*:4096` 及 `*.ts.net:4096` 的 web 访问；`4747` 记忆入口由同脚本在“服务”旁注入（黑白 logo，直达 `127.0.0.1:4747`），`4747` web 左上角 logo 复用同款绿点；桌面客户端声音走 Settings → Sounds；手机 App（oc-remote）需在 App 内关闭 Completion notifications。CLI 侧不存在 `tui.json`，`patches/` 方案亦未落地——旧文“已按 B1 插件侧实现 + tui.json 全局静默”失实，已废弃。
 
 ## 4 会话管理
 
@@ -92,7 +92,7 @@
 
 ## 6 跨对话记忆（本地沉淀）
 
-**架构**：`memory` 技能 → `.learnings/LEARNINGS.md`/`ERRORS.md` + `FEATURE_REQUESTS.md`；本地检索用 `qmd-lite`（`scripts/qmd-lite.js`，FTS5 标题加权+近期加权+rg 兜底，索引 `~/.cache/qmd-lite/index.json`，源 `.learnings/*.md + skills/*.md + AGENTS.md`）。原 opencode-mem（`nomic-embed-text-v1` 语义检索）已停用 2026-09-02，mcp-memory-service 已停用 2026-08-30。
+**架构**：`memory` 技能 → `.learnings/LEARNINGS.md`/`ERRORS.md` + `FEATURE_REQUESTS.md`；本地检索用 `qmd-lite`（`scripts/qmd-lite.js`，FTS5 标题加权+近期加权+rg 兜底，索引 `~/.cache/qmd-lite/index.json`，源 `.learnings/*.md + skills/*.md + AGENTS.md`）。`opencode-mem`（`all-MiniLM-L6-v2` 80MB 向量，4747 Web UI）已重装 2026-09-03（`openrouter/free` 全静默），与 `.learnings/` 双轨互补：项目动态走 4747，`mcp-memory-service` 已停用 2026-08-30。
 
 | 存储 | 触发 | 检索 | 提升 |
 |------|------|------|------|
@@ -106,7 +106,7 @@
 
 **备份**：`session.idle` 自动备份——本地 `~/.local/share/opencode/backups_local/` 保留 3 份全量 + OneDrive `tools/系统_清理_优化/OpenCode-编程助手/` 保留 1 份 latest 快照（`robocopy`，排除 node_modules/backups/.learnings.backup 等）；软路由已归档 `/mnt/usb4-1/archive/*.tar.gz`。
 
-> ✅ `~/.opencode-mem/` 已彻底移除（2026-09-03 清理 `~/.opencode-mem/data` 96MB + `~/.cache/opencode/packages/opencode-mem*` 1.3GB，归档 `backups/retired-20260902/opencode-mem/` 保留含 `.auth-token` 审计，勿提交/勿同步）。`opencode-mem.jsonc` 已删除，`package.json` 已去依赖，`4747` 已释放。
+> ✅ `~/.opencode-mem/` 已重装 2026-09-03（`openrouter/free` 全静默，4747 已就绪，全新空库；`all-MiniLM-L6-v2` 80MB），与 `.learnings/` 双轨互补；旧库归档 `backups/retired-20260902/opencode-mem/` 保留含 `.auth-token` 审计，勿提交/勿同步。
 
 ## 7 知识记录与检索
 
@@ -176,6 +176,13 @@
 - 检查是否有配置问题（MCP 连不上、env 缺失、密钥明文等）→ 顺手修复
 - 检查经验是否满足晋级条件（≥3 次/30 天内重复）→ 提升为 AGENTS.md 规则
 - **无需运行 `/记住` 命令**（已由 `self-improvement.js` 插件自动注入指令 + 自动备份）
+
+### 9.3 记忆双轨分工（opencode-mem × .learnings/）
+
+- **opencode-mem（`opencode-mem.jsonc`，4747 Web UI，`all-MiniLM-L6-v2` 80MB）**：管**项目动态记忆**——会话中的技术决策、坑位、偏好，随 `session.idle` 由 `openrouter/free` 全静默自动捕获（`show*Toasts=false` 三项），按 `storagePath: ~/.opencode-mem/data` 组织 timeline/profile，手机远程经 Tailscale 访问同端口
+- **.learnings/（`LEARNINGS.md`/`ERRORS.md` + `memory` 技能）**：管**全局规则**——Pattern-Key 去重、`Recurrence-Count≥3 & 跨2 tasks & 30d窗口` 晋级 `AGENTS.md`，由 `self-improvement.js` 保障备份/晋级（参考 [Kulaxyz-945] 三条件）
+- **检索分工**：查项目记忆优先用 `memory` 工具（`search`/`list`/`profile`，走向量检索），查全局规则用 `grep .learnings/` + `qmd-lite.js`（FTS5 标题加权）
+- **不重复记录**：autoCapture 已捕获的技术上下文不在 `.learnings/` 重复记；需固化的才按 `memory` 技能格式晋级
 
 ### 9.2 记录规范
 
