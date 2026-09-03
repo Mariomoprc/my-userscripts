@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.10.6
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(5s窗口) + ESC单按中断 + 断连自动续对话 + 4747网格黑白图标去文字右上角绿点 + 4747 web同款绿点 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.10.6
+// @version      1.10.7
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(5s窗口) + ESC单按中断 + 断连自动续对话 + 4747网格黑白图标去文字右上角绿点 + 4747 web同款绿点 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.10.7
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.10.7 去掉 4747 按钮灰边（背景 transparent，hover 0.08）
 // v1.10.6 去掉 4747 按钮边框（border 0，保留圆角背景+绿点）
 // v1.10.5 现场实测对齐 4747 按钮与 header 按钮同基线（y=9，margin-top 7px 精调）
 // v1.10.4 对齐 4747 按钮与 header 内其他 28px 按钮同基线（y=9，margin-top 4px）
@@ -2715,7 +2716,7 @@
       if (document.getElementById(STYLE_ID)) return;
       var st = document.createElement('style');
       st.id = STYLE_ID;
-      st.textContent = '#' + BTN_ID + '{position:relative;display:inline-flex;align-items:center;justify-content:center;width:32px;height:28px;padding:0;border:0;border-radius:8px;background:rgba(255,255,255,.06);cursor:pointer;transition:background .15s,transform .15s;margin-left:6px;align-self:center;vertical-align:middle;margin-top:7px}#' + BTN_ID + ':hover{background:rgba(255,255,255,.12);transform:translateY(-1px)}#' + BTN_ID + ' img{width:16px;height:16px;filter:grayscale(100%) brightness(1.15);border-radius:3px}#' + BTN_ID + ' .oc-dot{position:absolute;top:-4px;right:-4px;width:8px;height:8px;border-radius:50%;background:#6e7681;box-shadow:0 0 0 3px #0a0a0a,0 0 0 4px rgba(110,118,129,.15);border:1px solid #1a1a1a}#' + BTN_ID + '.oc-mem-ok .oc-dot{background:#2ea043;box-shadow:0 0 0 3px #0a0a0a,0 0 0 4px rgba(46,160,67,.18)}';
+      st.textContent = '#' + BTN_ID + '{position:relative;display:inline-flex;align-items:center;justify-content:center;width:32px;height:28px;padding:0;border:0;border-radius:8px;background:transparent;cursor:pointer;transition:background .15s,transform .15s;margin-left:6px;align-self:center;vertical-align:middle;margin-top:7px}#' + BTN_ID + ':hover{background:rgba(255,255,255,.08);transform:translateY(-1px)}#' + BTN_ID + ' img{width:16px;height:16px;filter:grayscale(100%) brightness(1.15);border-radius:3px}#' + BTN_ID + ' .oc-dot{position:absolute;top:-4px;right:-4px;width:8px;height:8px;border-radius:50%;background:#6e7681;box-shadow:0 0 0 3px #0a0a0a,0 0 0 4px rgba(110,118,129,.15);border:1px solid #1a1a1a}#' + BTN_ID + '.oc-mem-ok .oc-dot{background:#2ea043;box-shadow:0 0 0 3px #0a0a0a,0 0 0 4px rgba(46,160,67,.18)}';
       (document.head || document.documentElement).appendChild(st);
     }
     function buildBtn() {
