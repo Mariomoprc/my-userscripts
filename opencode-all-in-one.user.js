@@ -2843,23 +2843,34 @@
         return true;
       }
       var composer = (function(){
+        var ta = document.querySelector('textarea[placeholder*="随便问点什么"], textarea[placeholder*="随"]');
+        if (ta) {
+          var card = ta.closest ? ta.closest('div') : null;
+          if (card && card.parentElement) {
+            for (var c=0;c<5 && card;c++){ var sib = card.parentElement; if (sib && sib.querySelector && sib.querySelector('button')) { card = sib; break; } card = card.parentElement; }
+            return card;
+          }
+          return ta.parentElement;
+        }
         var all = document.querySelectorAll('button, [role="button"], span, div');
         for (var i=0;i<all.length;i++){ var t=(all[i].textContent||'').trim(); if (t==='Build' && all[i].parentElement) return all[i].parentElement; }
         return null;
       })();
       if (composer && composer.parentElement) {
+        var bar = composer.querySelector ? composer.querySelector('button') : null;
+        var kids = composer.querySelectorAll ? composer.querySelectorAll('button, [role="button"]') : [];
         var buildBtn = null;
-        var kids = composer.parentElement.querySelectorAll('button, [role="button"]');
         for (var k=0;k<kids.length;k++){ if ((kids[k].textContent||'').trim()==='Build') { buildBtn = kids[k]; break; } }
-        var anchor = buildBtn || composer;
-        anchor.insertAdjacentElement('afterend', btn);
-        try { anchor.parentElement.style.display = 'flex'; anchor.parentElement.style.alignItems = 'center'; anchor.parentElement.style.gap = '6px'; } catch (e3) {}
-        console.log(TAG, '4747 entry injected near Build bar');
-        return true;
+        if (buildBtn) {
+          buildBtn.insertAdjacentElement('afterend', btn);
+          try { buildBtn.parentElement.style.display = 'flex'; buildBtn.parentElement.style.alignItems = 'center'; buildBtn.parentElement.style.gap = '6px'; buildBtn.parentElement.style.overflow = 'visible'; } catch (e3) {}
+          console.log(TAG, '4747 entry injected near Build bar (card)');
+          return true;
+        }
       }
       if (composer) {
         composer.insertAdjacentElement('afterend', btn);
-        try { composer.style.display = 'flex'; composer.style.alignItems = 'center'; composer.style.gap = '6px'; } catch (e4) {}
+        try { composer.style.display = 'flex'; composer.style.alignItems = 'center'; composer.style.gap = '6px'; composer.style.overflow = 'visible'; } catch (e4) {}
         console.log(TAG, '4747 entry injected near composer');
         return true;
       }
