@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.9.8
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(底部居中自适应+指数退避10s上限+切回前景补探活) + 静音 opencode-mem capture(12s窗口, 覆盖局域网/Tailscale) + 4747记忆入口(服务旁黑白logo) + 4747 web绿点同款(修复img内不可见) + DS峰时提醒 + 大图懒加载(>200KB降采样) + 长输出折叠(>50行默认折叠) + 智能滚动(手动暂停) + 推理折叠 + token用量胶囊 + 草稿持久化 + 代码换行切换 | v1.9.8
+// @version      1.9.9
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(5s窗口) + ESC单按中断 + 断连自动续对话 + 4747网格黑白图标去文字右上角绿点 + 4747 web同款绿点 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.9.9
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.9.9 ESC单按中断+完成提示5s窗口+断连自动续对话+4747网格黑白去文字+token胶囊默认关闭
 // v1.9.8 4096断连10s上限+切回前景补探活，后端已重连提示优化
 // v1.9.7 修复 4747 web 绿点注入到 img 内不可见（改 span afterend 绝对定位，与 OC 侧同款）
 // v1.9.6 4747 web 左上角 logo 加同款绿点（复用 OC 侧 oc-dot 样式，位置风格一致）
@@ -75,7 +76,7 @@
     { key: 'toolFold', label: '长输出折叠', def: true },
     { key: 'smartScroll', label: '智能滚动', def: true },
     { key: 'reasonFold', label: '推理折叠', def: true },
-    { key: 'tokenUsage', label: 'token用量显示', def: true },
+    { key: 'tokenUsage', label: 'token用量显示', def: false },
     { key: 'draftSave', label: '草稿持久化', def: true },
     { key: 'codeWrap', label: '代码换行切换', def: true }
   ];
@@ -1808,7 +1809,7 @@
       try {
         if (!enabled()) return false;
         if (!window.__oc_lastCaptureAt) return false;
-        if (Date.now() - window.__oc_lastCaptureAt > 12000) return false;
+        if (Date.now() - window.__oc_lastCaptureAt > 5000) return false;
         // precise: capture must be more recent than last normal session update
         if (window.__oc_lastNormalAt && window.__oc_lastNormalAt > window.__oc_lastCaptureAt) return false;
         return true;
@@ -2748,12 +2749,12 @@
     var MEM_URL = 'http://127.0.0.1:' + MEM_PORT;
     var BTN_ID = 'oc-mem-4747-btn';
     var STYLE_ID = 'oc-mem-4747-style';
-    var ICON_B64 = 'AAABAAEAEBAAAAAAIAB9AQAAFgAAAIlQTkcNChoKAAAADUlIRFIAAAAQAAAAEAgGAAAAH/P/YQAAAURJREFUeJyFU7tuwkAQ3F2fXUSIyiWRUrhJvgNFooCfyOML+JhE8BGIIkXaVKloUpGPQLZQJO610SIgx3F2RrrCs6O52bGNAADvy+XjVa83a5rGIqKCDjCz7ff76me7fbqfTOZtYt/CU0yomEBEKPL8QijQxkiCtAF7D0qpzFr7vbP2wTmHWZbt1YSI3hgGopdcqVvRJhMQEQJAMxqPP1IJ3haL+qBp34mIzjMGyBIzFSwv+/m6rm9Gw+ErEZ31YoyBzWZTlWXpAZHaSvRa6zLP8+fYQM5Oa2AAGyZXcSRmZmOMiw2stTLL2lf4g5TU+TGFUCnyGLntudOAmUFrLW8jtUK3ATNDURRwPRgARgbOuf1MNJ+rldAzAJjvc4U/ExGp8PYQ3nv4Wq//X0HiRqXIINlD8qpjaadz4AR3VXVyn06n+AsCvIwwSqLNMAAAAABJRU5ErkJggg==';
+    var ICON_B64 = 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAGiSURBVDhPnZPLisJAEEUjmphoVIziAxQVFBURFDe+cONCMRrwgY+FG39GcONqPsAPce9f3eEWhGGGZHBmUTTpdJ2qe6tb0TTNNgzjZlnWn4N5iq7rH9vtFuv1GqvV6u1gjuM4UEhiciQSeTsMw0A8HpeiAiDx56HfwgUw7xsgGo0iFApBURSoqopwOIxAICCrruuyx9UXwAO9Xg+XywWNRgOVSgWz2QzlchmZTAbtdhu5XA6apnkDWJnJr9cLtm1jMBjger2i3++jWq1iv98LOBgMegNIbjabWC6XKJVKUvl8PqNYLCKRSMieZVkiyRfAtkejEdLpNMbjMR6PB7rdLgqFAqbTqUAp1RNAw+bzOe73uyQdDgc8n08sFguBcn8ymYhUTwBbYwVqp1m1Wk28YFf8JjSfz/ubyBHRbRqWTCZF83A4RDabRavVwvF4FI98JfAOcFR0m8nUzLY7nQ5Op5NMZ7fbeUvg5aAEVqvX69IB5VAz2+f4mMx/LBSLxb4AfBgcE8M0TYHxgHu53D2a7N7CVCqFzWYDeY18Vf95jZzOJ7Wna4Cv8ZcoAAAAAElFTkSuQmCC';
     function ensureStyle() {
       if (document.getElementById(STYLE_ID)) return;
       var st = document.createElement('style');
       st.id = STYLE_ID;
-      st.textContent = '#' + BTN_ID + '{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid rgba(255,255,255,.14);border-radius:8px;background:rgba(255,255,255,.06);color:#e6edf3;font-size:12px;font-weight:600;cursor:pointer;transition:background .15s,transform .15s;margin-left:8px;white-space:nowrap}#' + BTN_ID + ':hover{background:rgba(255,255,255,.12);transform:translateY(-1px)}#' + BTN_ID + ' img{width:16px;height:16px;filter:grayscale(100%) brightness(1.15);border-radius:3px}#' + BTN_ID + '.oc-mem-ok{border-color:rgba(46,160,67,.35)}#' + BTN_ID + '.oc-mem-ok .oc-dot{background:#2ea043}#' + BTN_ID + ' .oc-dot{width:7px;height:7px;border-radius:50%;background:#6e7681;box-shadow:0 0 0 4px rgba(110,118,129,.15);flex-shrink:0}#' + BTN_ID + '.oc-mem-ok .oc-dot{box-shadow:0 0 0 4px rgba(46,160,67,.18)}';
+      st.textContent = '#' + BTN_ID + '{position:relative;display:inline-flex;align-items:center;justify-content:center;width:36px;height:32px;padding:0;border:1px solid rgba(255,255,255,.14);border-radius:8px;background:rgba(255,255,255,.06);cursor:pointer;transition:background .15s,transform .15s;margin-left:8px}#' + BTN_ID + ':hover{background:rgba(255,255,255,.12);transform:translateY(-1px)}#' + BTN_ID + ' img{width:18px;height:18px;filter:grayscale(100%) brightness(1.15);border-radius:3px}#' + BTN_ID + '.oc-mem-ok{border-color:rgba(46,160,67,.35)}#' + BTN_ID + ' .oc-dot{position:absolute;top:-4px;right:-4px;width:8px;height:8px;border-radius:50%;background:#6e7681;box-shadow:0 0 0 3px #0a0a0a,0 0 0 4px rgba(110,118,129,.15);border:1px solid #1a1a1a}#' + BTN_ID + '.oc-mem-ok .oc-dot{background:#2ea043;box-shadow:0 0 0 3px #0a0a0a,0 0 0 4px rgba(46,160,67,.18)}';
       (document.head || document.documentElement).appendChild(st);
     }
     function buildBtn() {
@@ -2761,15 +2762,12 @@
       btn.id = BTN_ID;
       btn.title = '记忆 4747 · timeline/profile (opencode-mem)';
       var img = document.createElement('img');
-      try { img.src = 'data:image/x-icon;base64,' + ICON_B64; } catch (e) { img.style.display='none'; }
+      try { img.src = 'data:image/png;base64,' + ICON_B64; } catch (e) { img.style.display='none'; }
       img.alt = '';
-      var label = document.createElement('span');
-      label.textContent = '4747';
       var dot = document.createElement('span');
       dot.className = 'oc-dot';
       dot.title = '4747 未检测';
       btn.appendChild(img);
-      btn.appendChild(label);
       btn.appendChild(dot);
       btn.addEventListener('click', function () { window.open(MEM_URL, '_blank'); });
       return btn;
@@ -2936,6 +2934,79 @@
   })();
 
   // ════════════════════════════════════════════════════════════
+  //  ESC single-press abort
+  // ════════════════════════════════════════════════════════════
+  var ESC_MODULE = (function () {
+    var lastEsc = 0;
+    function findStopBtn() {
+      var sels = ['button[title*="停止"]','button[title*="Stop"]','button[aria-label*="停止"]','button[aria-label*="Stop"]','[data-testid*="stop"]','button:has-text("停止")'];
+      for (var i=0;i<sels.length;i++) { try{ var el=document.querySelector(sels[i]); if(el) return el; }catch(e){} }
+      var btns=document.querySelectorAll('button');
+      for (var j=0;j<btns.length;j++) { var t=(btns[j].textContent||'').trim(); if(t==='停止'||t==='Stop'||t.indexOf('中断')!==-1) return btns[j]; }
+      return null;
+    }
+    function abortFetch() {
+      try { window.stop(); } catch(e){}
+      var stop=findStopBtn();
+      if(stop){ try{ stop.click(); return true; }catch(e2){} }
+      try{ var ev=new KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,bubbles:true,cancelable:true}); document.dispatchEvent(ev); }catch(e3){}
+      return false;
+    }
+    function init() {
+      if (!isLocalhost4096 && !isMemWeb) return;
+      document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape' && e.keyCode !== 27) return;
+        var now=Date.now();
+        if (now - lastEsc < 400) { e.preventDefault(); e.stopPropagation(); return; }
+        lastEsc=now;
+        var hasGenerating=document.querySelector('[data-generating="true"]') || document.querySelector('button[title*="停止"]') || document.querySelector('.oc-generating');
+        if (hasGenerating || document.querySelector('button[title*="Stop"]')) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          abortFetch();
+          console.log(TAG,'ESC abort triggered');
+        }
+      }, true);
+      console.log(TAG,'ESC single-press enabled');
+    }
+    return { init: init };
+  })();
+
+  // ════════════════════════════════════════════════════════════
+  //  AUTO_RESUME — 断连恢复后自动继续中断对话
+  // ════════════════════════════════════════════════════════════
+  var AUTO_RESUME_MODULE = (function () {
+    function findContinueBtn() {
+      var btns = document.querySelectorAll('button');
+      for (var i=0;i<btns.length;i++) {
+        var t=(btns[i].textContent||'').trim();
+        if (t==='继续'||t==='Continue'||t==='重试'||t==='Retry'||t.indexOf('继续')!==-1) return btns[i];
+      }
+      return document.querySelector('button[title*="继续"], button[title*="Continue"], [data-testid*="continue"]');
+    }
+    function init() {
+      if (!isLocalhost4096) return;
+      var key='oc_auto_resume_'+location.pathname;
+      var pending=sessionStorage.getItem(key);
+      if (pending && Date.now()-parseInt(pending,10) < 30000) {
+        sessionStorage.removeItem(key);
+        setTimeout(function(){
+          var btn=findContinueBtn();
+          if (btn) { try{ btn.click(); console.log(TAG,'auto-resume clicked'); }catch(e){} }
+        }, 1500);
+      }
+      window.addEventListener('beforeunload', function(){
+        var banner=document.getElementById('oc-disconnected-banner');
+        if (banner && banner.classList.contains('oc-visible')) {
+          try{ sessionStorage.setItem(key, String(Date.now())); }catch(e){}
+        }
+      });
+      console.log(TAG,'auto-resume enabled');
+    }
+    return { init: init };
+  })();
+
+  // ════════════════════════════════════════════════════════════
   //  Main entry
   // ════════════════════════════════════════════════════════════
 
@@ -2966,6 +3037,8 @@
       CONNECTION_MODULE.init();
       MEM_CAPTURE_SILENCE_MODULE.init();
       try { MEM_4747_MODULE.init(); } catch (e) {}
+      try { ESC_MODULE.init(); } catch (e) {}
+      try { AUTO_RESUME_MODULE.init(); } catch (e) {}
       if (getSetting('largeImg', true)) {
         try { LARGE_IMAGE_MODULE.init(); } catch (e) {}
       }
