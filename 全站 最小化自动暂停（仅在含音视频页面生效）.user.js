@@ -2,9 +2,11 @@
 // @name         全站 最小化自动暂停（仅在含音视频页面生效）
 // @namespace    http://tampermonkey.net
 // @version      1.2
-// @description  当页面不可见（最小化或切换到其他窗口/标签）时自动暂停页面上的 HTML5 音视频，可选恢复播放；仅在页面存在音视频时生效。
+// @description  当页面不可见（最小化或切换到其他窗口/标签）时自动暂停页面上的 HTML5 音视频，可选恢复播放；仅在 yichengwlkj.com/pc/* 且存在音视频时生效（原“全站”名不副实，已标注）。
 // @match        *://*.yichengwlkj.com/pc/*
 // @grant        none
+// @updateURL    https://raw.githubusercontent.com/Mariomoprc/my-userscripts/main/全站%20最小化自动暂停（仅在含音视频页面生效）.user.js
+// @downloadURL  https://raw.githubusercontent.com/Mariomoprc/my-userscripts/main/全站%20最小化自动暂停（仅在含音视频页面生效）.user.js
 // @run-at       document-idle
 // ==/UserScript==
 
@@ -16,6 +18,7 @@
 
   // 存储被暂停前的播放状态
   const pausedByScript = new WeakMap();
+  let visibilityRegistered = false;
 
   // 查找页面上的所有 HTML5 <video> 和 <audio> 元素
   function getAllMedia() {
@@ -55,7 +58,9 @@
 
   // 仅在页面存在媒体元素时启用可见性监听
   function ensureVisibilityHandler() {
+    if (visibilityRegistered) return;
     if (getAllMedia().length === 0) return;
+    visibilityRegistered = true;
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
         pauseMedia();
@@ -63,6 +68,8 @@
         resumeMedia();
       }
     }, { passive: true });
+    document.addEventListener('pagehide', () => { try { observer && observer.disconnect(); } catch(e){} });
+    if (document.hidden) pauseMedia();
   }
 
   // 初次检查并安装监听

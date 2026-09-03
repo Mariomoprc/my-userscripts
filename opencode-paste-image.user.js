@@ -1,4 +1,5 @@
 // ==UserScript==
+// @deprecated 已集成至 opencode-all-in-one.user.js v1.9.3+，请禁用本脚本（双开会导致双重 drop）
 // @name         OpenCode Web 粘贴图片
 // @namespace    http://tampermonkey.net/
 // @version      2.7

@@ -11,6 +11,8 @@
 // @grant        GM_registerMenuCommand
 // @grant        GM_setValue
 // @grant        GM_getValue
+// @updateURL    https://raw.githubusercontent.com/Mariomoprc/my-userscripts/main/人人视频增强包.user.js
+// @downloadURL  https://raw.githubusercontent.com/Mariomoprc/my-userscripts/main/人人视频增强包.user.js
 // @run-at       document-start
 // ==/UserScript==
 
@@ -39,7 +41,7 @@
 
   buildMenu('反调试自动绕过',     'antiDebug',   true);
   buildMenu('隐藏滚动条',         'scrollbar',   true);
-  buildMenu('去广告无感）',    'adBlock',     true);
+  buildMenu('去广告（无感）',    'adBlock',     true);
   buildMenu('豆瓣跳转',          'douban',       true);
   buildMenu('唤醒/刷新后暂停',    'pauseOnWake', true);
   buildMenu('播放卡死自愈',      'stallHeal',   true);
@@ -54,7 +56,7 @@
      localStorage.setItem('__internal_devtools_bypass', '1');
     sessionStorage.setItem('__internal_devtools_bypass', '1');
 
-    // 2. � �存并恢复 document.onkeydown（防止网� ��反调试覆盖媒体键处理）
+    // 2. 保存并恢复 document.onkeydown（防止网站反调试覆盖媒体键处理）
     var origOnKeydown = document.onkeydown;
 
     // 3.  拦截 alert（阻断"请关闭控制台"弹 窗）
@@ -64,12 +66,12 @@
       return origAlert.apply(window,  arguments);
     };
 
-    // 4. 清除已有� � debuggerInterval 定时器（通过覆写 setInterval 捕获）
+    // 4. 清除已有的 debuggerInterval 定时器（通过覆写 setInterval 捕获）
     var origSetInterval  = window.setInterval;
     var debuggerTimers  = [];
     window.setInterval = function (fn,  ms) {
       var fnStr = fn.toString();
-       // 检测反调试的 debugger 定时器（� � debugger 语句或执行间隔 <= 200ms）
+      // 检测反调试的 debugger 定时器（含 debugger 语句或执行间隔 <= 200ms）
        if (fnStr.indexOf('debugger') !== -1 ||  (ms && ms <= 200)) {
         var id = origSetInterval.call(window, function () {}, 999999 );
         debuggerTimers.push(id);
@@ -80,7 +82,7 @@
 
     // 5.  更强力的 DevToolsDetector 补丁
     var  patchTimer = origSetInterval.call(window, function () {
-      // 清除 debugger 定时� �
+      // 清除 debugger 定时器
       debuggerTimers.forEach(function (id)  { clearInterval(id); clearTimeout(id); });
        debuggerTimers = [];
 
@@ -98,7 +100,7 @@
          DevToolsDetector.prototype.checkPerformance = function () {};
         DevToolsDetector .prototype.showDebuggerAlertAndBlock = function () {};
 
-        // 清除已有的检测� �时器
+        // 清除已有的检测定时器
         if (this && this.checkTimer)  clearInterval(this.checkTimer);
         if (this && this.timer) clearInterval(this.timer); 
 
@@ -106,7 +108,7 @@
       }
      }, 500);
 
-    // 6. 恢复 setInterval � �始方法（5秒后，广告 SDK 加载窗� �期过后）
+    // 6. 恢复 setInterval 原始方法（5秒后，广告 SDK 加载窗口期过后）
     setTimeout(function () {
        window.setInterval = origSetInterval;
      }, 5000);
@@ -122,7 +124,7 @@
   }
 
   // ============================================================
-  //  以下功� ��需要 DOM 就绪
+  //  以下功能需要 DOM 就绪
   // ============================================================
   function onReady(fn) {
     if (document.body) {  fn(); }
@@ -130,7 +132,7 @@
   }
 
   // ============================================================
-  //  5. 唤醒/刷新后暂停（� �去广告之前执行）
+  //  5. 唤醒/刷新后暂停（在去广告之前执行）
   // ============================================================
   if (S.get('pauseOnWake', true)) {
     (function () {
@@ -223,7 +225,7 @@
   // ============================================================
   //  6. 播放卡死自愈（currentTime 零进展才判定真卡死 → play 重试 → 软重载 → 刷新页面）
   //      不再用固定超时触发 video.load() ：暂停恢复/seek 后的正常缓冲
-  //      （currentTime 几秒内恢复推进）� �会被误判，避免短等待被放大成� �量重载
+  //      （currentTime 几秒内恢复推进）则会被误判，避免短等待被放大成大量重载
   // ============================================================
   if (S.get('stallHeal', true)) {
     (function () {
@@ -253,7 +255,7 @@
          if (stallTimer) { clearInterval(stallTimer);  stallTimer = null; }
       }
 
-      // 监控  currentTime 推进：连续 noProgressSec � �零进展且未暂停 → 判定真卡死
+      // 监控  currentTime 推进：连续 noProgressSec 秒零进展且未暂停 → 判定真卡死
        function armStallWatch(video, noProgressSec) {
         try {
           var lastAd2 = window.__rrmv_lastAdBlockAt || 0;
@@ -301,7 +303,7 @@
        function onStallTimeout(video) {
          if (!video.isConnected || video.paused) return;
         if (!softTried) {
-          // � ��一级：play() 重试（无损，很多卡 死只是播放器状态机停住）
+          // 一级：play() 重试（无损，很多卡死只是播放器状态机停住）
            softTried = true;
           console.log('[增强包] 播放停滞，尝试 play() 重试 ');
           try { video.play().catch(function () {}); } catch (e) {}
@@ -353,7 +355,7 @@
           }
         }, true);
 
-        // waiting：缓冲不� ��（转圈出现）→ 开始监控时间推 进，而非固定超时
+        // waiting：缓冲不断（转圈出现）→ 开始监控时间推进，而非固定超时
         // 暂停恢复后 5 秒内触发的 waiting → 更长宽限（20 秒），避免 CDN 重连耗时误触发重载
         document.addEventListener('waiting', function (e) {
            if (!e.target || e.target.tagName !== 'VIDEO') return;
@@ -367,7 +369,7 @@
           armStallWatch(e.target, justResumed ? 20 : 8);
         }, true);
 
-         // 暂停/换源/出错 → 取消监� ��（恢复播放由 currentTime 推进自动 判定）
+         // 暂停/换源/出错 → 取消监控（恢复播放由 currentTime 推进自动判定）
         ['pause', 'emptied', 'error '].forEach(function (ev) {
           document .addEventListener(ev, function (e) {
              if (e.target && e.target.tagName === 'VIDEO') clearStallTimer();
@@ -509,8 +511,8 @@
       ] .join('\n');
       (document.head || document .documentElement).appendChild(adCSS);
 
-       // --- PhaseB: 动态隐藏广告提示文� � ---
-      var AD_TIP_KEYWORDS = ['秒后展 示广告', '开通VIP免广告', '联合会� ��', '立即前往', '开通会员', 'VIP特� ��', '免广告'];
+      // --- Phase A: CSS 隐藏广告元素 ---
+      var AD_TIP_KEYWORDS = ['秒后展示广告', '开通VIP免广告', '联合会员', '立即前往', '开通会员', 'VIP特惠', '免广告'];
       function hideAdTips( node) {
         if (node.nodeType !== 1) return;
         var text = node.textContent || '' ;
@@ -553,7 +555,7 @@
          }
         return el;
       };
-      // 5秒后恢复原始 createElement，避免� ��期影响性能
+      // 5秒后恢复原始 createElement，避免长期影响性能
       setTimeout(function ( ) {
         document.createElement = origCreateEl;
         sspIntercepted = true;
@@ -735,11 +737,11 @@
         return origXhrSend.apply(this, arguments);
       };
 
-      // --- PhaseF: � �频监控 + 广告恢复 ---
+      // --- Phase F: 视频监控 + 广告恢复 - 优化版 ---
       var userPaused = false;
 
       function findMainVideo( ) {
-        return document.querySelector('#ve-player-containervideo') ||
+        return document.querySelector('#ve-player-container video') ||
                 document.querySelector('#player-containervideo') ||
                document.querySelector ('.xgplayervideo') ||
                document.querySelector('#ve-playervideo');
@@ -782,12 +784,12 @@
         if (title && !navigator.mediaSession .metadata) {
           navigator.mediaSession .metadata = new MediaMetadata({
             title: title,
-            artist: '人人视� �',
+            artist: '人人视频',
             album: '人人视频'
            });
         }
 
-        // 注册 actionhandler（用 findMainVideo 动态查找，不� ��闭包引用）
+        // 注册 action handler（用 findMainVideo 动态查找，不用闭包引用）
         try {
           navigator.mediaSession.setActionHandler('play',  function () {
             var v = findMainVideo();
@@ -837,7 +839,7 @@
           var video = findMainVideo();
           if (!video) return;
  
-          // MediaPlayPause: 播放/暂停� �换
+          // MediaPlayPause: 播放/暂停切换
           if (e.key === 'MediaPlayPause'  || e.code === 'MediaPlayPause' || e.keyCode  === 179) {
             e.preventDefault();
              e.stopPropagation();
@@ -866,10 +868,10 @@
              video.currentTime = Math.max(0, video.currentTime - 10);
             return;
            }
-        }, true); // capture 阶� �，最先拦截
+        }, true); // capture 阶段，最先拦截
       }
 
-      // 初始化� ��就设置 keydown 监听（不等视频出� ��）
+      // 初始化时就设置 keydown 监听（不等视频出现）
       setupMediaKeyListener();
 
       function hookVideo(video) {
@@ -878,7 +880,7 @@
 
          if (video.src && !isAdVideoUrl(video. src)) savedContentSrc = video.src;
 
-        // 设置 MediaSessionsetupMediaSessi on(video);
+        setupMediaSession(video);
 
         video.addEventListener('play', function () {
           userPaused = false;
@@ -890,7 +892,7 @@
           if (video.ended || video.seeking) return;
           if (Date.now() - pageLoadTime < 3000) return;
           if (Date. now() - lastAdBlockAt < AD_RESUME_WINDOW) return;
-          // 标签不可见时的暂停 是浏览器行为（切标签/最小化）� �不是用户手动暂停
+          // 标签不可见时的暂停是浏览器行为（切标签/最小化），不是用户手动暂停
           if (document.hidden) return;
           // 广告覆盖 层存在时的暂停是网站行为，不是 用户手动暂停
           var adOverlay =  document.querySelector('#adPlayContainer');
@@ -941,10 +943,10 @@
         });
 
          // 不要移除 xgplayer 的 ad class ，会触发布局变化导致退出网页全 屏
-        // 用 CSS 覆盖其视觉效果� ��可
+        // 用 CSS 覆盖其视觉效果即可
       }
 
-      // --- DOM 变化监控� ��只监听播放器容器，不监听整个  document ---
+      // --- DOM 变化监控：只监听播放器容器，不监听整个 document ---
       var playerContainer = document.querySelector('#ve-player-container') || 
                             document.querySelector('#player-container');
 
@@ -982,7 +984,7 @@
            childList: true, subtree: true, attributes: true, attributeFilter: ['class']
          });
       } else {
-        // 播放器� ��器还没出现，等它出现后再监听
+        // 播放器容器还没出现，等它出现后再监听
          onReady(function () {
           var waitContainer = setInterval(function () {
              var pc = document.querySelector('#ve- player-container') ||
@@ -1026,11 +1028,11 @@
          });
       }
 
-      // --- PhaseG: � �页面弹窗自动隐藏（会员/VIP 推广 弹窗） ---
-      var POPUP_KEYWORDS = ['� �合会员', '立即前往', '开通VIP', '� �通会员', 'VIP特惠', '免广告', '附� �', '不限量'];
+      // --- Phase G: 全页面弹窗自动隐藏（会员/VIP 推广弹窗） ---
+      var POPUP_KEYWORDS = ['联合会员', '立即前往', '开通VIP', '开通会员', 'VIP特惠', '免广告', '附赠', '不限量'];
       var CLOSE_BTN_SELECTORS = [
         '[class*="close"]', '[class*=" Close"]', '[aria-label="close"]', '[aria-label="Close"]',
-        'buttonsvg', '.modal-close', '.dialog-close', '.popup-close'
+        'button svg', '.modal-close', '.dialog-close', '.popup-close'
       ] ;
 
       function isPopupAd(el) {
@@ -1046,11 +1048,11 @@
             cls.indexOf('popupAd') !== -1 || cls.indexOf('openWindowAd') !== -1) {
           return true;
          }
-        // 检查文本内容是否包� �推广关键词
+        // 检查文本内容是否包含推广关键词
         var text = el.textContent || '';
         for (var k = 0; k < POPUP_KEYWORDS.length; k++) {
           if (text. includes(POPUP_KEYWORDS[k])) {
-            //  再检查是否是模态框/弹窗样式（� ��定定位 + 高 z-index）
+            //  再检查是否是模态框/弹窗样式（固定定位 + 高 z-index）
             var  style = window.getComputedStyle(el);
              if (style && (style.position === 'fixed'  || style.position === 'absolute') &&
                  parseInt(style.zIndex, 10) > 100) {
@@ -1113,7 +1115,7 @@
       // 初始  hook + 巡检定时器（带清理保护）
        document.querySelectorAll('video').forEach(function (v) { hookVideo(v); });
 
-      //  广告诱发的 waiting 立即尝试无感� �播
+      //  广告诱发的 waiting 立即尝试无感续播
       document.addEventListener('waiting ', function (e) {
         if (!e.target || e. target.tagName !== 'VIDEO') return;
         if (Date.now() - lastAdBlockAt < AD_RESUME_WINDOW && !userPaused) {
@@ -1235,7 +1237,7 @@
       var ICON_URL = 'https://mh.yichengwlkj.com/favicon.ico';
 
       function getSearchKeyword() {
-        var h1 = document.querySelector('#contenth1span');
+        var h1 = document.querySelector('#content h1 span');
         if (!h1) return null;
         var title = h1.textContent.trim();
         var chMatch = title.match(/^([\u4e00-\u9fa5]+)/);

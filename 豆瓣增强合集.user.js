@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         豆瓣增强合集
 // @namespace    http://tampermonkey.net/
-// @version      1.1.0
+// @version      1.1.1
 // @description  豆瓣增强：自动加载更多 + 剧集完结时间/更新进度（豆瓣全站）- 修复TVmaze lookup、韩文标题命中、TMDB第二源、0/10预估修复
 // @author       pass
 // @match        https://movie.douban.com/*
@@ -10,9 +10,14 @@
 // @match        https://music.douban.com/*
 // @connect      api.tvmaze.com
 // @connect      api.themoviedb.org
+// @updateURL    https://raw.githubusercontent.com/Mariomoprc/my-userscripts/main/%E8%B1%86%E7%93%A3%E5%A2%9E%E5%BC%BA%E5%90%88%E9%9B%86.user.js
+// @downloadURL  https://raw.githubusercontent.com/Mariomoprc/my-userscripts/main/%E8%B1%86%E7%93%A3%E5%A2%9E%E5%BC%BA%E5%90%88%E9%9B%86.user.js
 // @run-at       document-idle
-// @grant        none
-// @inject-into  page
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_registerMenuCommand
+// @grant        GM_xmlhttpRequest
+// @inject-into  content
 // ==/UserScript==
 
 (function () {
@@ -26,7 +31,9 @@
     var WEEKDAY_CN = ['周日','周一','周二','周三','周四','周五','周六'];
     var TVMAZE = 'https://api.tvmaze.com';
     var TMDB = 'https://api.themoviedb.org/3';
-    var TMDB_KEY = '';
+    var TMDB_KEY = (typeof GM_getValue !== 'undefined' ? GM_getValue('douban_tmdb_key', '') : '');
+    // 注册菜单让用户填 TMDB v3 Key（https://www.themoviedb.org/settings/api）
+    try { if (typeof GM_registerMenuCommand !== 'undefined') { GM_registerMenuCommand('设置 TMDB Key（当前:' + (TMDB_KEY ? '已设' : '未设') + '）', function(){ var cur = typeof GM_getValue!=='undefined'?GM_getValue('douban_tmdb_key',''):''; var v=prompt('输入 TMDB v3 Key（https://www.themoviedb.org/settings/api）\n留空则禁用 TMDB 第二源', cur); if(v!==null){ if(typeof GM_setValue!=='undefined') GM_setValue('douban_tmdb_key', v.trim()); TMDB_KEY=v.trim(); alert('已保存，刷新页面生效'); } }); } } catch(e){}
     function fetchJSON(url) { return fetch(url).then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); }); }
     function getDoubanInfo() {
         var el = document.querySelector('#info'); if (!el) return null; var txt = el.textContent || '';
