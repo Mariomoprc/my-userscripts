@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.10.7
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(5s窗口) + ESC单按中断 + 断连自动续对话 + 4747网格黑白图标去文字右上角绿点 + 4747 web同款绿点 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.10.7
+// @version      1.10.8
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(12s窗口) + ESC单按中断 + 断连自动续对话 + 4747网格黑白图标去文字右上角绿点 + 4747 web同款绿点 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.10.8
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.10.8 完善静音 capture（窗口 5s→12s，轮询 2s→1s，补 data-session-id 隐藏）
 // v1.10.7 去掉 4747 按钮灰边（背景 transparent，hover 0.08）
 // v1.10.6 去掉 4747 按钮边框（border 0，保留圆角背景+绿点）
 // v1.10.5 现场实测对齐 4747 按钮与 header 按钮同基线（y=9，margin-top 7px 精调）
@@ -1827,7 +1828,7 @@
       try {
         if (!enabled()) return false;
         if (!window.__oc_lastCaptureAt) return false;
-        if (Date.now() - window.__oc_lastCaptureAt > 5000) return false;
+        if (Date.now() - window.__oc_lastCaptureAt > 12000) return false;
         // precise: capture must be more recent than last normal session update
         if (window.__oc_lastNormalAt && window.__oc_lastNormalAt > window.__oc_lastCaptureAt) return false;
         return true;
@@ -2019,6 +2020,10 @@
           var row = el.closest ? (el.closest('[data-session-id]') || el.closest('li') || el.closest('[role="row"]') || el) : el;
           if (row) row.style.display = 'none';
         });
+        document.querySelectorAll('[data-session-id]').forEach(function (row) {
+          var t = row.getAttribute('data-title') || row.getAttribute('title') || '';
+          if (t === 'opencode-mem capture') row.style.display = 'none';
+        });
       } catch (e) {}
     }
     function init() {
@@ -2028,10 +2033,10 @@
       try {
         var st = document.createElement('style');
         st.id = 'oc-mem-silence-style';
-        st.textContent = '[data-title="opencode-mem capture"]{display:none !important}';
+        st.textContent = '[data-title="opencode-mem capture"]{display:none !important}[data-session-id] [data-title="opencode-mem capture"]{display:none !important}';
         (document.head || document.documentElement).appendChild(st);
       } catch (e) {}
-      setInterval(hideCaptureDOM, 2000);
+      setInterval(hideCaptureDOM, 1000);
       try { var mo = new MutationObserver(hideCaptureDOM); mo.observe(document.body, { childList: true, subtree: true }); } catch (e) {}
       console.log(TAG, 'MEM capture silence enabled');
     }
