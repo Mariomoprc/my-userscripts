@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.9.7
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(底部居中自适应+指数退避重连) + 静音 opencode-mem capture(12s窗口, 覆盖局域网/Tailscale) + 4747记忆入口(服务旁黑白logo) + 4747 web绿点同款(修复img内不可见) + DS峰时提醒 + 大图懒加载(>200KB降采样) + 长输出折叠(>50行默认折叠) + 智能滚动(手动暂停) + 推理折叠 + token用量胶囊 + 草稿持久化 + 代码换行切换 | v1.9.7
+// @version      1.9.8
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(底部居中自适应+指数退避10s上限+切回前景补探活) + 静音 opencode-mem capture(12s窗口, 覆盖局域网/Tailscale) + 4747记忆入口(服务旁黑白logo) + 4747 web绿点同款(修复img内不可见) + DS峰时提醒 + 大图懒加载(>200KB降采样) + 长输出折叠(>50行默认折叠) + 智能滚动(手动暂停) + 推理折叠 + token用量胶囊 + 草稿持久化 + 代码换行切换 | v1.9.8
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.9.8 4096断连10s上限+切回前景补探活，后端已重连提示优化
 // v1.9.7 修复 4747 web 绿点注入到 img 内不可见（改 span afterend 绝对定位，与 OC 侧同款）
 // v1.9.6 4747 web 左上角 logo 加同款绿点（复用 OC 侧 oc-dot 样式，位置风格一致）
 // v1.9.5 新增 服务旁 4747 记忆入口（黑白 logo，点击直达 127.0.0.1:4747，健康绿点） + 静默覆盖局域网/Tailscale
@@ -1646,7 +1647,7 @@
     var probeTimer = null;
     var currentInterval = 5000;
     var MIN_INTERVAL = 1000;
-    var MAX_INTERVAL = 30000;
+    var MAX_INTERVAL = 10000;
     var origFetch = window.fetch;
     var bannerEl = null;
     var reloadTimer = null;
@@ -1778,9 +1779,15 @@
       wrapFetch();
       window.addEventListener('online', probe);
       window.addEventListener('offline', function () { setDisconnected(true); });
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible') {
+          failCount = 0;
+          probe();
+        }
+      });
       probe();
       scheduleNext();
-      console.log(TAG, '后端连接监测已启用 (localhost:4096) 指数退避重连');
+      console.log(TAG, '后端连接监测已启用 (localhost:4096) 10s上限+visibilitychange补探活');
     }
     return { init: init };
   })();
@@ -2853,14 +2860,16 @@
       (document.head || document.documentElement).appendChild(st);
     }
     function findLogoWrap() {
-      var span = document.querySelector('aside a[href="/"] span.truncate');
-      if (span && span.textContent.trim() === 'opencode-mem') return span;
-      var candidates = document.querySelectorAll('span');
-      for (var i = 0; i < candidates.length; i++) {
-        if (candidates[i].textContent.trim() === 'opencode-mem' && candidates[i].children.length === 0) return candidates[i];
+      var pool = document.querySelectorAll('aside a[href="/"] span, a[href="/"] span, a[href="/"] div, [class*="opencode-mem"] span');
+      for (var p = 0; p < pool.length; p++) {
+        if (pool[p].textContent.trim().toLowerCase().indexOf('opencode') !== -1 && pool[p].children.length === 0) return pool[p];
       }
-      var a = document.querySelector('aside a[href="/"]');
+      var a = document.querySelector('aside a[href="/"]') || document.querySelector('a[href="/"]');
       if (a) return a;
+      var spans = document.querySelectorAll('span, div');
+      for (var i = 0; i < spans.length; i++) {
+        if (spans[i].textContent.trim().toLowerCase().indexOf('opencode') !== -1 && spans[i].children.length === 0) return spans[i];
+      }
       return document.querySelector('header') || document.querySelector('aside') || document.querySelector('nav');
     }
     function injectDot() {
