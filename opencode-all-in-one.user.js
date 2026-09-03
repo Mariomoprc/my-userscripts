@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.9.1
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(底部居中自适应+指数退避重连) + 静音 opencode-mem capture + DS峰时提醒 + 大图懒加载(>200KB降采样) + 长输出折叠(>50行默认折叠) + 智能滚动(手动暂停) + 推理折叠 + token用量胶囊 + 草稿持久化 + 代码换行切换 | v1.9.1
+// @version      1.9.2
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(底部居中自适应+指数退避重连) + 静音 opencode-mem capture + DS峰时提醒 + 大图懒加载(>200KB降采样) + 长输出折叠(>50行默认折叠) + 智能滚动(手动暂停) + 推理折叠 + token用量胶囊 + 草稿持久化 + 代码换行切换 | v1.9.2
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -14,6 +14,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.9.2 修复 CODE_WRAP 按钮与复制重叠（右移 40px+悬浮）+ 默认换行
 // v1.9.1 修复草稿串台（事件驱动+切换隔离+发送清空）+ ESC 提速（fetch 透传 signal + 4 个 Observer 节流）
 // v1.9.0 参考oc-remote优化：大图懒加载/降采样(>200KB) + 长输出折叠(>50行) + 粘贴压缩(1280px/WebP) + 智能滚动(手动暂停) + 推理折叠 + 指数退避重连(1s-30s) + token用量胶囊 + 草稿持久化 + 代码换行 + MODEL_QUOTA防抖
 // v1.8.14 DS峰时紧凑修复：徽标缩至🔥峰时/🌙谷时/⏰将峰(9px)倒计时移至hover，周末全谷，解决名字被挤
@@ -2657,7 +2658,7 @@
       if (document.getElementById(STYLE_ID)) return;
       var st = document.createElement('style');
       st.id = STYLE_ID;
-      st.textContent = '.oc-cw-btn{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border:1px solid rgba(255,255,255,.1);border-radius:4px;background:rgba(255,255,255,.05);color:#8b949e;font-size:10px;cursor:pointer;position:absolute;top:4px;right:4px;z-index:1}.oc-cw-btn:hover{background:rgba(255,255,255,.12)}.oc-cw-wrapped pre,.oc-cw-wrapped code{white-space:pre-wrap!important;word-break:break-all!important}';
+      st.textContent = '.oc-cw-btn{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border:1px solid rgba(255,255,255,.1);border-radius:4px;background:rgba(255,255,255,.05);color:#8b949e;font-size:10px;cursor:pointer;position:absolute;top:4px;right:40px;z-index:1;opacity:.45;transition:opacity .15s,background .15s}.oc-cw-btn:hover{background:rgba(255,255,255,.12);opacity:1}pre:hover .oc-cw-btn{opacity:.85}.oc-cw-wrapped pre,.oc-cw-wrapped code{white-space:pre-wrap!important;word-break:break-all!important}';
       (document.head || document.documentElement).appendChild(st);
     }
 
@@ -2665,9 +2666,10 @@
       if (pre[DONE_ATTR]) return;
       pre[DONE_ATTR] = true;
       pre.style.position = 'relative';
+      pre.classList.add('oc-cw-wrapped');
       var btn = document.createElement('button');
       btn.className = 'oc-cw-btn';
-      btn.textContent = '↔ 滚动';
+      btn.textContent = '↕ 换行';
       btn.addEventListener('click', function () {
         var wrapped = pre.classList.contains('oc-cw-wrapped');
         if (wrapped) { pre.classList.remove('oc-cw-wrapped'); btn.textContent = '↔ 滚动'; }
