@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.10.2
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(5s窗口) + ESC单按中断 + 断连自动续对话 + 4747网格黑白图标去文字右上角绿点 + 4747 web同款绿点 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.10.2
+// @version      1.10.3
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(5s窗口) + ESC单按中断 + 断连自动续对话 + 4747网格黑白图标去文字右上角绿点 + 4747 web同款绿点 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.10.3
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.10.3 修复 4747 按钮在 header 时的垂直居中（header alignItems center）
 // v1.10.2 去掉 4747 按钮在线绿框（保留右上角绿点）
 // v1.10.1 移除 token 用量胶囊（in/out/cache/cost 显示）
 // v1.10.0 修复 OpenCode Go 告警：opencode.ai 域 fetch 补 x-opencode-session 标头（zenHeaders，09/06 起强制）
@@ -2763,8 +2764,10 @@
       }
       var header = document.querySelector('header') || document.querySelector('[class*="header"]') || document.body;
       if (header && header !== document.body) {
+        try { header.style.alignItems = 'center'; } catch (e2) {}
         header.appendChild(btn);
         btn.style.marginLeft = '12px';
+        btn.style.alignSelf = 'center';
         console.log(TAG, '4747 entry fallback injected to header');
         return true;
       }
