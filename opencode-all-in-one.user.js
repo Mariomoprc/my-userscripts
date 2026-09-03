@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.9.2
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(底部居中自适应+指数退避重连) + 静音 opencode-mem capture + DS峰时提醒 + 大图懒加载(>200KB降采样) + 长输出折叠(>50行默认折叠) + 智能滚动(手动暂停) + 推理折叠 + token用量胶囊 + 草稿持久化 + 代码换行切换 | v1.9.2
+// @version      1.9.3
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(底部居中自适应+指数退避重连) + 静音 opencode-mem capture + DS峰时提醒 + 大图懒加载(>200KB降采样) + 长输出折叠(>50行默认折叠) + 智能滚动(手动暂停) + 推理折叠 + token用量胶囊 + 草稿持久化 + 代码换行切换 | v1.9.3
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -14,6 +14,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.9.3 修复拖拽文字到输入框双插/蓝底选中（输入框统一受控 execCommand）+ CODE_WRAP 右移 48px避让复制 + 默认换行
 // v1.9.2 修复 CODE_WRAP 按钮与复制重叠（右移 40px+悬浮）+ 默认换行
 // v1.9.1 修复草稿串台（事件驱动+切换隔离+发送清空）+ ESC 提速（fetch 透传 signal + 4 个 Observer 节流）
 // v1.9.0 参考oc-remote优化：大图懒加载/降采样(>200KB) + 长输出折叠(>50行) + 粘贴压缩(1280px/WebP) + 智能滚动(手动暂停) + 推理折叠 + 指数退避重连(1s-30s) + token用量胶囊 + 草稿持久化 + 代码换行 + MODEL_QUOTA防抖
@@ -1095,17 +1096,21 @@
         target.focus();
       } else if (target.isContentEditable) {
         target.focus();
-        if (range && target.contains(range.startContainer)) {
-          range.deleteContents();
-          range.insertNode(document.createTextNode(text));
-          range.collapse(false);
-          sel.removeAllRanges();
-          sel.addRange(range);
-        } else {
-          var sep = target.textContent && !target.textContent.endsWith('\n') ? '\n' : '';
-          target.appendChild(document.createTextNode(sep + text));
+        var done = false;
+        try { done = document.execCommand('insertText', false, text); } catch (e3) {}
+        if (!done) {
+          if (range && target.contains(range.startContainer)) {
+            range.deleteContents();
+            range.insertNode(document.createTextNode(text));
+            range.collapse(false);
+            sel.removeAllRanges();
+            sel.addRange(range);
+          } else {
+            var sep = target.textContent && !target.textContent.endsWith('\n') ? '\n' : '';
+            target.appendChild(document.createTextNode(sep + text));
+          }
         }
-        target.dispatchEvent(new Event('input', { bubbles: true }));
+        try { target.dispatchEvent(new InputEvent('input', { data: text, bubbles: true, inputType: 'insertText' })); } catch (e4) { target.dispatchEvent(new Event('input', { bubbles: true })); }
       } else {
         toast('✗ 不支持的输入框类型', '#f55');
         return;
@@ -1171,13 +1176,13 @@
       }
     }
     function onDragCheck(e) {
-      // 输入框内拖选不拦截
-      try { if (e.target && e.target.closest && e.target.closest('[contenteditable], textarea, input')) return; } catch (e2) {}
+      var isOverInput = false;
+      try { isOverInput = !!(e.target && e.target.closest && e.target.closest('[contenteditable], textarea, input')); } catch (e2) {}
       if (!isTextTypesDrag(e)) return;
       e.stopImmediatePropagation();
       e.preventDefault();
       try { e.dataTransfer.dropEffect = 'copy'; } catch (err) {}
-      hideOverlay();
+      if (!isOverInput) hideOverlay();
     }
     function onDragLeave(e) {
       // 仅在真正离开视口时恢复，避免频繁闪烁
@@ -2658,7 +2663,7 @@
       if (document.getElementById(STYLE_ID)) return;
       var st = document.createElement('style');
       st.id = STYLE_ID;
-      st.textContent = '.oc-cw-btn{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border:1px solid rgba(255,255,255,.1);border-radius:4px;background:rgba(255,255,255,.05);color:#8b949e;font-size:10px;cursor:pointer;position:absolute;top:4px;right:40px;z-index:1;opacity:.45;transition:opacity .15s,background .15s}.oc-cw-btn:hover{background:rgba(255,255,255,.12);opacity:1}pre:hover .oc-cw-btn{opacity:.85}.oc-cw-wrapped pre,.oc-cw-wrapped code{white-space:pre-wrap!important;word-break:break-all!important}';
+      st.textContent = '.oc-cw-btn{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border:1px solid rgba(255,255,255,.1);border-radius:4px;background:rgba(255,255,255,.05);color:#8b949e;font-size:10px;cursor:pointer;position:absolute;top:4px;right:48px;z-index:1;opacity:.45;transition:opacity .15s,background .15s}.oc-cw-btn:hover{background:rgba(255,255,255,.12);opacity:1}pre:hover .oc-cw-btn{opacity:.85}.oc-cw-wrapped pre,.oc-cw-wrapped code{white-space:pre-wrap!important;word-break:break-all!important}';
       (document.head || document.documentElement).appendChild(st);
     }
 
