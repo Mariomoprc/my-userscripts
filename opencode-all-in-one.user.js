@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.10.10
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(12s窗口) + ESC单按中断 + 断连自动续对话 + 4747网格黑白图标去文字右上角绿点 + 4747 web同款绿点 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.10.10
+// @version      1.10.11
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(12s窗口) + ESC单按中断 + 断连自动续对话 + 4747网格黑白图标去文字右上角绿点 + 4747 web同款绿点 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.10.11
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.10.11 后端 web 仍有通知/音效修复（补 WS 钩子 + DOM 打点，capture 实时打点窗口）
 // v1.10.10 后端 web 弹窗/提示音漏拦修复（capture 窗口内一律静默，lastNormal 覆盖）
 // v1.10.9 修复 4747 按钮绿点被遮挡（dot 内收 2px + header/按钮 overflow visible）
 // v1.10.8 完善静音 capture（窗口 5s→12s，轮询 2s→1s，补 data-session-id 隐藏）
@@ -2020,20 +2021,75 @@
     function hideCaptureDOM() {
       if (!enabled()) return;
       try {
+        var found = false;
         document.querySelectorAll('[data-title="opencode-mem capture"], [title="opencode-mem capture"]').forEach(function (el) {
+          found = true;
           var row = el.closest ? (el.closest('[data-session-id]') || el.closest('li') || el.closest('[role="row"]') || el) : el;
           if (row) row.style.display = 'none';
         });
         document.querySelectorAll('[data-session-id]').forEach(function (row) {
           var t = row.getAttribute('data-title') || row.getAttribute('title') || '';
-          if (t === 'opencode-mem capture') row.style.display = 'none';
+          if (t === 'opencode-mem capture') { found = true; row.style.display = 'none'; }
         });
+        if (found) window.__oc_lastCaptureAt = Date.now();
       } catch (e) {}
+    }
+    function hookWS() {
+      try {
+        if (window.__ocWSMemHooked) return;
+        window.__ocWSMemHooked = true;
+        var OrigWS = window.WebSocket;
+        if (!OrigWS) return;
+        window.WebSocket = function (url, protos) {
+          var ws = protos ? new OrigWS(url, protos) : new OrigWS(url);
+          var origAdd = ws.addEventListener;
+          ws.addEventListener = function (type, listener, opts) {
+            if (type === 'message') {
+              var wrapped = function (ev) {
+                try {
+                  var d = ev && ev.data ? (typeof ev.data === 'string' ? ev.data : '') : '';
+                  if (d && (d.indexOf('opencode-mem capture') !== -1 || d.indexOf('opencode-mem') !== -1 || d.indexOf('"internal":true') !== -1)) {
+                    window.__oc_lastCaptureAt = Date.now();
+                    console.log(TAG, 'MEM silence: WS capture detected');
+                  }
+                } catch (e) {}
+                return listener.call(this, ev);
+              };
+              return origAdd.call(this, type, wrapped, opts);
+            }
+            return origAdd.call(this, type, listener, opts);
+          };
+          var desc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(ws), 'onmessage');
+          if (desc && desc.configurable) {
+            Object.defineProperty(ws, 'onmessage', {
+              configurable: true,
+              get: function () { return this.__oc_onmessage || null; },
+              set: function (fn) {
+                this.__oc_onmessage = fn;
+                if (!fn) { try { Object.getPrototypeOf(ws).onmessage = null; } catch (e) {} return; }
+                var self = this;
+                var wrapped2 = function (ev) {
+                  try {
+                    var d2 = ev && ev.data ? (typeof ev.data === 'string' ? ev.data : '') : '';
+                    if (d2 && (d2.indexOf('opencode-mem capture') !== -1 || d2.indexOf('opencode-mem') !== -1)) window.__oc_lastCaptureAt = Date.now();
+                  } catch (e2) {}
+                  return fn.call(self, ev);
+                };
+                try { Object.getPrototypeOf(ws).onmessage = wrapped2; } catch (e3) { ws.__oc_onmessage = wrapped2; }
+              }
+            });
+          }
+          return ws;
+        };
+        window.WebSocket.prototype = OrigWS.prototype;
+        try { Object.setPrototypeOf(window.WebSocket, OrigWS); } catch (e) {}
+      } catch (e4) {}
     }
     function init() {
       if (!isLocalhost4096) return;
       hookAudio();
       hookFetch();
+      hookWS();
       try {
         var st = document.createElement('style');
         st.id = 'oc-mem-silence-style';
