@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.11.0
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(12s窗口) + ESC单按中断 + 断连自动续对话 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.11.0
+// @version      1.11.1
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(12s窗口) + ESC单按中断 + 断连自动续对话 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.11.1
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.11.1 修复刷新 new-session 带 draftId 弹旧对话（reload 时清理参数）
 // v1.11.0 去掉 4747 入口（按用户要求改存书签）
 // v1.10.13 修复 SW 弹窗无条件拦截被窗口门挡（capture 文案一律拦）+ 图标改锚 Build 栏紧挨
 // v1.10.12 4747 与服务按钮放一起（同排紧挨 gap 6px，优先服务旁/输入框旁）
@@ -2948,6 +2949,16 @@
   // ════════════════════════════════════════════════════════════
 
   function init() {
+    try {
+      if (isLocalhost4096 && location.pathname.indexOf('/new-session') !== -1 && location.search.indexOf('draftId=') !== -1 && performance && performance.getEntriesByType) {
+        var nav = performance.getEntriesByType('navigation')[0];
+        if (nav && nav.type === 'reload') {
+          var u = location.pathname + location.hash;
+          history.replaceState(null, '', u);
+          console.log(TAG, 'new-session draftId cleared on reload');
+        }
+      }
+    } catch (e0) {}
     if (isLocalhost4096 && (getSetting('dragDrop', true) || getSetting('dragLinks', true))) {
       try { DRAG_MODULE.init(); } catch (e) {}
     }
