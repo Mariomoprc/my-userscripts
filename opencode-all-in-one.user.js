@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.10.9
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(12s窗口) + ESC单按中断 + 断连自动续对话 + 4747网格黑白图标去文字右上角绿点 + 4747 web同款绿点 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.10.9
+// @version      1.10.10
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(12s窗口) + ESC单按中断 + 断连自动续对话 + 4747网格黑白图标去文字右上角绿点 + 4747 web同款绿点 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.10.10
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.10.10 后端 web 弹窗/提示音漏拦修复（capture 窗口内一律静默，lastNormal 覆盖）
 // v1.10.9 修复 4747 按钮绿点被遮挡（dot 内收 2px + header/按钮 overflow visible）
 // v1.10.8 完善静音 capture（窗口 5s→12s，轮询 2s→1s，补 data-session-id 隐藏）
 // v1.10.7 去掉 4747 按钮灰边（背景 transparent，hover 0.08）
@@ -1905,11 +1906,9 @@
                 return;
               }
               if (isCaptureWindow()) {
-                var txt2 = (title || '') + ' ' + ((opts && opts.body) || '');
-                if (txt2.trim() === '') {
-                  console.log(TAG, 'MEM silence: empty Notification suppressed (capture window)');
-                  return;
-                }
+                console.log(TAG, 'MEM silence: Notification suppressed (capture window)');
+                this.title = title; this.body = opts && opts.body; this.close = function () {};
+                return;
               }
               return new OrigNotif(title, opts);
             };
@@ -1935,6 +1934,10 @@
                 window.ServiceWorkerRegistration.prototype.__ocMemHooked = true;
                 window.ServiceWorkerRegistration.prototype.showNotification = function (title, opts) {
                   try {
+                    if (enabled() && isCaptureWindow()) {
+                      console.log(TAG, 'MEM silence: SW Notification suppressed (capture window)');
+                      return Promise.resolve();
+                    }
                     if (enabled()) {
                       var txt = (title || '') + ' ' + ((opts && opts.body) || '');
                       var low = txt.toLowerCase();
