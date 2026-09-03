@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.9.6
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(底部居中自适应+指数退避重连) + 静音 opencode-mem capture(12s窗口, 覆盖局域网/Tailscale) + 4747记忆入口(服务旁黑白logo) + 4747 web绿点同款 + DS峰时提醒 + 大图懒加载(>200KB降采样) + 长输出折叠(>50行默认折叠) + 智能滚动(手动暂停) + 推理折叠 + token用量胶囊 + 草稿持久化 + 代码换行切换 | v1.9.6
+// @version      1.9.7
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(底部居中自适应+指数退避重连) + 静音 opencode-mem capture(12s窗口, 覆盖局域网/Tailscale) + 4747记忆入口(服务旁黑白logo) + 4747 web绿点同款(修复img内不可见) + DS峰时提醒 + 大图懒加载(>200KB降采样) + 长输出折叠(>50行默认折叠) + 智能滚动(手动暂停) + 推理折叠 + token用量胶囊 + 草稿持久化 + 代码换行切换 | v1.9.7
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.9.7 修复 4747 web 绿点注入到 img 内不可见（改 span afterend 绝对定位，与 OC 侧同款）
 // v1.9.6 4747 web 左上角 logo 加同款绿点（复用 OC 侧 oc-dot 样式，位置风格一致）
 // v1.9.5 新增 服务旁 4747 记忆入口（黑白 logo，点击直达 127.0.0.1:4747，健康绿点） + 静默覆盖局域网/Tailscale
 // v1.9.4 修复 capture 静默局域网/Tailscale 不生效 + 静音窗口 3s→12s 对齐文档 | 覆盖 192.168.*/100.*/*.ts.net:4096
@@ -2848,42 +2849,52 @@
       if (document.getElementById(STYLE_ID)) return;
       var st = document.createElement('style');
       st.id = STYLE_ID;
-      st.textContent = '#' + DOT_ID + '{width:7px;height:7px;border-radius:50%;background:#6e7681;box-shadow:0 0 0 4px rgba(110,118,129,.15);display:inline-block;vertical-align:super;margin-left:6px;transition:background .15s,box-shadow .15s}#' + DOT_ID + '.oc-mem-ok{background:#2ea043;box-shadow:0 0 0 4px rgba(46,160,67,.18)} .oc-mem-logo-wrap{position:relative;display:inline-flex;align-items:center} .oc-mem-logo-wrap #' + DOT_ID + '{position:absolute;top:-2px;right:-8px;width:8px;height:8px;border:2px solid #1a1a1a}';
+      st.textContent = '#' + DOT_ID + '{width:7px;height:7px;border-radius:50%;background:#6e7681;box-shadow:0 0 0 4px rgba(110,118,129,.15);display:inline-block;transition:background .15s,box-shadow .15s;flex-shrink:0}#' + DOT_ID + '.oc-mem-ok{background:#2ea043;box-shadow:0 0 0 4px rgba(46,160,67,.18)} #' + DOT_ID + '[style*="position: absolute"]{border:2px solid #1a1a1a;width:8px;height:8px}';
       (document.head || document.documentElement).appendChild(st);
     }
     function findLogoWrap() {
-      var logo = null;
-      var candidates = document.querySelectorAll('*');
+      var span = document.querySelector('aside a[href="/"] span.truncate');
+      if (span && span.textContent.trim() === 'opencode-mem') return span;
+      var candidates = document.querySelectorAll('span');
       for (var i = 0; i < candidates.length; i++) {
-        var txt = (candidates[i].textContent || '').trim();
-        if (txt === 'opencode-mem' && candidates[i].children.length === 0) { logo = candidates[i]; break; }
+        if (candidates[i].textContent.trim() === 'opencode-mem' && candidates[i].children.length === 0) return candidates[i];
       }
-      if (logo) {
-        var wrap = logo.parentElement;
-        if (wrap && wrap.children.length <= 3) return wrap;
-        return logo;
-      }
-      var icon = document.querySelector('[class*="opencode-mem"]') || document.querySelector('header') || document.querySelector('nav');
-      return icon;
+      var a = document.querySelector('aside a[href="/"]');
+      if (a) return a;
+      return document.querySelector('header') || document.querySelector('aside') || document.querySelector('nav');
     }
     function injectDot() {
       if (document.getElementById(DOT_ID)) return true;
-      var wrap = findLogoWrap();
-      if (!wrap) return false;
+      var target = findLogoWrap();
+      if (!target) return false;
       ensureStyle();
       var dot = document.createElement('span');
       dot.id = DOT_ID;
       dot.title = '4747 未检测';
-      if (wrap.children.length === 1 && wrap.textContent.trim() === 'opencode-mem') {
-        wrap.classList.add('oc-mem-logo-wrap');
-        wrap.style.position = 'relative';
-        wrap.appendChild(dot);
-      } else {
-        var logoEl = wrap.querySelector('*');
-        if (logoEl) { logoEl.style.position = 'relative'; logoEl.appendChild(dot); }
-        else wrap.appendChild(dot);
+      if (target.tagName === 'SPAN' && target.textContent.trim() === 'opencode-mem') {
+        target.style.position = 'relative';
+        target.style.display = 'inline-flex';
+        target.style.alignItems = 'center';
+        target.insertAdjacentElement('afterend', dot);
+        dot.style.position = 'absolute';
+        dot.style.top = '-4px';
+        dot.style.right = '-10px';
+        console.log(TAG, '4747 web logo dot injected (span+afterend)');
+        return true;
       }
-      console.log(TAG, '4747 web logo dot injected');
+      if (target.tagName === 'A' && target.querySelector('span.truncate')) {
+        var span = target.querySelector('span.truncate');
+        span.style.position = 'relative';
+        span.insertAdjacentElement('afterend', dot);
+        dot.style.position = 'absolute';
+        dot.style.top = '-4px';
+        dot.style.right = '-10px';
+        console.log(TAG, '4747 web logo dot injected (a>span afterend)');
+        return true;
+      }
+      target.style.position = 'relative';
+      target.appendChild(dot);
+      console.log(TAG, '4747 web logo dot injected (fallback append)');
       return true;
     }
     function probe() {
