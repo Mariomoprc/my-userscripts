@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.10.8
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(12s窗口) + ESC单按中断 + 断连自动续对话 + 4747网格黑白图标去文字右上角绿点 + 4747 web同款绿点 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.10.8
+// @version      1.10.9
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(12s窗口) + ESC单按中断 + 断连自动续对话 + 4747网格黑白图标去文字右上角绿点 + 4747 web同款绿点 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.10.9
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.10.9 修复 4747 按钮绿点被遮挡（dot 内收 2px + header/按钮 overflow visible）
 // v1.10.8 完善静音 capture（窗口 5s→12s，轮询 2s→1s，补 data-session-id 隐藏）
 // v1.10.7 去掉 4747 按钮灰边（背景 transparent，hover 0.08）
 // v1.10.6 去掉 4747 按钮边框（border 0，保留圆角背景+绿点）
@@ -2721,7 +2722,7 @@
       if (document.getElementById(STYLE_ID)) return;
       var st = document.createElement('style');
       st.id = STYLE_ID;
-      st.textContent = '#' + BTN_ID + '{position:relative;display:inline-flex;align-items:center;justify-content:center;width:32px;height:28px;padding:0;border:0;border-radius:8px;background:transparent;cursor:pointer;transition:background .15s,transform .15s;margin-left:6px;align-self:center;vertical-align:middle;margin-top:7px}#' + BTN_ID + ':hover{background:rgba(255,255,255,.08);transform:translateY(-1px)}#' + BTN_ID + ' img{width:16px;height:16px;filter:grayscale(100%) brightness(1.15);border-radius:3px}#' + BTN_ID + ' .oc-dot{position:absolute;top:-4px;right:-4px;width:8px;height:8px;border-radius:50%;background:#6e7681;box-shadow:0 0 0 3px #0a0a0a,0 0 0 4px rgba(110,118,129,.15);border:1px solid #1a1a1a}#' + BTN_ID + '.oc-mem-ok .oc-dot{background:#2ea043;box-shadow:0 0 0 3px #0a0a0a,0 0 0 4px rgba(46,160,67,.18)}';
+      st.textContent = '#' + BTN_ID + '{position:relative;display:inline-flex;align-items:center;justify-content:center;width:32px;height:28px;padding:0;border:0;border-radius:8px;background:transparent;cursor:pointer;transition:background .15s,transform .15s;margin-left:6px;align-self:center;vertical-align:middle;margin-top:7px;overflow:visible;z-index:1}#' + BTN_ID + ':hover{background:rgba(255,255,255,.08);transform:translateY(-1px)}#' + BTN_ID + ' img{width:16px;height:16px;filter:grayscale(100%) brightness(1.15);border-radius:3px}#' + BTN_ID + ' .oc-dot{position:absolute;top:-2px;right:-2px;width:8px;height:8px;border-radius:50%;background:#6e7681;box-shadow:0 0 0 2px #0a0a0a,0 0 0 3px rgba(110,118,129,.15);border:1px solid #1a1a1a;z-index:2}#' + BTN_ID + '.oc-mem-ok .oc-dot{background:#2ea043;box-shadow:0 0 0 2px #0a0a0a,0 0 0 3px rgba(46,160,67,.18)}';
       (document.head || document.documentElement).appendChild(st);
     }
     function buildBtn() {
@@ -2773,7 +2774,7 @@
       }
       var header = document.querySelector('header') || document.querySelector('[class*="header"]') || document.body;
       if (header && header !== document.body) {
-        try { header.style.alignItems = 'center'; } catch (e2) {}
+        try { header.style.alignItems = 'center'; header.style.overflow = 'visible'; } catch (e2) {}
         header.appendChild(btn);
         btn.style.marginLeft = '12px';
         btn.style.alignSelf = 'center';
