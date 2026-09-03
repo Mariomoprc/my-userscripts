@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.9.0
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(底部居中自适应+指数退避重连) + 静音 opencode-mem capture + DS峰时提醒 + 大图懒加载(>200KB降采样) + 长输出折叠(>50行默认折叠) + 智能滚动(手动暂停) + 推理折叠 + token用量胶囊 + 草稿持久化 + 代码换行切换 | v1.9.0
+// @version      1.9.1
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(底部居中自适应+指数退避重连) + 静音 opencode-mem capture + DS峰时提醒 + 大图懒加载(>200KB降采样) + 长输出折叠(>50行默认折叠) + 智能滚动(手动暂停) + 推理折叠 + token用量胶囊 + 草稿持久化 + 代码换行切换 | v1.9.1
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -14,6 +14,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.9.1 修复草稿串台（事件驱动+切换隔离+发送清空）+ ESC 提速（fetch 透传 signal + 4 个 Observer 节流）
 // v1.9.0 参考oc-remote优化：大图懒加载/降采样(>200KB) + 长输出折叠(>50行) + 粘贴压缩(1280px/WebP) + 智能滚动(手动暂停) + 推理折叠 + 指数退避重连(1s-30s) + token用量胶囊 + 草稿持久化 + 代码换行 + MODEL_QUOTA防抖
 // v1.8.14 DS峰时紧凑修复：徽标缩至🔥峰时/🌙谷时/⏰将峰(9px)倒计时移至hover，周末全谷，解决名字被挤
 // v1.8.13 DS峰时提醒(轻跟随opencode)：下拉/badge+倒计时 + 面板时钟条 + 底部胶囊，三处全加，解析 opencode.ai/docs/go 文案自动跟随，回退硬编码 09-12/14-18 BJT
@@ -1725,6 +1726,10 @@
       window.fetch = function (input, init) {
         var url = typeof input === 'string' ? input : (input && input.url) || '';
         var isSelf = url.indexOf(location.origin) === 0 || url.indexOf('localhost:4096') !== -1;
+        var signal = init && init.signal;
+        if (signal && signal.aborted) {
+          return origFetch.apply(this, arguments);
+        }
         return origFetch.apply(this, arguments).then(function (r) {
           if (isSelf) {
             var alive = r.ok || r.status === 401 || r.status === 403 || (r.status >= 200 && r.status < 500);
@@ -1733,6 +1738,13 @@
           }
           return r;
         }, function (err) {
+          var isAbort = false;
+          try {
+            isAbort = (err && (err.name === 'AbortError' || err.name === 'Abort')) ||
+                      (signal && signal.aborted) ||
+                      (err && err.message && err.message.toLowerCase().indexOf('abort') !== -1);
+          } catch (eAbort) {}
+          if (isAbort) throw err;
           if (isSelf) {
             try { var s2 = err && err.status ? err.status : 0; if (s2 === 401 || s2 === 403) { failCount = 0; if (disconnected) setDisconnected(false); throw err; } } catch (err3) {}
             failCount++; if (failCount >= 2) setDisconnected(true);
@@ -2045,18 +2057,30 @@
     function init() {
       if (!isLocalhost4096) return;
       scan();
+      var pending = [];
+      var t = null;
+      function flush() {
+        t = null;
+        var batch = pending.slice(); pending.length = 0;
+        for (var i = 0; i < batch.length; i++) {
+          var n = batch[i];
+          if (n.tagName === 'IMG') processImg(n);
+          if (n.querySelectorAll) scan(n);
+        }
+      }
       var obs = new MutationObserver(function (muts) {
         for (var i = 0; i < muts.length; i++) {
           for (var j = 0; j < muts[i].addedNodes.length; j++) {
             var n = muts[i].addedNodes[j];
             if (n.nodeType !== 1) continue;
-            if (n.tagName === 'IMG') processImg(n);
-            if (n.querySelectorAll) scan(n);
+            pending.push(n);
+            if (pending.length > 40) break;
           }
         }
+        if (!t) t = setTimeout(flush, 120);
       });
       if (document.body) obs.observe(document.body, { childList: true, subtree: true });
-      console.log(TAG, 'LARGE_IMAGE_MODULE enabled (>' + (THRESHOLD / 1024) + 'KB threshold)');
+      console.log(TAG, 'LARGE_IMAGE_MODULE enabled (>' + (THRESHOLD / 1024) + 'KB threshold) [throttled]');
     }
     return { init: init, scan: scan };
   })();
@@ -2113,18 +2137,30 @@
       if (!isLocalhost4096) return;
       ensureStyle();
       scan();
+      var pending2 = [];
+      var t2 = null;
+      function flush2() {
+        t2 = null;
+        var batch = pending2.slice(); pending2.length = 0;
+        for (var i = 0; i < batch.length; i++) {
+          var n = batch[i];
+          if (n.tagName === 'PRE' || n.tagName === 'CODE') foldBlock(n);
+          if (n.querySelectorAll) scan(n);
+        }
+      }
       var obs = new MutationObserver(function (muts) {
         for (var i = 0; i < muts.length; i++) {
           for (var j = 0; j < muts[i].addedNodes.length; j++) {
             var n = muts[i].addedNodes[j];
             if (n.nodeType !== 1) continue;
-            if (n.tagName === 'PRE' || n.tagName === 'CODE') foldBlock(n);
-            if (n.querySelectorAll) scan(n);
+            pending2.push(n);
+            if (pending2.length > 40) break;
           }
         }
+        if (!t2) t2 = setTimeout(flush2, 140);
       });
       if (document.body) obs.observe(document.body, { childList: true, subtree: true });
-      console.log(TAG, 'TOOL_FOLD_MODULE enabled (>' + LINE_THRESHOLD + ' lines)');
+      console.log(TAG, 'TOOL_FOLD_MODULE enabled (>' + LINE_THRESHOLD + ' lines) [throttled]');
     }
     return { init: init };
   })();
@@ -2271,17 +2307,28 @@
       if (!isLocalhost4096) return;
       ensureStyle();
       scan();
+      var pending3 = [];
+      var t3 = null;
+      function flush3() {
+        t3 = null;
+        var batch = pending3.slice(); pending3.length = 0;
+        for (var i = 0; i < batch.length; i++) {
+          if (batch[i].querySelectorAll) scan(batch[i]);
+        }
+      }
       var obs = new MutationObserver(function (muts) {
         for (var i = 0; i < muts.length; i++) {
           for (var j = 0; j < muts[i].addedNodes.length; j++) {
             var n = muts[i].addedNodes[j];
             if (n.nodeType !== 1) continue;
-            if (n.querySelectorAll) scan(n);
+            pending3.push(n);
+            if (pending3.length > 40) break;
           }
         }
+        if (!t3) t3 = setTimeout(flush3, 160);
       });
       if (document.body) obs.observe(document.body, { childList: true, subtree: true });
-      console.log(TAG, 'REASONING_FOLD_MODULE enabled');
+      console.log(TAG, 'REASONING_FOLD_MODULE enabled [throttled]');
     }
     return { init: init };
   })();
@@ -2349,51 +2396,253 @@
   var DRAFT_MODULE = (function () {
     var PREFIX = 'ocall_draft_';
     var currentSession = null;
+    var saveTimer = null;
+    var hookInstalled = false;
 
     function getSessionId() {
-      var m = location.pathname.match(/\/session\/([^/?]+)/);
-      return m ? m[1] : null;
+      var m = location.pathname.match(/\/session\/([^/?#]+)/);
+      if (m && m[1]) return m[1];
+      try {
+        var m2 = location.href.match(/\/session\/([^/?#&]+)/);
+        if (m2 && m2[1]) return m2[1];
+      } catch (e2) {}
+      try {
+        var sp = new URLSearchParams(location.search);
+        var q = sp.get('session') || sp.get('sessionId') || sp.get('sid');
+        if (q) return q;
+      } catch (e3) {}
+      try {
+        var el = document.querySelector('[data-session-id]');
+        if (el) {
+          var v = el.getAttribute('data-session-id');
+          if (v) return v;
+        }
+      } catch (e4) {}
+      return null;
     }
 
     function getInput() {
-      return document.querySelector('[contenteditable="true"]') || document.querySelector('textarea');
+      return document.querySelector('[data-component="prompt-input"] [contenteditable="true"]') ||
+             document.querySelector('[data-component="prompt-input"] textarea') ||
+             document.querySelector('[contenteditable="true"]') ||
+             document.querySelector('textarea');
+    }
+
+    function readInput(el) {
+      if (!el) return '';
+      if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') return el.value || '';
+      return el.textContent || el.innerText || '';
+    }
+
+    function writeInput(el, text) {
+      if (!el) return;
+      if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
+        el.value = text;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      } else if (el.isContentEditable) {
+        el.textContent = text;
+        if (text) {
+          try {
+            var range = document.createRange();
+            var sel = window.getSelection();
+            range.selectNodeContents(el);
+            range.collapse(false);
+            sel.removeAllRanges();
+            sel.addRange(range);
+          } catch (e) {}
+        }
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
+
+    function clearDraft(sid) {
+      if (!sid) sid = getSessionId();
+      if (!sid) return;
+      try { localStorage.removeItem(PREFIX + sid); } catch (e) {}
     }
 
     function saveDraft() {
-      var sid = currentSession || getSessionId();
+      var sid = getSessionId();
       if (!sid) return;
       var el = getInput();
       if (!el) return;
-      var text = el.textContent || el.value || '';
-      if (!text.trim()) { localStorage.removeItem(PREFIX + sid); return; }
-      try { localStorage.setItem(PREFIX + sid, text); } catch (e) {}
+      if (el !== document.activeElement && document.hasFocus && !document.hasFocus()) return;
+      var text = readInput(el);
+      if (!text.trim()) { try { localStorage.removeItem(PREFIX + sid); } catch (e2) {} return; }
+      try { localStorage.setItem(PREFIX + sid, text); } catch (e3) {}
     }
 
-    function restoreDraft() {
-      var sid = getSessionId();
-      if (!sid || sid === currentSession) return;
-      currentSession = sid;
-      var saved = localStorage.getItem(PREFIX + sid);
-      if (!saved) return;
+    function saveDraftDebounced() {
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = setTimeout(saveDraft, 350);
+    }
+
+    function handleSwitch() {
+      var newSid = getSessionId();
+      if (!newSid) return;
+      if (newSid === currentSession) return;
+      var oldSid = currentSession;
       var el = getInput();
-      if (!el) return;
-      if (el.contentEditable === 'true') { el.textContent = saved; }
-      else { el.value = saved; }
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      console.log(TAG, 'DRAFT: restored for', sid.slice(0, 12));
+      if (el && oldSid) {
+        var oldText = readInput(el);
+        if (oldText.trim()) {
+          try { localStorage.setItem(PREFIX + oldSid, oldText); } catch (e) {}
+        } else {
+          try { localStorage.removeItem(PREFIX + oldSid); } catch (e2) {}
+        }
+      }
+      currentSession = newSid;
+      var saved = null;
+      try { saved = localStorage.getItem(PREFIX + newSid); } catch (e3) {}
+      if (!el) {
+        if (saved) console.log(TAG, 'DRAFT: pending restore for', newSid.slice(0, 12));
+        return;
+      }
+      var curText = readInput(el);
+      if (saved) {
+        if (curText !== saved) {
+          writeInput(el, saved);
+          console.log(TAG, 'DRAFT: restored for', newSid.slice(0, 12));
+        } else {
+          currentSession = newSid;
+        }
+      } else {
+        if (oldSid && curText) {
+          var oldSaved = null;
+          try { oldSaved = localStorage.getItem(PREFIX + oldSid); } catch (e4) {}
+          if (oldSaved && curText === oldSaved) {
+            writeInput(el, '');
+            console.log(TAG, 'DRAFT: cleared for new session', newSid.slice(0, 12));
+          }
+        }
+      }
+    }
+
+    function installHooks() {
+      if (hookInstalled) return;
+      hookInstalled = true;
+      try {
+        var origPush = history.pushState;
+        var origReplace = history.replaceState;
+        history.pushState = function () {
+          var r = origPush.apply(this, arguments);
+          setTimeout(handleSwitch, 80);
+          return r;
+        };
+        history.replaceState = function () {
+          var r = origReplace.apply(this, arguments);
+          setTimeout(handleSwitch, 80);
+          return r;
+        };
+        window.addEventListener('popstate', function () { setTimeout(handleSwitch, 80); });
+      } catch (e5) {}
+      window.addEventListener('hashchange', function () { setTimeout(handleSwitch, 80); });
+      document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) setTimeout(handleSwitch, 120);
+      });
+      window.addEventListener('focus', function () { setTimeout(handleSwitch, 120); });
+      document.addEventListener('click', function (e) {
+        var t = e.target;
+        try {
+          if (t && t.closest) {
+            var tab = t.closest('a[href*="/session/"], [data-session-id], [role="tab"]');
+            if (tab) setTimeout(handleSwitch, 180);
+            var sendBtn = t.closest('button');
+            if (sendBtn) {
+              var nearInput = false;
+              try { nearInput = !!sendBtn.closest('[data-component="prompt-input"], form'); } catch (e6) {}
+              if (nearInput || sendBtn.getAttribute('aria-label') || (sendBtn.textContent || '').trim() === '') {
+                setTimeout(function () {
+                  var sid = getSessionId() || currentSession;
+                  var el2 = getInput();
+                  var txt = el2 ? readInput(el2) : '';
+                  if (!txt.trim()) clearDraft(sid);
+                }, 400);
+              }
+            }
+          }
+        } catch (e7) {}
+      }, true);
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+          var el3 = getInput();
+          if (el3 && document.activeElement === el3) {
+            setTimeout(function () {
+              var sid2 = getSessionId() || currentSession;
+              var txt2 = el3 ? readInput(el3) : '';
+              if (!txt2.trim()) clearDraft(sid2);
+            }, 400);
+          }
+        }
+      }, true);
+      var fetchHooked = false;
+      function hookFetchForClear() {
+        if (fetchHooked || !window.fetch) return;
+        var orig = window.fetch;
+        if (orig.__ocDraftHooked) return;
+        fetchHooked = true;
+        var wrapped = function (input, init) {
+          var url = typeof input === 'string' ? input : (input && input.url) || '';
+          var isSend = false;
+          try {
+            var method = (init && init.method) || 'GET';
+            isSend = method.toUpperCase() === 'POST' && (url.indexOf('/session') !== -1 || url.indexOf('/api/session') !== -1);
+          } catch (e8) {}
+          var p = orig.apply(this, arguments);
+          if (isSend) {
+            p.then(function (r) {
+              try {
+                if (r && r.ok) {
+                  var sid3 = getSessionId() || currentSession;
+                  setTimeout(function () { clearDraft(sid3); }, 300);
+                }
+              } catch (e9) {}
+              return r;
+            }).catch(function (err) { throw err; });
+          }
+          return p;
+        };
+        wrapped.__ocDraftHooked = true;
+        try { window.fetch = wrapped; } catch (e10) {}
+      }
+      hookFetchForClear();
+      setTimeout(hookFetchForClear, 800);
     }
 
     function init() {
       if (!isLocalhost4096) return;
-      restoreDraft();
-      setInterval(function () {
-        var sid = getSessionId();
-        if (sid && sid !== currentSession) restoreDraft();
-        saveDraft();
-      }, 2000);
-      console.log(TAG, 'DRAFT_MODULE enabled');
+      try { currentSession = getSessionId(); } catch (e) {}
+      if (currentSession) {
+        try {
+          var curEl = getInput();
+          var saved0 = localStorage.getItem(PREFIX + currentSession);
+          var curTxt0 = curEl ? readInput(curEl) : '';
+          if (saved0 && curEl && !curTxt0.trim()) {
+            writeInput(curEl, saved0);
+            console.log(TAG, 'DRAFT: initial restore for', currentSession.slice(0, 12));
+          }
+        } catch (e0) {}
+      } else {
+        restoreLoop: try { currentSession = getSessionId(); } catch (eLoop) {}
+      }
+      installHooks();
+      document.addEventListener('input', function (e) {
+        var el4 = getInput();
+        if (!el4) return;
+        if (e.target === el4 || el4.contains(e.target)) saveDraftDebounced();
+      }, true);
+      document.addEventListener('keyup', function (e) {
+        var el5 = getInput();
+        if (el5 && document.activeElement === el5) saveDraftDebounced();
+      }, true);
+      setInterval(function () { handleSwitch(); }, 1200);
+      console.log(TAG, 'DRAFT_MODULE enabled (isolated+debounced)');
     }
-    return { init: init, save: saveDraft };
+
+    function restoreDraft() { handleSwitch(); }
+
+    return { init: init, save: saveDraft, _handleSwitch: handleSwitch, _getSessionId: getSessionId };
   })();
 
   // ════════════════════════════════════════════════════════════
@@ -2436,18 +2685,30 @@
       if (!isLocalhost4096) return;
       ensureStyle();
       scan();
+      var pending4 = [];
+      var t4 = null;
+      function flush4() {
+        t4 = null;
+        var batch = pending4.slice(); pending4.length = 0;
+        for (var i = 0; i < batch.length; i++) {
+          var n = batch[i];
+          if (n.tagName === 'PRE') addButton(n);
+          if (n.querySelectorAll) scan(n);
+        }
+      }
       var obs = new MutationObserver(function (muts) {
         for (var i = 0; i < muts.length; i++) {
           for (var j = 0; j < muts[i].addedNodes.length; j++) {
             var n = muts[i].addedNodes[j];
             if (n.nodeType !== 1) continue;
-            if (n.tagName === 'PRE') addButton(n);
-            if (n.querySelectorAll) scan(n);
+            pending4.push(n);
+            if (pending4.length > 40) break;
           }
         }
+        if (!t4) t4 = setTimeout(flush4, 180);
       });
       if (document.body) obs.observe(document.body, { childList: true, subtree: true });
-      console.log(TAG, 'CODE_WRAP_MODULE enabled');
+      console.log(TAG, 'CODE_WRAP_MODULE enabled [throttled]');
     }
     return { init: init };
   })();
