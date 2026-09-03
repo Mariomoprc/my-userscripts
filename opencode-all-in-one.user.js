@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.10.13
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(12s窗口) + ESC单按中断 + 断连自动续对话 + 4747网格黑白图标去文字右上角绿点 + 4747 web同款绿点 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.10.13
+// @version      1.11.0
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(12s窗口) + ESC单按中断 + 断连自动续对话 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.11.0
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.11.0 去掉 4747 入口（按用户要求改存书签）
 // v1.10.13 修复 SW 弹窗无条件拦截被窗口门挡（capture 文案一律拦）+ 图标改锚 Build 栏紧挨
 // v1.10.12 4747 与服务按钮放一起（同排紧挨 gap 6px，优先服务旁/输入框旁）
 // v1.10.11 后端 web 仍有通知/音效修复（补 WS 钩子 + DOM 打点，capture 实时打点窗口）
@@ -2778,148 +2779,7 @@
     return { init: init };
   })();
 
-  // ════════════════════════════════════════════════════════════
-  //  MEM_4747_ENTRY — 服务旁 4747 入口（黑白 logo，直连 4747 timeline）
-  // ════════════════════════════════════════════════════════════
-  var MEM_4747_MODULE = (function () {
-    var MEM_PORT = '4747';
-    var MEM_URL = 'http://127.0.0.1:' + MEM_PORT;
-    var BTN_ID = 'oc-mem-4747-btn';
-    var STYLE_ID = 'oc-mem-4747-style';
-    var ICON_B64 = 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAGiSURBVDhPnZPLisJAEEUjmphoVIziAxQVFBURFDe+cONCMRrwgY+FG39GcONqPsAPce9f3eEWhGGGZHBmUTTpdJ2qe6tb0TTNNgzjZlnWn4N5iq7rH9vtFuv1GqvV6u1gjuM4UEhiciQSeTsMw0A8HpeiAiDx56HfwgUw7xsgGo0iFApBURSoqopwOIxAICCrruuyx9UXwAO9Xg+XywWNRgOVSgWz2QzlchmZTAbtdhu5XA6apnkDWJnJr9cLtm1jMBjger2i3++jWq1iv98LOBgMegNIbjabWC6XKJVKUvl8PqNYLCKRSMieZVkiyRfAtkejEdLpNMbjMR6PB7rdLgqFAqbTqUAp1RNAw+bzOe73uyQdDgc8n08sFguBcn8ymYhUTwBbYwVqp1m1Wk28YFf8JjSfz/ubyBHRbRqWTCZF83A4RDabRavVwvF4FI98JfAOcFR0m8nUzLY7nQ5Op5NMZ7fbeUvg5aAEVqvX69IB5VAz2+f4mMx/LBSLxb4AfBgcE8M0TYHxgHu53D2a7N7CVCqFzWYDeY18Vf95jZzOJ7Wna4Cv8ZcoAAAAAElFTkSuQmCC';
-    function ensureStyle() {
-      if (document.getElementById(STYLE_ID)) return;
-      var st = document.createElement('style');
-      st.id = STYLE_ID;
-      st.textContent = '#' + BTN_ID + '{position:relative;display:inline-flex;align-items:center;justify-content:center;width:32px;height:28px;padding:0;border:0;border-radius:8px;background:transparent;cursor:pointer;transition:background .15s,transform .15s;margin-left:6px;align-self:center;vertical-align:middle;margin-top:7px;overflow:visible;z-index:1}#' + BTN_ID + ':hover{background:rgba(255,255,255,.08);transform:translateY(-1px)}#' + BTN_ID + ' img{width:16px;height:16px;filter:grayscale(100%) brightness(1.15);border-radius:3px}#' + BTN_ID + ' .oc-dot{position:absolute;top:-2px;right:-2px;width:8px;height:8px;border-radius:50%;background:#6e7681;box-shadow:0 0 0 2px #0a0a0a,0 0 0 3px rgba(110,118,129,.15);border:1px solid #1a1a1a;z-index:2}#' + BTN_ID + '.oc-mem-ok .oc-dot{background:#2ea043;box-shadow:0 0 0 2px #0a0a0a,0 0 0 3px rgba(46,160,67,.18)}';
-      (document.head || document.documentElement).appendChild(st);
-    }
-    function buildBtn() {
-      var btn = document.createElement('button');
-      btn.id = BTN_ID;
-      btn.title = '记忆 4747 · timeline/profile (opencode-mem)';
-      var img = document.createElement('img');
-      try { img.src = 'data:image/png;base64,' + ICON_B64; } catch (e) { img.style.display='none'; }
-      img.alt = '';
-      var dot = document.createElement('span');
-      dot.className = 'oc-dot';
-      dot.title = '4747 未检测';
-      btn.appendChild(img);
-      btn.appendChild(dot);
-      btn.addEventListener('click', function () { window.open(MEM_URL, '_blank'); });
-      return btn;
-    }
-    function findServiceEl() {
-      var candidates = document.querySelectorAll('button, a, [role="button"], [data-testid], [title]');
-      for (var i = 0; i < candidates.length; i++) {
-        var el = candidates[i];
-        var txt = (el.textContent || '').trim();
-        var title = el.getAttribute('title') || '';
-        var aria = el.getAttribute('aria-label') || '';
-        var testId = el.getAttribute('data-testid') || '';
-        if (txt === '服务' || txt.indexOf('服务') !== -1) return el;
-        if (title.indexOf('服务') !== -1 || aria.indexOf('服务') !== -1) return el;
-        if (/service/i.test(testId) || /service/i.test(title)) return el;
-      }
-      var all = document.querySelectorAll('*');
-      for (var j = 0; j < all.length; j++) {
-        if ((all[j].textContent || '').trim() === '服务' && all[j].children.length === 0) return all[j].parentElement || all[j];
-      }
-      return null;
-    }
-    function inject() {
-      if (document.getElementById(BTN_ID)) return true;
-      var svc = findServiceEl();
-      var btn = buildBtn();
-      if (svc && svc.parentElement) {
-        svc.insertAdjacentElement('afterend', btn);
-        try {
-          var p = svc.parentElement;
-          p.style.display = 'flex';
-          p.style.alignItems = 'center';
-          if (!p.style.gap) p.style.gap = '6px';
-        } catch (e) {}
-        console.log(TAG, '4747 entry injected next to 服务');
-        return true;
-      }
-      var composer = (function(){
-        var ta = document.querySelector('textarea[placeholder*="随便问点什么"], textarea[placeholder*="随"]');
-        if (ta) {
-          var card = ta.closest ? ta.closest('div') : null;
-          if (card && card.parentElement) {
-            for (var c=0;c<5 && card;c++){ var sib = card.parentElement; if (sib && sib.querySelector && sib.querySelector('button')) { card = sib; break; } card = card.parentElement; }
-            return card;
-          }
-          return ta.parentElement;
-        }
-        var all = document.querySelectorAll('button, [role="button"], span, div');
-        for (var i=0;i<all.length;i++){ var t=(all[i].textContent||'').trim(); if (t==='Build' && all[i].parentElement) return all[i].parentElement; }
-        return null;
-      })();
-      if (composer && composer.parentElement) {
-        var bar = composer.querySelector ? composer.querySelector('button') : null;
-        var kids = composer.querySelectorAll ? composer.querySelectorAll('button, [role="button"]') : [];
-        var buildBtn = null;
-        for (var k=0;k<kids.length;k++){ if ((kids[k].textContent||'').trim()==='Build') { buildBtn = kids[k]; break; } }
-        if (buildBtn) {
-          buildBtn.insertAdjacentElement('afterend', btn);
-          try { buildBtn.parentElement.style.display = 'flex'; buildBtn.parentElement.style.alignItems = 'center'; buildBtn.parentElement.style.gap = '6px'; buildBtn.parentElement.style.overflow = 'visible'; } catch (e3) {}
-          console.log(TAG, '4747 entry injected near Build bar (card)');
-          return true;
-        }
-      }
-      if (composer) {
-        composer.insertAdjacentElement('afterend', btn);
-        try { composer.style.display = 'flex'; composer.style.alignItems = 'center'; composer.style.gap = '6px'; composer.style.overflow = 'visible'; } catch (e4) {}
-        console.log(TAG, '4747 entry injected near composer');
-        return true;
-      }
-      var header = document.querySelector('header') || document.querySelector('[class*="header"]') || document.body;
-      if (header && header !== document.body) {
-        try { header.style.alignItems = 'center'; header.style.overflow = 'visible'; if (!header.style.gap) header.style.gap = '6px'; } catch (e2) {}
-        header.appendChild(btn);
-        btn.style.marginLeft = '6px';
-        btn.style.alignSelf = 'center';
-        console.log(TAG, '4747 entry fallback injected to header');
-        return true;
-      }
-      var fabArea = document.getElementById('oc-go-btn');
-      if (fabArea && fabArea.parentElement) {
-        fabArea.parentElement.insertBefore(btn, fabArea);
-        console.log(TAG, '4747 entry fallback near Go button');
-        return true;
-      }
-      return false;
-    }
-    function probeHealth() {
-      var btn = document.getElementById(BTN_ID);
-      if (!btn) return;
-      var dot = btn.querySelector('.oc-dot');
-      try {
-        fetch(MEM_URL, { method: 'HEAD', mode: 'no-cors', cache: 'no-store' }).then(function () {
-          btn.classList.add('oc-mem-ok');
-          if (dot) dot.title = '4747 在线';
-        }).catch(function () {
-          btn.classList.remove('oc-mem-ok');
-          if (dot) dot.title = '4747 未检测';
-        });
-      } catch (e) {}
-    }
-    function init4747() {
-      if (!isLocalhost4096) return;
-      ensureStyle();
-      var tries = 0;
-      var timer = setInterval(function () {
-        tries++;
-        if (inject()) { clearInterval(timer); probeHealth(); setInterval(probeHealth, 30000); return; }
-        if (tries > 20) { clearInterval(timer); if (!document.getElementById(BTN_ID)) { var fb = buildBtn(); (document.body || document.documentElement).appendChild(fb); fb.style.position='fixed'; fb.style.top='12px'; fb.style.right='120px'; fb.style.zIndex='2147483646'; console.log(TAG,'4747 entry fixed fallback'); probeHealth(); } }
-      }, 600);
-      var obs = new MutationObserver(function () { if (!document.getElementById(BTN_ID)) inject(); });
-      try { if (document.body) obs.observe(document.body, { childList: true, subtree: true }); } catch (e2) {}
-      console.log(TAG, 'MEM 4747 entry module enabled');
-    }
-    return { init: init4747 };
-  })();
+  // MEM_4747_ENTRY 已移除：按用户要求去掉 4747 入口，改存书签 javascript:window.open('http://127.0.0.1:4747')
 
   // ════════════════════════════════════════════════════════════
   //  MEM_4747_WEB_STATUS — 4747 web 左上角 logo 同款绿点
@@ -3113,7 +2973,6 @@
       }
       CONNECTION_MODULE.init();
       MEM_CAPTURE_SILENCE_MODULE.init();
-      try { MEM_4747_MODULE.init(); } catch (e) {}
       try { ESC_MODULE.init(); } catch (e) {}
       try { AUTO_RESUME_MODULE.init(); } catch (e) {}
       if (getSetting('largeImg', true)) {
