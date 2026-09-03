@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.10.11
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(12s窗口) + ESC单按中断 + 断连自动续对话 + 4747网格黑白图标去文字右上角绿点 + 4747 web同款绿点 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.10.11
+// @version      1.10.12
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(12s窗口) + ESC单按中断 + 断连自动续对话 + 4747网格黑白图标去文字右上角绿点 + 4747 web同款绿点 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.10.12
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.10.12 4747 与服务按钮放一起（同排紧挨 gap 6px，优先服务旁/输入框旁）
 // v1.10.11 后端 web 仍有通知/音效修复（补 WS 钩子 + DOM 打点，capture 实时打点窗口）
 // v1.10.10 后端 web 弹窗/提示音漏拦修复（capture 窗口内一律静默，lastNormal 覆盖）
 // v1.10.9 修复 4747 按钮绿点被遮挡（dot 内收 2px + header/按钮 overflow visible）
@@ -2827,15 +2828,26 @@
           var p = svc.parentElement;
           p.style.display = 'flex';
           p.style.alignItems = 'center';
+          if (!p.style.gap) p.style.gap = '6px';
         } catch (e) {}
         console.log(TAG, '4747 entry injected next to 服务');
         return true;
       }
+      var composer = document.querySelector('[data-testid="composer"], form, [class*="composer"], [class*="prompt"]');
+      if (composer) {
+        var near = composer.querySelector('button, [role="button"]');
+        if (near && near.parentElement) {
+          near.insertAdjacentElement('afterend', btn);
+          try { near.parentElement.style.display = 'flex'; near.parentElement.style.alignItems = 'center'; near.parentElement.style.gap = '6px'; } catch (e3) {}
+          console.log(TAG, '4747 entry injected near composer');
+          return true;
+        }
+      }
       var header = document.querySelector('header') || document.querySelector('[class*="header"]') || document.body;
       if (header && header !== document.body) {
-        try { header.style.alignItems = 'center'; header.style.overflow = 'visible'; } catch (e2) {}
+        try { header.style.alignItems = 'center'; header.style.overflow = 'visible'; if (!header.style.gap) header.style.gap = '6px'; } catch (e2) {}
         header.appendChild(btn);
-        btn.style.marginLeft = '12px';
+        btn.style.marginLeft = '6px';
         btn.style.alignSelf = 'center';
         console.log(TAG, '4747 entry fallback injected to header');
         return true;
