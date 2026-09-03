@@ -6,6 +6,130 @@ Corrections, insights, and knowledge gaps captured during development.
 
 ---
 
+## [LRN-20260903-003] insight
+
+**Logged**: 2026-09-03T07:10:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: userscript/opencode
+
+### Summary
+opencode-all-in-one.user.js v1.9.0 发布：参考 crim50n/oc-remote（Android 原生 OpenCode 客户端）新增 9 项能力，直接解决之前 web 页面「此页面没有响应」卡死问题
+
+### Details
+- 变更: v1.8.14 → v1.9.0，+533 行/-15 行
+- 新增模块（P0 解决卡死 3 项）：LARGE_IMAGE_MODULE（大图懒加载/降采样 >200KB）、TOOL_FOLD_MODULE（长输出折叠 >50 行）、PASTE_COMPRESS_MODULE（粘贴压缩 1280px/WebP 0.8/<200KB）
+- 新增模块（P1 体验 4 项）：SMART_SCROLL_MODULE（智能滚动）、REASONING_FOLD_MODULE（推理折叠）、CONNECTION_MODULE 指数退避（1s→30s）、TOKEN_USAGE_MODULE（用量胶囊）
+- 新增模块（P2 2 项）：DRAFT_MODULE（草稿持久化）、CODE_WRAP_MODULE（代码换行切换）
+- 参考源: `crim50n/oc-remote`（123★，MIT，Android Kotlin 客户端）
+- 发布: `git push` 到 `Mariomoprc/my-userscripts`，Webhook 自动同步 Greasy Fork
+
+### Suggested Action
+- DOM 选择器需实测（TOOL_FOLD 的 `pre/code/[class*="output"]`、REASONING_FOLD 的 `[class*="reasoning"]`），build 阶段用 playwright-edge 检查
+- 大图阈值 200KB / 粘贴压缩 1280px/200KB 已确认（用户选择推荐档）
+
+### Metadata
+- Source: conversation
+- Tags: userscript, opencode, tampermonkey, oc-remote, large-image, tool-fold, smart-scroll, reasoning-fold, token-usage, draft, code-wrap, connection-reconnect
+- Pattern-Key: userscript.opencode.all-in-one-v1.9.0-oc-remote
+- Recurrence-Count: 1
+- First-Seen: 2026-09-03
+- Last-Seen: 2026-09-03
+- Valid-Until: 2027-09-03
+- Source-Config: opencode-all-in-one.user.js v1.9.0 / .opencode/plans/20260903-oc-remote-optimize.md
+
+---
+
+### Summary
+web 页面「此页面没有响应」偶发根因（纠正）：**短会话 550 events 也卡，说明不是会话长短，是单条大 content（340KB base64 图片 + 75KB/45KB 长 tool 输出）的 markdown/图片渲染阻塞主线程**；playwright 无扩展也会超时，排除扩展主因；与 09-02 Electron DB 膨胀不同，本次 DB 325MB 正常、后端健康
+
+### Details
+- 现象: Edge 浏览器 `localhost:4096` 的 opencode web UI 偶发「此页面没有响应」，**新证据：盒盖会话 `ses_f9bc21a9fffeezBUPwdG7cvKAD` 仅 550 events / 34 messages / 27 万 tokens 却也卡住**（用户09-03 15:51 金沙截图2），推翻09-03 06:45“88.7 万超长会话主因”判断
+- 取证: ① 后端健康（匿名 401 / 带认证 200，0.12s）排除 zombie；② `opencode.db` 325MB + WAL 4MB 正常，event 35312 条，`message.updated` 126MB + `message.part.updated` 67MB 全量快照仍在；③ 65 个会话 100% 30 天内活跃 → DB 清理 30 天保留当前无效；④ **盒盖会话最大 part `prt_0643de621002V3At79FgarUavF` 340KB `image/png` base64** + 75KB `tool read` + 45KB/42KB `tool bash` 的长输出，前端 markdown/图片解码阻塞主线程；⑤ playwright-edge 无扩展打开盒盖会话 **Snapshot 30s 超时 / console 1 errors** 复现卡死，排除扩展主因；⑥ Edge renderer 进程 33996 占 **4.5GB 内存**（大量 DOM/图片未释放）；⑦ 额外：Edge 装 Dark Reader/流畅阅读/Qshot `<all_urls>` 全站注入但非主因（playwright 无扩展也卡）
+- 误判: 09-03 06:45 误判 88.7 万超长会话是主因，实际短会话也卡，应聚焦**单条大 content 渲染**与**前端列表渲染实现**（非虚拟化）；易误为 Electron，实际是 Edge（`Get-Process MainWindowTitle -eq "OpenCode"` 返回 msedge.exe）
+- 修复: ① `opencode-all-in-one.user.js` MODEL_QUOTA MutationObserver 300ms 防抖 + 提前检查 `[data-option-key]`（`node --check` OK，已生效）；② 已执行 `Ctrl+R` 刷新用户实际标签页，刷新后 `windows_Snapshot` 显示盒盖会话正常渲染（跳转按钮/列表项目可见）
+- 建议: 大图片粘贴前压缩/避免 300KB+ base64 入会话；长 tool 输出让模型截断；偶发卡住点「等待」或刷新；根本解需前端对长 content/图片做懒加载/虚拟化（opencode 源码层）
+
+### Suggested Action
+- 诊断分流固定套路：`curl /global/health` 200 排除后端 → `Get-Item opencode.db` MB 排除 DB 膨胀 → `Get-Process MainWindowTitle` 确认是 Edge 还是 Electron → 查超长会话 tokens（`curl /session/<id>` 的 tokens.input）→ playwright-edge 打开会话页看 main 是否空白
+- 超长会话是渲染压力主因，`OPENCODE_EXPERIMENTAL_EVENT_QUEUE_MAX` 只限流队列不治渲染
+
+### Metadata
+- Source: conversation
+- Tags: opencode, web, page-unresponsive, large-part, renderer, edge, userscript, image-base64
+- Pattern-Key: opencode.web.unresponsive-large-part-render
+- Recurrence-Count: 2
+- First-Seen: 2026-09-03
+- Last-Seen: 2026-09-03
+- Valid-Until: 2027-09-03
+- Source-Config: opencode.jsonc:101 EVENT_QUEUE_MAX=10000 / opencode-all-in-one.user.js MODEL_QUOTA
+
+---
+
+## [LRN-20260903-002] insight
+
+**Logged**: 2026-09-03T06:45:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: opencode/web
+
+### Summary
+web 页面「此页面没有响应」偶发根因（纠正）：**短会话 550 events 也卡，不是会话长短，是单条大 content（340KB base64 图片 + 75KB/45KB 长 tool 输出）的渲染阻塞主线程**；playwright 无扩展也会超时，排除扩展主因；与 09-02 Electron DB 膨胀不同
+
+### Details
+- 现象: Edge 浏览器 `localhost:4096` 偶发「此页面没有响应」，**盒盖会话 `ses_f9bc21a9fffeezBUPwdG7cvKAD` 仅 550 events / 27 万 tokens 却也卡住**
+- 取证: ① 后端健康（匿名 401 / 带认证 200，0.12s）排除 zombie；② `opencode.db` 325MB 正常；③ **最大 part 340KB `image/png` base64** + 75KB/45KB 长 tool 输出；④ playwright-edge **无扩展**打开会话页 **30s 超时**复现卡死 → 排除扩展主因
+- 误判: 易误为超长会话主因（88.7 万 tokens），实际短会话也卡，应聚焦单条大 content 渲染
+- 修复: 已加到 `opencode-all-in-one.user.js` v1.9.0（LARGE_IMAGE_MODULE + TOOL_FOLD_MODULE）
+
+### Metadata
+- Tags: opencode, web, page-unresponsive, large-part, image-base64, tool-output
+- Pattern-Key: opencode.web.unresponsive-large-part-render
+- Recurrence-Count: 2
+- First-Seen: 2026-09-03
+- Last-Seen: 2026-09-03
+- Valid-Until: 2027-09-03
+- Source-Config: opencode-all-in-one.user.js v1.9.0
+
+---
+
+## [LRN-20260903-001] insight
+
+**Logged**: 2026-09-03T06:45:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: power/windows
+
+### Summary
+联想 ThinkBook S0 现代待机合盖变休眠：设置 UI 显示"睡眠"但注册表 6 项电源动作全为 1(休眠)，UI 不可信，注册表才是生效值
+
+### Details
+- 机器: ThinkBook 14 G8+ IPH (MTM 21VG), Win11 25H2 (26200.9278), S0 Modern Standby（S3 被 Device Guard/VBS 禁用）
+- 现象: 合盖直接休眠（开盖要读 hiberfil 慢），设置 UI 显示"睡眠"但实际休眠
+- 根因: `HKLM\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\<GUID>\4f971e89-eebd-4455-a8de-9e59040e7347\` 下三键 AC/DC 全为 1(休眠)：LidAction `5ca83367-6e45-459f-a27b-476b1d01c936`、PowerButton `7648efa3-dd9c-4e3e-b566-50f929386280`、SleepButton `96996bc0-ad50-47ec-923b-6f41874dd9eb`；DefaultPowerSchemeValues 默认也是休眠（出厂/更新预设）
+- 叠加机制: S0 睡眠后 `Hibernate from Sleep - Fixed Timeout`（事件42）自动转休眠；`ModernSleep\EnabledActions=0x7` 控制
+- 时间线: 8/31 前纯 S0 浅睡（506/507 成对无 42 事件），9/1 起出现 42 事件（当天装 Logi Plugin Service + 首次 Application API 休眠 187 事件）
+- 联想全家桶运行中（Vantage/Dispatcher/AI Turbo BatteryLife/SmartSense/LenovoProcessManagement），可能动态覆盖电源策略
+- 修复: `powercfg /setacvalueindex SCHEME_CURRENT SUB_BUTTONS LIDACTION 0`（×6 三键 AC/DC）+ `powercfg /setacvalueindex SCHEME_CURRENT SUB_SLEEP HIBERNATEIDLE 28800`（8h）+ `powercfg /SetActive SCHEME_CURRENT`
+- 验证: 注册表复核三键 AC/DC=0x0，HIBERNATEIDLE AC=0x7080(28800s)；powercfg /q SUB_BUTTONS 只显示 UIBUTTON_ACTION，GUID 单独查询返回空（powercfg 显示限制），注册表 reg query 才是权威
+
+### Suggested Action
+- 排查"合盖变休眠"先查注册表 User\PowerSchemes 三键 AC/DCSettingIndex，别信设置 UI
+- S0 机器合盖后 5-10 分钟自动转休眠是 Fixed Timeout 机制，需改 HIBERNATEIDLE 或接受
+- 联想笔记本电源行为异常先怀疑 Vantage/Dispatcher 覆盖，改完 5 分钟后复核注册表防回写
+
+### Metadata
+- Source: conversation
+- Tags: power, sleep, hibernate, modern-standby, lenovo, thinkbook, powercfg
+- Pattern-Key: power.lid-hibernate-registry-mismatch
+- Recurrence-Count: 1
+- First-Seen: 2026-09-03
+- Last-Seen: 2026-09-03
+- Valid-Until: 2027-09-03
+- Source-Config: HKLM\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes
+
+---
+
 ## [LRN-20260902-002] insight
 
 **Logged**: 2026-09-02T20:15:00+08:00
@@ -2698,5 +2822,159 @@ opencode 配置深度检查（只读体检）：核心配置健康，发现 6 �
 - Recurrence-Count: 1
 - First-Seen: 2026-09-02
 - Last-Seen: 2026-09-02
+
+---
+
+## [LRN-20260903-004] knowledge_gap
+
+**Logged**: 2026-09-03T23:30:00+08:00
+**Priority**: high
+**Status**: pending
+**Area**: config
+
+### Summary
+skills CLI（`npx skills add`）对 OpenCode 的路径映射问题：安装到 `~/.agents/skills/` 而非 `~/.config/opencode/skills/`，需手动迁移
+
+### Details
+- 安装命令：`npx skills add anthropics/skills --skill frontend-design -a opencode -g -y --copy`
+- 安装输出显示路径：`~\.agents\skills\frontend-design`
+- 实际落盘位置：`C:\Users\pass\.agents\skills\frontend-design`
+- opencode 期望路径：`C:\Users\pass\.config\opencode\skills\frontend-design`
+- skills CLI README 声称 OpenCode 全局路径是 `~/.config/opencode/skills/`，但实际行为不符
+- 解决方案：安装后手动 `Copy-Item -Recurse` 从 `~/.agents/skills/` 到 `~/.config/opencode/skills/`
+
+### Suggested Action
+安装 skills CLI 后，检查实际安装路径；若落在 `~/.agents/skills/`，手动复制到 `~/.config/opencode/skills/`
+
+### Metadata
+- Source: conversation
+- Valid-Until: 2026-10-03
+- Related Files: C:\Users\pass\.config\opencode\skills\
+- Tags: skills-cli, opencode, path-mapping
+- Pattern-Key: config.skill-cli-path
+- Recurrence-Count: 1
+- First-Seen: 2026-09-03
+- Last-Seen: 2026-09-03
+
+---
+
+## [LRN-20260903-005] insight
+
+**Logged**: 2026-09-03T23:30:00+08:00
+**Priority**: low
+**Status**: pending
+**Area**: config
+
+### Summary
+find-skills（vercel-labs/skills）与 lobehub-skills-search-engine 触发词重叠但生态不同，可共存互补
+
+### Details
+- **find-skills**（vercel-labs/skills，290 万安装）：触发词 "how do I do X"、"find a skill for X"、"is there a skill that can..."，搜索 Skills.sh 生态（`npx skills add` 来源）
+- **lobehub-skills-search-engine**（本地）：触发词 "task you don't know how to do"、"search marketplace"，搜索 LobeHub 商店（`lobehub.com/zh/skills`）
+- 两者都是"找 skill"功能，但搜索的生态不同
+- 建议保留两者，在 AGENTS.md 工具选择表中注明分工
+
+### Suggested Action
+在 AGENTS.md 第 2 节工具约定中补充：find-skills 搜 Skills.sh 生态，lobehub-skills-search-engine 搜 LobeHub 商店；遇"找 skill"需求时，优先问用户搜索哪个生态
+
+### Metadata
+- Source: conversation
+- Valid-Until: 2026-10-03
+- Related Files: C:\Users\pass\.config\opencode\skills\find-skills\SKILL.md, C:\Users\pass\.config\opencode\skills\lobehub-skills-search-engine\SKILL.md
+- Tags: skill-search, trigger-conflict, ecosystem
+- Pattern-Key: config.skill-trigger-overlap
+- Recurrence-Count: 1
+- First-Seen: 2026-09-03
+- Last-Seen: 2026-09-03
+
+---
+
+### [LRN-20260902-XXX] opencode 配置完善 7 项（清理/恢复/入库/实测）
+
+### Summary
+2026-09-02 完成 opencode 配置目录 7 项完善：opencode-mem 残留归档、comfyui-mcp.py 恢复、git 核心配置入库、代理实测、docs 归档、备份整理、空目录清理。
+
+### Details
+- **opencode-mem 残留**：`~/.opencode-mem/`（839MB，含 .auth-token）→ `backups/retired-20260902/opencode-mem/`；`.learnings-archived-20260902/opencode-mem-backup`（832MB）→ `backups/retired-20260902/opencode-mem-backup/`，空目录删除
+- **comfyui-mcp.py**：`git show e28632e:scripts/comfyui-mcp.py` 恢复（27.9KB），保持 enabled:false
+- **git 入库**：181 文件（AGENTS.md/opencode.jsonc/scripts/skills/plugins/prompts/commands/.learnings/.opencode/plans）提交 f1b48dc；memory-plugin.js.disabled 归档提交 88a89a3
+- **代理实测**：playwright-edge 无 HTTPS_PROXY 时抓 github.com 成功（TUN 透明代理覆盖），空 `{env:HTTPS_PROXY}` 引用无害，保留
+- **docs 归档**：docs/superpowers → docs-archived-20260826/，.stfolder 删除，docs/ 空目录删除
+- **备份整理**：1335MB 旧 db 删除（新备份 integrity ok），9 个 .bak → backups/bak-archive-20260902/
+- **空目录**：patches/、hooks/ 删除
+
+### 教训
+- git 仓库原本只跟踪用户脚本（9 文件），核心配置全 untracked——配置应入库保护
+- 删除旧 db 前必须验证新备份 integrity_check
+- jsonc 验证脚本要正确处理字符串内 `//`（URL），简单正则误删会报错
+
+### Metadata
+- Source: conversation
+- Source-Config: opencode.jsonc + AGENTS.md + git
+- Valid-Until: 2026-12-02
+- Pattern-Key: opencode.maintenance.cleanup
+- Recurrence-Count: 1
+- First-Seen: 2026-09-02
+- Last-Seen: 2026-09-02
+
+---
+
+## [LRN-20260903-006] 2026-09-03 已以 skills.sh 为主、awesome-opencode 校验，LobeHub 降为归档（市场检索结果少且无 OpenCode 全量标注）
+
+- LobeHub 市场已从 AGENTS.md 工具约定/工具选择表/先搜再做链路移除，保留于历史归档 .learnings/ 与 .opencode/plans/ 中
+- 日常检索：主用 skills.sh（npx skills find <关键词> / https://skills.sh/agent/opencode），校验用 awesome-opencode（10k★）
+
+- Source: conversation
+- Valid-Until: 2026-10-03
+
+## [LRN-20260903-XXX] opencode-all-in-one v1.9.1 草稿串台 + ESC 提速修复
+
+**Logged**: 2026-09-03T04:06:19.331Z
+**Valid-Until**: 2026-12-31
+**Source-Config**: opencode-all-in-one.user.js v1.9.1
+
+### 问题 1：草稿串台（DRAFT_MODULE 竞态）
+- **现象**：双会话 tab 共享同一 contenteditable 输入框 + 单条 pathname，2s 轮询 `saveDraft` 把右侧文本写进旧会话 key，切回左侧时恢复出右侧文本
+- **根因**：`saveDraft` 用 `currentSession || getSessionId()` 但 `currentSession` 只在 `restoreDraft` 更新；轮询无输入监听、无发送清空、无切换前保存
+- **修复**：① input 事件 350ms 防抖驱动保存（替代 2s 轮询）；② `handleSwitch` 切 tab 先存旧 sid 再取新 sid；③ 发送（Enter/按钮/POST /session 成功）后 `removeItem`；④ 恢复前比对当前文本非空则跳过防覆盖；⑤ `getSessionId` 增加 href/searchParams/data-session-id 多级 fallback
+
+### 问题 2：ESC 慢中断
+- **现象**：按 ESC 要等半天才停
+- **根因**：① CONNECTION_MODULE 的 fetch 包装器未透传 signal，AbortError 被计入 failCount 误判掉线；② 6 个 MutationObserver 在流式渲染时同步扫描 pre/code/img 阻塞主线程，keydown 派发延迟
+- **修复**：① fetch wrapper 透传 `init.signal`，abort 时直接 throw 不计 failCount；② LARGE_IMAGE/TOOL_FOLD/REASONING_FOLD/CODE_WRAP 4 个 Observer 改批量节流（120-180ms setTimeout 合并处理，pending 上限 40）
+
+### 验证（headless Chromium 实测 ALL_PASS）
+- 草稿隔离：A 输入→切 B 清空→B 输入独立→切回 A 恢复 ✅
+- ESC：事件不被拦截 + fetch abort 透传（AbortError 不误判掉线）✅
+- 节流：30 个 pre 批量插入无长任务，ESC 仍即时响应 ✅
+
+### 坑（见 ERR-20260903-D7K）
+- PowerShell Set-Content 写 UTF-8 中文 JS 会损坏文件 → 一律用 node 写
+- 恢复优先 backups_local/（比 git HEAD 新）
+
+---
+
+## [LRN-20260904-001] 安装链接交付前必须核对一致性
+
+**Logged**: 2026-09-03T04:50:05.689Z
+**Valid-Until**: 2027-12-31
+**Source-Config**: AGENTS.md:13.1 + verification-before-completion
+
+### 规则
+交付前必先核对（未验不发），但对外只呈现 2 行收敛结果：
+```
+✅ 已核对 v1.9.x 代码一致（本地/镜像同版）
+
+[OC多合一脚本 v1.9.x](https://github.com/Mariomoprc/my-userscripts/raw/main/opencode-all-in-one.user.js)
+```
+- 内部核对链（不对外展开）：1) `node --check` 2) 本地/镜像 @version 一致 3) GitHub raw 200 4) 需要时隐形浏览器/截图
+- 对外不贴本地路径 `C:\\...`，不说“按新规则”，需展开时折叠至 `验证：node --check 双过 + GitHub 200`
+
+### 背景
+2026-09-04 v1.9.2 交付时用户截图显示 Tampermonkey 安装页为“重新安装（代码一致） 1.9.2”，用户要求“像这种你给我之前先核对一下”并将“链接可点”定为通用规则（已落 AGENTS.md:13.1）。本次将“先核对”固化为记忆，避免以后未验证就给旧版/错误链接。
+
+### 关联
+- AGENTS.md:13.1 链接可点（通用）：裸露 URL 或 `[文字](url)`，勿包代码块；本地路径除外
+- AGENTS.md:17 自动验证（Codex 式）：证据先于断言
 
 ---

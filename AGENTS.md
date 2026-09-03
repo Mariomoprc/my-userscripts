@@ -28,9 +28,9 @@
 | `Firecrawl`/`Exa`/`Tavily`/`Context7` | 见下 | 搜索降级链 |
 | `Exa`/`Tavily`/`Context7` | 不需要 | ✅ Free |
 | `gh CLI`/`curl.exe`/`npm` | 需 `HTTPS_PROXY` | ✅ |
-| `LobeHub Market CLI`（`npx @lobehub/market-cli`） | 需 `HTTPS_PROXY` | ✅ 技能商店 33万（`lobehub.com/zh/skills`，`--locale zh-CN`，凭证 `~/.lobehub-market/credentials.json`） |
-
-**直连国内**：opencode.ai/deepseek.com 等；**搜索***降级链*：Exa→Firecrawl→Tavily→websearch；**技能***搜索*：LobeHub `skills search --q 任务 --locale zh-CN --output json`（遇不会的任务先搜商店）；**GitHub** 优先 MCP；**敏感信息** 禁明文、走 `.env`。
+| `skills.sh CLI`（`npx skills`） | 需 `HTTPS_PROXY` | ✅ 技能商店主用（`skills.sh/agent/opencode`，带 GitHub 地址/Stars/1,807 installs，`npx skills find <关键词>`） |
+| `awesome-opencode`（`github.com/awesome-opencode/awesome-opencode` 10k★） | 需 `HTTPS_PROXY` | ✅ OpenCode 垂直校验（150+ curated，带 Stars 徽章） |
+**直连国内**：opencode.ai/deepseek.com 等；**搜索***降级链*：Exa→Firecrawl→Tavily→websearch；**技能***搜索*：主用 `skills.sh`（`npx skills find <关键词>` / `https://skills.sh/agent/opencode`，GitHub 地址+Stars 直标，OpenCode 图标过滤），校验用 `awesome-opencode`；**GitHub** 优先 MCP；**敏感信息** 禁明文、走 `.env`。
 
 **浏览器路由（按需选，勿全开，全开 token 50k+）：** 公开静态→`webfetch`；JS 重度无登录→`playwright`（临时 `enabled:true`）；需登录→`playwright-edge`（重）或 `browser-automation` 技能（轻量 claim）；桌面/Excel/弹窗→`windows-mcp`。
 
@@ -44,7 +44,7 @@
 | 浏览器自动化/表单 | playwright-edge / browser-automation |
 | 桌面/系统/弹窗/Excel | windows-mcp |
 | GitHub 操作 | github MCP |
-| 技能搜索 | LobeHub `skills search --q 任务 --locale zh-CN` |
+| 技能搜索 | `skills.sh` 主用 / `awesome-opencode` 校验 |
 | 本地记忆检索 | `grep .learnings/` + `qmd-lite` |
 
 ## 3 执行规范
@@ -52,7 +52,7 @@
 1. 遇问题先查 `.learnings/`，跨项目查 `AGENTS.md`
 2. 边处理边修复工具异常，高成本则跳过
 3. ≥3 步任务用 TodoWrite
-4. **先搜再做**：`.learnings/` → AGENTS.md → **MCP 搜索（Exa/Firecrawl/Tavily）** → **技能商店（LobeHub `skills search --q 任务 --locale zh-CN --output json`，遇不会的任务先搜 `lobehub-skills-search-engine`）** → 3 次无果再实现；**强制 MCP、禁止跳过 websearch、降级链 Exa→Firecrawl→Tavily→websearch**；**先网后本**：**网络/时效相关任务**（查最新信息、外部 API、网站行为）必跑 MCP 降级链各≥1并带 `标题/URL/日期/热度` 验证；**本地/配置类任务**以 `grep .learnings/` + 本地 `read` 对比为主，无需强制跑网，避免重复造轮子
+4. **先搜再做**：`.learnings/` → AGENTS.md → **MCP 搜索（Exa/Firecrawl/Tavily）** → **技能商店（主用 `skills.sh`（`npx skills find <关键词>` / `https://skills.sh/agent/opencode`，GitHub 地址+Stars 直标，OpenCode 图标过滤），校验用 `awesome-opencode`）** → 3 次无果再实现；**强制 MCP、禁止跳过 websearch、降级链 Exa→Firecrawl→Tavily→websearch**；**先网后本**：**网络/时效相关任务**（查最新信息、外部 API、网站行为）必跑 MCP 降级链各≥1并带 `标题/URL/日期/热度` 验证；**本地/配置类任务**以 `grep .learnings/` + 本地 `read` 对比为主，无需强制跑网，避免重复造轮子
 5. 仅用户要求时提交，提交前查 diff
 6. **记忆**：`memory` 技能沉淀 `.learnings/`，遇错/纠正必记
 7. **GitHub 安全**：<100 警告、100-1000 注意、>1000 可信，exe/msi 一律警告
@@ -62,6 +62,7 @@
 11. 时效信息直接查最新（npm/gh/webfetch），不问用户
 12. 回答前 `grep -ri 关键词 .learnings/`
 13. **表达要求（ChatGPT 式）**：默认先用一句简洁中文讲清结论与下一步，技术细节后置或折叠；不堆术语、不绕弯。回复像 ChatGPT：自然、简洁、有温度，先结论后细节，主动给下一步建议；重要回复（方案/总结/解释）用 `humanizer` 技能润色，去除 AI 腔（过度排比、空洞升华、em dash 滥用）。
+13.1 **链接可点（通用）**：交付外链/安装链接时给一个带版本号的完整可点链接（如 `[OC多合一脚本 v1.9.x](https://...)` 或 `OC多合一 v1.9.x: https://...` 单行可点跳转），禁止重复给裸露+Markdown 双份；禁止包进 ` ` 或 ` ``` ` 代码块；本地文件路径 `C:\...` 及机密信息除外，保持灰底可复制块。
 14. **选项交互**：结尾需要用户选择时，用 `question` 工具弹出可点击选项（推荐项放第一并标 `(推荐)`），禁止让用户手动输入 `123/A/B`。
 15. **全自动维护**：OpenCode 已配置全自动——客户端每周日 03:00 自动升级（计划任务 `OpenCode Auto Upgrade`）、`superpowers` 技能每周自动 `npm update`、记忆自动沉淀（模型候选先落 `.learnings/pending/` 待确认后 promote）、`ERRORS.md` 迁移垃圾每周自动归档、`Recurrence-Count ≥3` 自动晋级 `AGENTS.md`、`session.idle` 自动备份 OneDrive。用户只需正常对话，无需手动维护。
 16. **界面可视化**：任何涉及界面/DOM/样式/悬浮层/脚本注入的任务，Plan 阶段必须画出 `Before / After` 框图（ASCII/表格），标注位置、尺寸、颜色、交互与溢出处理，确认后再进 build；纯文本描述不算过关。
@@ -95,7 +96,7 @@
 
 | 存储 | 触发 | 检索 | 提升 |
 |------|------|------|------|
-| `.learnings/*.md` | 遇错/纠正/更优解必记 | `grep .learnings/` + `qmd-lite` | ≥3 次/30 天 → 提为规则 |
+| `.learnings/*.md` | 遇错/纠正/更优解必记 | `grep .learnings/` + `qmd-lite` | ≥3 次 & 跨2 tasks & 30天 → 提为规则 |
 
 **规则**：问“以前记住”先查 `.learnings/` + `qmd-lite`；“记住 XX”→ `LEARNINGS.md`；`scope:router-only`/`laptop-only`/`cross-env`；禁写 key/token。
 
@@ -105,7 +106,7 @@
 
 **备份**：`session.idle` 自动备份——本地 `~/.local/share/opencode/backups_local/` 保留 3 份全量 + OneDrive `tools/系统_清理_优化/OpenCode-编程助手/` 保留 1 份 latest 快照（`robocopy`，排除 node_modules/backups/.learnings.backup 等）；软路由已归档 `/mnt/usb4-1/archive/*.tar.gz`。
 
-> ⚠️ `~/.opencode-mem/` 目录残留（含 `.auth-token` 敏感文件 + 历史日志），opencode-mem 已停用 2026-09-02，待清理（勿提交/勿同步）。
+> ✅ `~/.opencode-mem/` 已彻底移除（2026-09-03 清理 `~/.opencode-mem/data` 96MB + `~/.cache/opencode/packages/opencode-mem*` 1.3GB，归档 `backups/retired-20260902/opencode-mem/` 保留含 `.auth-token` 审计，勿提交/勿同步）。`opencode-mem.jsonc` 已删除，`package.json` 已去依赖，`4747` 已释放。
 
 ## 7 知识记录与检索
 
@@ -132,14 +133,14 @@
 | `steam-tools` | Steam 工具 |
 | `clash-subscription-management` | Clash 订阅管理 |
 | `memory` | 记忆技能：错误/纠正/知识沉淀与检索（`.learnings/`） |
-| `lobehub-skills-search-engine` | 技能商店搜索（`lobehub.com/zh/skills`，`skills search --q 任务 --locale zh-CN`） |
+| `find-skills` | 技能商店搜索（`skills.sh`，`npx skills find <关键词>`，GitHub 地址+Stars 直标） |
 | `browser-automation` | 浏览器自动化（`different-ai` 原语 `browser_*`，轻量 claim） |
 
 > 涉及某领域时优先触发对应 skill；英文模型需额外注意中文 CoT（见第1节 Language）。手机端：技能触发保持精简，`grep` 优先，`qmd-lite` 兜底。
 
 > **优化定版 2026-09-02**：25 Skill 全保留（11 实技能 +14 原生），建议 **按需 4 个**（`steam-tools`/`executing-plans`/`dispatching-parallel-agents`/`finishing-a-development-branch` 低频）、**暂不合并** `tavo-card-craft`/`tavo-operations`（省 679 行但增耦合风险）、已清 14 悬空 SYMLINK。
 
-> ⚠️ `comfyui-mcp.py` 缺失（`opencode.jsonc` 引用但 git 未恢复，`enabled:false` 故不崩）；启用前需 `git show e28632e:scripts/comfyui-mcp.py > scripts/comfyui-mcp.py` 恢复。
+> ✅ `comfyui-mcp.py` 已恢复（2026-09-02 `git show e28632e` 还原，`enabled:false` 未启用）；启用前需改 venv Python 3.11 → `enabled:true` → 重启（image-web.py:8090 已覆盖 95% 需求）。
 
 ## 9 错误自学习（越用越聪明）
 
@@ -180,6 +181,6 @@
 
 - **遇错必记**：工具/脚本/编码/代理等错误，按 `memory` 技能格式写入 `.learnings/ERRORS.md`（`[ERR-YYYYMMDD-XXX]` + Pattern-Key）
 - **自动避坑**：下次任务前 `grep` `.learnings/ERRORS.md` 相关关键词，执行前先读已记录的坑
-- **晋级规则**：同一坑 ≥3 次（跨 ≥2 任务）或 30 天内重复 → 提升为 AGENTS.md 规则或新 skill
+- **晋级规则**：同一坑 `Recurrence-Count≥3 & 跨≥2 tasks & 30d窗口` → 提升为 AGENTS.md 规则或新 skill（参考 [Kulaxyz-945] golden path 三条件 — 2026-09-02）
 - **验证**：修复后下次同类任务检查是否复现，未复现则标记 `resolved`；复现则追加记录并考虑晋级
-- **记录格式**：`[ERR-YYYYMMDD] 现象 | 根因 | 解法 | 避坑要点`，便于检索命中
+- **记录格式**：`[ERR-YYYYMMDD] 现象 | 根因 | 解法 | 避坑要点`，便于检索命中；`Reference Sources: [pskoett-290] | [Kulaxyz-945] | [zhaono1-33K] — 学段/三条件/证据链 — URL — 日期`
