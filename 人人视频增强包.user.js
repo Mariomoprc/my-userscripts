@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         人人视频增强包
 // @namespace    http://tampermonkey.net/
-// @version      2.9.7
-// @description  反调试绕过 + 隐藏滚动条 + 无感去广告(播放态自动续播/暂停态保持/loading修复) + 豆瓣跳转 + 唤醒后暂停(点播放即恢复) + 播放卡死自愈(智能判定不误伤正常缓冲+慢速播放识别含慢动作+seek卡死识别+seek循环识别) + 播放器修复(轻seek+渲染层hack) + 豆瓣页跳转人人 | 菜单可开关
+// @version      2.9.8
+// @description  反调试绕过 + 隐藏滚动条 + 无感去广告(播放态自动续播/暂停态保持/loading修复) + 豆瓣跳转 + 唤醒后暂停(点播放即恢复) + 播放卡死自愈(智能判定不误伤正常缓冲+慢速播放识别含慢动作+seek卡死识别+seek循环识别) + 播放器修复(渲染层hack) + 豆瓣页跳转人人 | 菜单可开关
 // @author       opencode
 // @match        *://*.yichengwlkj.com/*
 // @match         *://*.rrmj.plus/*
@@ -1213,8 +1213,9 @@
   }
 
   // ============================================================
-  //  7. 播放器修复（轻seek + 渲染层hack）
-  //      暂停恢复后画面卡住但弹幕正常：渲染层hack 强制 GPU 合成 + 轻seek 强制帧输出
+  //  7. 播放器修复（渲染层hack）
+  //      暂停恢复后画面卡住但弹幕正常：渲染层hack 强制 GPU 合成
+  //      [v2.9.8] 移除轻seek：轻seek 在 PCDN 缓冲不足时导致反复 seek 循环（慢动作卡顿）
   // ============================================================
   if (S.get('videoFix', true)) {
     onReady(function () {
@@ -1222,66 +1223,6 @@
       var fixStyle = document.createElement('style');
       fixStyle.textContent = '.xgplayervideo { will-change: transform !important; transform: translateZ(0) !important; }';
       (document.head || document.documentElement).appendChild(fixStyle);
-
-      var fixSeen = new WeakSet();
-
-      function hookVideoForFix(video) {
-        if (fixSeen.has(video)) return;
-        fixSeen.add(video);
-
-        // playing 事件 → 轻 seek 强制解码器输出新帧
-        video.addEventListener('playing', function () {
-          requestAnimationFrame(function () {
-            if (video.currentTime > 0) {
-              video.currentTime = video.currentTime;
-            }
-          });
-        }, { passive: true });
-
-        // stalled → 轻 seek 恢复
-        video.addEventListener('stalled', function () {
-          requestAnimationFrame(function () {
-            video.currentTime = video.currentTime + 0.001;
-          });
-        }, { passive: true });
-
-        // 缓冲区监控：gap < 1s 时轻 seek
-        setInterval(function () {
-          if (video.paused || video.ended) return;
-          var buffered = video.buffered.length > 0
-            ? video.buffered.end(video.buffered.length - 1)
-            : 0;
-          var bufferGap = buffered - video.currentTime;
-          if (bufferGap < 1 && !video.seeking) {
-            video.currentTime = video.currentTime + 0.001;
-          }
-        }, 2000);
-      }
-
-      // 等待 video 出现并 hook
-      function waitForVideo() {
-        var video = document.querySelector('.xgplayervideo') ||
-                    document.querySelector('#ve-player-containervideo') ||
-                    document.querySelector('video');
-        if (video) {
-          hookVideoForFix(video);
-          return;
-        }
-        var mo = new MutationObserver(function () {
-          var v = document.querySelector('.xgplayervideo') ||
-                  document.querySelector('#ve-player-containervideo') ||
-                  document.querySelector('video');
-          if (v) {
-            mo.disconnect();
-            hookVideoForFix(v);
-          }
-        });
-        mo.observe(document.documentElement, { childList: true, subtree: true });
-        setTimeout(function () { mo.disconnect(); }, 30000);
-      }
-
-      document.querySelectorAll('video').forEach(function (v) { hookVideoForFix(v); });
-      waitForVideo();
     });
   }
 
