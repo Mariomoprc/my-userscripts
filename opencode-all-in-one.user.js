@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.10.0
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(5s窗口) + ESC单按中断 + 断连自动续对话 + 4747网格黑白图标去文字右上角绿点 + 4747 web同款绿点 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.10.0
+// @version      1.10.1
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(5s窗口) + ESC单按中断 + 断连自动续对话 + 4747网格黑白图标去文字右上角绿点 + 4747 web同款绿点 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.10.1
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.10.1 移除 token 用量胶囊（in/out/cache/cost 显示）
 // v1.10.0 修复 OpenCode Go 告警：opencode.ai 域 fetch 补 x-opencode-session 标头（zenHeaders，09/06 起强制）
 // v1.9.9 ESC单按中断+完成提示5s窗口+断连自动续对话+4747网格黑白去文字+token胶囊默认关闭
 // v1.9.8 4096断连10s上限+切回前景补探活，后端已重连提示优化
@@ -88,7 +89,6 @@
     { key: 'toolFold', label: '长输出折叠', def: true },
     { key: 'smartScroll', label: '智能滚动', def: true },
     { key: 'reasonFold', label: '推理折叠', def: true },
-    { key: 'tokenUsage', label: 'token用量显示', def: false },
     { key: 'draftSave', label: '草稿持久化', def: true },
     { key: 'codeWrap', label: '代码换行切换', def: true }
   ];
@@ -2373,62 +2373,6 @@
   })();
 
   // ════════════════════════════════════════════════════════════
-  //  TOKEN_USAGE_MODULE — token 用量显示 (参考 oc-remote Context window details)
-  //  会话页顶部右侧显示 in/out/reasoning/cache + 成本
-  // ════════════════════════════════════════════════════════════
-  var TOKEN_USAGE_MODULE = (function () {
-    var capsule = null;
-    var STYLE_ID = 'oc-token-usage-style';
-    var POLL_MS = 30000;
-
-    function ensureStyle() {
-      if (document.getElementById(STYLE_ID)) return;
-      var st = document.createElement('style');
-      st.id = STYLE_ID;
-      st.textContent = '#oc-token-capsule{position:fixed;top:50px;right:12px;z-index:2147483645;padding:5px 10px;border-radius:12px;border:1px solid rgba(255,255,255,.1);background:rgba(20,20,20,.88);color:#8b949e;font-size:10px;line-height:1.4;font-family:monospace;pointer-events:auto;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);white-space:nowrap}#oc-token-capsule .in{color:#58a6ff}#oc-token-capsule .out{color:#2ea043}#oc-token-capsule .cache{color:#8b949e}#oc-token-capsule .cost{color:#f0883e}';
-      (document.head || document.documentElement).appendChild(st);
-    }
-
-    function getSessionId() {
-      var m = location.pathname.match(/\/session\/([^/?]+)/);
-      return m ? m[1] : null;
-    }
-
-    function updateCapsule() {
-      var sid = getSessionId();
-      if (!sid) { if (capsule) capsule.style.display = 'none'; return; }
-      fetch('/session/' + sid, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (data) {
-        var t = data.tokens;
-        if (!t) return;
-        var fmt = function (n) { if (!n) return '0'; if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M'; if (n >= 1000) return (n / 1000).toFixed(1) + 'K'; return String(n); };
-        var html = '<span class="in">in ' + fmt(t.input) + '</span> <span class="out">out ' + fmt(t.output) + '</span>';
-        if (t.cache && t.cache.read) html += ' <span class="cache">cache ' + fmt(t.cache.read) + '</span>';
-        if (data.cost) html += ' <span class="cost">· $' + data.cost.toFixed(3) + '</span>';
-        createCapsule();
-        capsule.innerHTML = html;
-        capsule.style.display = 'block';
-      }).catch(function () {});
-    }
-
-    function createCapsule() {
-      if (capsule) return;
-      capsule = document.createElement('div');
-      capsule.id = 'oc-token-capsule';
-      capsule.style.display = 'none';
-      document.body && document.body.appendChild(capsule);
-    }
-
-    function init() {
-      if (!isLocalhost4096) return;
-      ensureStyle();
-      updateCapsule();
-      setInterval(updateCapsule, POLL_MS);
-      console.log(TAG, 'TOKEN_USAGE_MODULE enabled');
-    }
-    return { init: init, refresh: updateCapsule };
-  })();
-
-  // ════════════════════════════════════════════════════════════
   //  DRAFT_MODULE — 草稿持久化 (参考 oc-remote Draft persistence)
   //  输入框内容按会话 ID 存 localStorage，刷新/切换会话恢复
   // ════════════════════════════════════════════════════════════
@@ -3067,9 +3011,6 @@
       }
       if (getSetting('reasonFold', true)) {
         try { REASONING_FOLD_MODULE.init(); } catch (e) {}
-      }
-      if (getSetting('tokenUsage', true)) {
-        try { TOKEN_USAGE_MODULE.init(); } catch (e) {}
       }
       if (getSetting('draftSave', true)) {
         try { DRAFT_MODULE.init(); } catch (e) {}
