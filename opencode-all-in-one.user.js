@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.12.4
+// @version      1.12.5
 // @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(12s窗口) + ESC单按中断 + 断连自动续对话 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.11.1
 // @author       pass
 // @match        https://opencode.ai/*
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.12.5 行标签恢复国家＋评分显示（训练标识留 hover，名字保持全显）
 // v1.12.4 最大行皇冠改左上角叠加（零占位）＋行名 Contributor 后缀缩写（全名进 hover）
 // v1.12.3 模型行标签瘦身：行内只留月额度，国家/评分/训练收进 hover
 // v1.12.2 头条升级为 Go月额度Top5榜（短名＋并列合并＋hover全名）
@@ -1557,7 +1558,7 @@
         var tag = document.createElement('span');
         tag.className = 'oc-quota-tag';
         tag.style.cssText = 'color:#666;font-size:10px;margin-left:6px;white-space:nowrap;flex-shrink:0;';
-        tag.textContent = quota.reqMonth.toLocaleString() + '/月';
+        tag.innerHTML = quota.reqMonth.toLocaleString() + '/月' + (country ? ' <span style="color:#888;">(' + country + ')</span>' : '') + (scoreInfo ? ' <span style="color:' + scoreInfo.color + ';font-weight:600;">' + scoreInfo.score + '分</span>' : '');
         var tipLines = [quota.name + ' ' + quota.reqMonth.toLocaleString() + '/月'];
         if (quota.req5h) tipLines.push('5h ' + quota.req5h.toLocaleString());
         if (country) tipLines.push('国家 ' + country);
