@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.12.6
+// @version      1.12.7
 // @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(12s窗口) + ESC单按中断 + 断连自动续对话 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.11.1
 // @author       pass
 // @match        https://opencode.ai/*
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.12.7 workspace 用量区上方嵌入 Go 月额度 Top5 榜（复用 Top5 数据源＋配色，hover 全名）
 // v1.12.6 国家评分搬进 Top5 榜行内，模型行退回纯额度（hover 保留全量）
 // v1.12.5 行标签恢复国家＋评分显示（训练标识留 hover，名字保持全显）
 // v1.12.4 最大行皇冠改左上角叠加（零占位）＋行名 Contributor 后缀缩写（全名进 hover）
@@ -107,6 +108,7 @@
     { key: 'memSilence', label: '静音 capture 会话', def: true },
     { key: 'peakHint', label: 'DS峰时提醒', def: true },
     { key: 'maxQuota', label: '今日最大额度头条', def: true },
+    { key: 'usageTop5', label: '用量区额度Top5', def: true },
     { key: 'largeImg', label: '大图懒加载', def: true },
     { key: 'toolFold', label: '长输出折叠', def: true },
     { key: 'smartScroll', label: '智能滚动', def: true },
@@ -915,6 +917,150 @@
       }
     }
 
+    function usageTopRanks(requests, limit) {
+      var byMonth = {};
+      requests.forEach(function (r) {
+        var name = (r[0] || '').trim();
+        var m = parseNum(r[3]);
+        if (!name || !m) return;
+        if (!byMonth[m]) byMonth[m] = [];
+        byMonth[m].push(name);
+      });
+      var months = Object.keys(byMonth).map(Number).sort(function (a, b) { return b - a; });
+      var rows = [];
+      for (var i = 0; i < months.length && rows.length < limit; i++) {
+        var names = byMonth[months[i]].slice().sort(function (a, b) { return a < b ? -1 : 1; });
+        rows.push({ reqMonth: months[i], names: names, keys: names.map(function (n) { return norm(n); }) });
+      }
+      return rows;
+    }
+    function shortUsageName(name) {
+      return (name || '').replace(/ Contributor$/i, '').replace(/^Muse Spark/i, 'Muse').trim();
+    }
+    function usageMetaByNorm(id) {
+      var ks = Object.keys(MODEL_META);
+      for (var k = 0; k < ks.length; k++) { if (norm(ks[k]) === id) return MODEL_META[ks[k]]; }
+      return null;
+    }
+    function paintUsageTop(el, rows, today) {
+      while (el.firstChild) el.removeChild(el.firstChild);
+      var head = document.createElement('div');
+      head.style.cssText = 'font-weight:700;margin-bottom:2px;';
+      head.textContent = '🏆 Go月额度Top5 · ' + today + '更新';
+      el.appendChild(head);
+      rows.forEach(function (row, i) {
+        var line = document.createElement('div');
+        line.style.cssText = 'display:flex;align-items:baseline;gap:6px;line-height:17px;' + (i === 0 ? 'color:#e8c547;font-weight:700;' : 'color:#bdbdbd;');
+        var rank = document.createElement('span');
+        rank.style.cssText = 'flex:none;width:12px;opacity:.8;';
+        rank.textContent = String(i + 1);
+        var nm = document.createElement('span');
+        nm.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+        nm.textContent = row.names.map(shortUsageName).join(' / ');
+        nm.title = row.names.join(' / ');
+        line.appendChild(rank); line.appendChild(nm);
+        var country = null, scoreInfo = null;
+        for (var ci = 0; ci < row.keys.length; ci++) {
+          var meta = usageMetaByNorm(row.keys[ci]);
+          if (!meta) continue;
+          if (!country && meta.country) country = meta.country;
+          var s = Math.round(meta.aaScore || meta.cap * 10);
+          if (s && (!scoreInfo || s > scoreInfo.score)) scoreInfo = { score: s, color: scoreColor(s) };
+        }
+        if (country) {
+          var ct = document.createElement('span');
+          ct.style.cssText = 'flex:none;opacity:.65;font-weight:400;';
+          ct.textContent = '(' + country + ')';
+          line.appendChild(ct);
+        }
+        if (scoreInfo) {
+          var sc = document.createElement('span');
+          sc.style.cssText = 'flex:none;font-weight:700;';
+          try { sc.style.color = scoreInfo.color; } catch (eC) {}
+          sc.textContent = scoreInfo.score + '分';
+          sc.title = 'AA 智力指数';
+          line.appendChild(sc);
+        }
+        var num = document.createElement('span');
+        num.style.cssText = 'flex:none;font-variant-numeric:tabular-nums;';
+        num.textContent = row.reqMonth.toLocaleString() + '/月';
+        line.appendChild(num);
+        el.appendChild(line);
+      });
+      el.title = rows.map(function (row, i) { return (i + 1) + '. ' + row.names.join(' / ') + ' ' + row.reqMonth.toLocaleString() + '/月'; }).join('\n') + '\n数据来自 docs/go';
+    }
+    function findUsageContainer() {
+      var week = null, month = null;
+      var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null);
+      var tn;
+      while ((tn = walker.nextNode())) {
+        var v = tn.nodeValue || '';
+        if (!week && v.indexOf('每周用量') !== -1) week = tn.parentElement;
+        else if (!month && v.indexOf('每月用量') !== -1) month = tn.parentElement;
+        if (week && month) break;
+      }
+      if (!week || !month) return null;
+      var chain = [];
+      var a = week;
+      while (a && a !== document.body && a !== document.documentElement) { chain.push(a); a = a.parentElement; }
+      var b = month, best = null;
+      while (b && b !== document.body && b !== document.documentElement) {
+        if (chain.indexOf(b) !== -1) {
+          if (b.textContent.indexOf('每周用量') !== -1 && b.textContent.indexOf('每月用量') !== -1) best = b;
+          break;
+        }
+        b = b.parentElement;
+      }
+      return best;
+    }
+    function injectUsageTop5(container, requests) {
+      var rows = usageTopRanks(requests, 5);
+      if (!rows.length) return;
+      var today = new Date().toLocaleDateString('zh-CN');
+      var parent = container.parentElement;
+      if (!parent) return;
+      var el = document.getElementById('oc-usage-top5');
+      if (el && el.parentElement !== parent) { try { el.remove(); } catch (eR) { el = null; } }
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'oc-usage-top5';
+        el.style.cssText = 'display:block;box-sizing:border-box;background:#1c1a12;color:#e0e0e0;font-size:11px;padding:8px 12px;border:1px solid #333;border-radius:10px;line-height:1.4;margin-bottom:12px;';
+        try { parent.insertBefore(el, container); } catch (eI) { return; }
+      }
+      paintUsageTop(el, rows, today);
+    }
+    function loadUsageTop5(container) {
+      function done(requests) {
+        try { injectUsageTop5(container, requests); } catch (e) {}
+      }
+      try {
+        fetch(DOCS_URL, { credentials: 'omit', headers: zenHeaders() }).then(function (r) { return r.ok ? r.text() : null; }).catch(function () { return null; }).then(function (html) {
+          if (html) {
+            try {
+              var tables = parseTables(html);
+              if (tables && tables.requests && tables.requests.length) { done(tables.requests); return; }
+            } catch (eP) {}
+          }
+          done(SNAPSHOT.requests);
+        });
+      } catch (eF) { done(SNAPSHOT.requests); }
+    }
+    function initUsageTop5() {
+      if (!isOpencodeAi) return;
+      if (!getSetting('usageTop5', true)) { var stale = document.getElementById('oc-usage-top5'); if (stale) { try { stale.remove(); } catch (eR2) {} } return; }
+      if (location.pathname.indexOf('/workspace') === -1) return;
+      var tries = 0;
+      var timer = setInterval(function () {
+        tries++;
+        try {
+          if (document.getElementById('oc-usage-top5')) { clearInterval(timer); return; }
+          var container = findUsageContainer();
+          if (container) { clearInterval(timer); loadUsageTop5(container); return; }
+          if (tries >= 30) clearInterval(timer);
+        } catch (eT) { clearInterval(timer); }
+      }, 2000);
+    }
+
     function loadAndInject(forceRefresh) {
       if (document.getElementById('oc-go-panel')) return;
       Promise.all([
@@ -939,6 +1085,7 @@
 
     function init() {
       injectToggleButton();
+      try { initUsageTop5(); } catch (eU) {}
       var wantVisible = false;
       try { wantVisible = localStorage.getItem(PANEL_KEY) === '1'; } catch (e) {}
       if (wantVisible) setTimeout(function () { loadAndInject(false); }, 500);
