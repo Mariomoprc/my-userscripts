@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.12.1
+// @version      1.12.2
 // @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(12s窗口) + ESC单按中断 + 断连自动续对话 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.11.1
 // @author       pass
 // @match        https://opencode.ai/*
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.12.2 头条升级为 Go月额度Top5榜（短名＋并列合并＋hover全名）
 // v1.12.1 今日最大头条移到搜索框之上（面板根，不再混进分组）
 // v1.12.0 模型面板置顶今日最大额度头条＋最大行描边＋易主/首开提醒，SNAPSHOT 补 Hy4 preview
 // v1.11.1 修复刷新 new-session 带 draftId 弹旧对话（reload 时清理参数）
@@ -1599,15 +1600,55 @@
       }
       return null;
     }
+    function shortQuotaName(name) {
+      return (name || '').replace(/ Contributor$/i, '').replace(/^Muse Spark/i, 'Muse').trim();
+    }
+    function topQuotaRanks(limit) {
+      var byMonth = {};
+      Object.keys(quotaMap).forEach(function (k) {
+        var q = quotaMap[k];
+        if (!q || !q.reqMonth) return;
+        if (!byMonth[q.reqMonth]) byMonth[q.reqMonth] = [];
+        byMonth[q.reqMonth].push(q.name);
+      });
+      var months = Object.keys(byMonth).map(Number).sort(function (a, b) { return b - a; });
+      var rows = [];
+      for (var i = 0; i < months.length && rows.length < limit; i++) {
+        var names = byMonth[months[i]].slice().sort();
+        rows.push({ reqMonth: months[i], names: names });
+      }
+      return rows;
+    }
+    function paintTopBoard(el, rows, today) {
+      while (el.firstChild) el.removeChild(el.firstChild);
+      var head = document.createElement('div');
+      head.style.cssText = 'font-weight:700;margin-bottom:2px;';
+      head.textContent = '🏆 Go月额度Top5 · ' + today + '更新';
+      el.appendChild(head);
+      rows.forEach(function (row, i) {
+        var line = document.createElement('div');
+        line.style.cssText = 'display:flex;align-items:baseline;gap:6px;line-height:17px;' + (i === 0 ? 'color:#e8c547;font-weight:700;' : 'color:#bdbdbd;');
+        var rank = document.createElement('span');
+        rank.style.cssText = 'flex:none;width:12px;opacity:.8;';
+        rank.textContent = String(i + 1);
+        var nm = document.createElement('span');
+        nm.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+        nm.textContent = row.names.map(shortQuotaName).join(' / ');
+        nm.title = row.names.join(' / ');
+        var num = document.createElement('span');
+        num.style.cssText = 'flex:none;font-variant-numeric:tabular-nums;';
+        num.textContent = row.reqMonth.toLocaleString() + '/月';
+        line.appendChild(rank); line.appendChild(nm); line.appendChild(num);
+        el.appendChild(line);
+      });
+      el.title = rows.map(function (row, i) { return (i + 1) + '. ' + row.names.join(' / ') + ' ' + row.reqMonth.toLocaleString() + '/月'; }).join('\n') + '\n数据来自 docs/go';
+    }
     function injectMaxHead(items) {
       if (!getSetting('maxQuota', true)) return;
       if (!items || !items.length) return;
-      var info = computeMax();
-      if (!info) return;
-      var label = info.tops.map(function (t) { return t.name; }).join(' / ');
+      var rows = topQuotaRanks(5);
+      if (!rows.length) return;
       var today = new Date().toLocaleDateString('zh-CN');
-      var html = '🏆今日最大 ' + label + ' ' + info.max.toLocaleString() + '/月' + (info.second ? ' · Top2 ' + info.second.name + ' ' + info.second.reqMonth.toLocaleString() : '') + ' · ' + today + '更新';
-      var title = info.tops.map(function (t) { return t.name + ' ' + t.reqMonth.toLocaleString() + '/月'; }).join('\n') + (info.second ? '\nTop2 ' + info.second.name + ' ' + info.second.reqMonth.toLocaleString() + '/月' : '') + '\n数据来自 docs/go';
       // 首选：面板根＋搜索框之上（与分组列表平级，不伪装成模型行）
       var searchEl = findDropdownSearch();
       var panel = null, anchor = null;
@@ -1624,7 +1665,7 @@
         }
       }
       var el = document.getElementById('oc-max-head');
-      var wantCss = 'display:block;width:100%;box-sizing:border-box;flex:none;flex-shrink:0;background:#1c1a12;color:#e8c547;font-size:11px;font-weight:600;padding:7px 10px;border-bottom:1px solid #d29922;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default;pointer-events:none;';
+      var wantCss = 'display:block;width:100%;box-sizing:border-box;flex:none;flex-shrink:0;background:#1c1a12;color:#e0e0e0;font-size:11px;padding:6px 10px 7px;border-bottom:1px solid #d29922;line-height:1.4;cursor:default;pointer-events:none;';
       if (panel && anchor) {
         // 清掉旧位置（分组内）的残留头，避免重复
         var stale = panel.querySelectorAll('#oc-max-head');
@@ -1640,8 +1681,7 @@
         }
         if (panel && el) {
           el.style.cssText = wantCss;
-          el.textContent = html;
-          el.title = title;
+          paintTopBoard(el, rows, today);
           return;
         }
       }
@@ -1652,11 +1692,12 @@
       if (!el) {
         el = document.createElement('div');
         el.id = 'oc-max-head';
-        el.style.cssText = 'position:sticky;top:0;z-index:5;background:#1c1a12;color:#e8c547;font-size:11px;font-weight:600;padding:6px 10px;border-bottom:1px solid #d29922;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default;pointer-events:none;';
+        el.style.cssText = 'position:sticky;top:0;z-index:5;' + wantCss;
         container.insertBefore(el, container.firstChild);
+      } else {
+        el.style.cssText = 'position:sticky;top:0;z-index:5;' + wantCss;
       }
-      el.textContent = html;
-      el.title = title;
+      paintTopBoard(el, rows, today);
     }
     function highlightMaxRows(items) {
       if (!getSetting('maxQuota', true)) return;
