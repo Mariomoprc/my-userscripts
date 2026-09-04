@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.11.1
+// @version      1.12.0
 // @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(12s窗口) + ESC单按中断 + 断连自动续对话 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.11.1
 // @author       pass
 // @match        https://opencode.ai/*
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.12.0 模型面板置顶今日最大额度头条＋最大行描边＋易主/首开提醒，SNAPSHOT 补 Hy4 preview
 // v1.11.1 修复刷新 new-session 带 draftId 弹旧对话（reload 时清理参数）
 // v1.11.0 去掉 4747 入口（按用户要求改存书签）
 // v1.10.13 修复 SW 弹窗无条件拦截被窗口门挡（capture 文案一律拦）+ 图标改锚 Build 栏紧挨
@@ -99,6 +100,7 @@
     { key: 'questionKeys', label: '选项键盘导航', def: true },
     { key: 'memSilence', label: '静音 capture 会话', def: true },
     { key: 'peakHint', label: 'DS峰时提醒', def: true },
+    { key: 'maxQuota', label: '今日最大额度头条', def: true },
     { key: 'largeImg', label: '大图懒加载', def: true },
     { key: 'toolFold', label: '长输出折叠', def: true },
     { key: 'smartScroll', label: '智能滚动', def: true },
@@ -327,6 +329,7 @@
       'mimo-v2.5-pro': 'xiaomi/mimo-v2.5-pro',
       'minimax-m3': 'minimax/minimax-m3',
       'minimax-m2.7': 'minimax/minimax-m2.7',
+      'muse-spark-1.3-contributor': 'meta/muse-spark-1.3-contributor',
       'muse-spark-1.2-contributor': 'meta/muse-spark-1.2-contributor',
       'qwen3.8-max': 'qwen/qwen3.8-max',
       'qwen3.8-flash': 'qwen/qwen3.8-flash',
@@ -336,6 +339,7 @@
       'deepseek-v4-pro': 'deepseek/deepseek-v4-pro-0813',
       'deepseek-v4-flash': 'deepseek/deepseek-v4-flash-0731',
       'deepseek-v4-flash-vision-exp': 'deepseek/deepseek-v4-flash-vision-exp',
+      'hy4-preview': 'tencent/hy4-preview',
       'hy3': 'tencent/hy3'
     };
 
@@ -354,6 +358,7 @@
       'mimo-v2.5-pro':           { context: 256000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 6, aaScore: 42.9, speed: 36.3 },
       'minimax-m3':              { context: 1000000, modalities: ['text', 'image'],      reasoning: false, country: '中国', cap: 6, aaScore: 45.4, speed: 113.9 },
       'minimax-m2.7':            { context: 205000, modalities: ['text', 'image'],       reasoning: false, country: '中国', cap: 5, aaScore: 38.9, speed: 60.9 },
+      'muse-spark-1.3-contributor': { context: 1000000, modalities: ['text', 'image'],   reasoning: false, country: '美国', cap: 4, aaScore: 57.5, speed: 215.0, trainedOnUserData: true },
       'muse-spark-1.2-contributor': { context: 1000000, modalities: ['text', 'image'],   reasoning: false, country: '美国', cap: 4, aaScore: 56.8, speed: 211.7, trainedOnUserData: true },
       'qwen3.8-max':             { context: 1000000, modalities: ['text'],               reasoning: true,  country: '中国', cap: 8, aaScore: 58.1, speed: 22.8 },
       'qwen3.8-flash':           { context: 1000000, modalities: ['text'],               reasoning: true,  country: '中国', cap: 6, aaScore: 55.8, speed: 74.0 },
@@ -363,6 +368,7 @@
       'deepseek-v4-pro':         { context: 1000000, modalities: ['text'],               reasoning: true,  country: '中国', cap: 9, aaScore: 53.2, speed: 66.3 },
       'deepseek-v4-flash':       { context: 1000000, modalities: ['text'],               reasoning: true,  country: '中国', cap: 7, aaScore: 51.8, speed: 121.8 },
       'deepseek-v4-flash-vision-exp': { context: 1000000, modalities: ['text', 'image'], reasoning: true,  country: '中国', cap: 7, aaScore: 52.0, speed: 119.3 },
+      'hy4-preview':            { context: 256000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 5 },
       'hy3':                     { context: 256000, modalities: ['text'],                reasoning: true,  country: '中国', cap: 5, aaScore: 42.2, speed: 67.4 }
     };
 
@@ -379,13 +385,13 @@
 
     var SNAPSHOT = {
       requests: [
-        ["Grok 4.6","169","423","845"],["GPT 5.6 Luna","2,050","5,100","10,250"],["GLM-5.3-Flash","1,580","3,950","7,900"],["GLM-5.3","220","540","1,080"],["GLM-5.2","880","2,150","4,300"],["GLM-5.1","880","2,150","4,300"],["Kimi K3","110","250","490"],["Kimi K2.7 Code","1,350","3,380","6,750"],["Kimi K2.6","1,150","2,880","5,750"],["LongCat-2.0","11,400","28,600","57,200"],["MiMo-V2.5","30,100","75,200","150,400"],["MiMo-V2.5-Pro","3,250","8,150","16,300"],["MiniMax M3","3,200","8,000","16,000"],["MiniMax M2.7","3,400","8,500","17,000"],["Muse Spark 1.2 Contributor","45,300","113,300","226,600"],["Qwen3.8 Max","160","400","810"],["Qwen3.8 Flash","5,400","13,500","27,000"],["Qwen3.7 Max","340","840","1,690"],["Qwen3.7 Plus","4,300","10,800","21,600"],["Qwen3.6 Plus","3,300","8,200","16,300"],["DeepSeek V4 Pro","1,050","2,600","5,200"],["DeepSeek V4 Flash","7,600","18,900","37,800"],["DeepSeek V4 Flash Vision Exp","3,800","9,450","18,900"],["Hy3","4,300","10,750","21,500"]
+        ["Grok 4.6","169","423","845"],["GPT 5.6 Luna","2,050","5,100","10,250"],["GLM-5.3-Flash","1,580","3,950","7,900"],["GLM-5.3","220","540","1,080"],["GLM-5.2","880","2,150","4,300"],["GLM-5.1","880","2,150","4,300"],["Kimi K3","110","250","490"],["Kimi K2.7 Code","1,350","3,380","6,750"],["Kimi K2.6","1,150","2,880","5,750"],["LongCat-2.0","11,400","28,600","57,200"],["MiMo-V2.5","30,100","75,200","150,400"],["MiMo-V2.5-Pro","3,250","8,150","16,300"],["MiniMax M3","3,200","8,000","16,000"],["MiniMax M2.7","3,400","8,500","17,000"],["Muse Spark 1.3 Contributor","45,300","113,300","226,600"],["Muse Spark 1.2 Contributor","45,300","113,300","226,600"],["Qwen3.8 Max","160","400","810"],["Qwen3.8 Flash","5,400","13,500","27,000"],["Qwen3.7 Max","340","840","1,690"],["Qwen3.7 Plus","4,300","10,800","21,600"],["Qwen3.6 Plus","3,300","8,200","16,300"],["DeepSeek V4 Pro","1,050","2,600","5,200"],["DeepSeek V4 Flash","7,600","18,900","37,800"],["DeepSeek V4 Flash Vision Exp","3,800","9,450","18,900"],["Hy4 preview","1,350","3,380","6,770"],["Hy3","4,300","10,750","21,500"]
       ],
       prices: [
-        ["Grok 4.6","$2.00","$6.00","$0.50","-","$15"],["GPT 5.6 Luna","$0.20","$1.20","$0.02","$0.25","$15"],["GLM-5.3-Flash","$0.15","$0.50","$0.03","-","$15"],["GLM-5.3","$1.40","$4.40","$0.26","-","$15"],["GLM-5.2","$1.40","$4.40","$0.26","-","$60"],["GLM-5.1","$1.40","$4.40","$0.26","-","$60"],["Kimi K3","$3.00","$15.00","$0.30","-","$15"],["Kimi K2.7 Code","$0.95","$4.00","$0.19","-","$60"],["Kimi K2.6","$0.95","$4.00","$0.16","-","$60"],["LongCat-2.0","$0.30","$1.20","$0.006","-","$60"],["MiMo V2.5","$0.14","$0.28","$0.0028","-","$60"],["MiMo V2.5 Pro","$0.435","$0.87","$0.003625","-","$15"],["MiniMax M3","$0.30","$1.20","$0.06","-","$60"],["MiniMax M2.7","$0.30","$1.20","$0.06","$0.375","$60"],["Muse Spark 1.2 Contributor","$0.10","$0.20","$0.002","-","$60"],["Qwen3.8 Max","$2.00","$6.00","$0.25","$2.50","$15"],["Qwen3.8 Flash","$0.15","$0.47","$0.016","$0.20","$30"],["Qwen3.7 Max","$2.50","$7.50","$0.50","$3.125","$60"],["Qwen3.7 Plus","$0.40","$1.60","$0.04","$0.50","$60"],["Qwen3.6 Plus","$0.50","$3.00","$0.05","$0.625","$60"],["DeepSeek V4 Pro (Off-Peak)","$0.66","$1.98","$0.022","-","$15"],["DeepSeek V4 Flash (Off-Peak)","$0.22","$0.66","$0.007","-","$30"],["DeepSeek V4 Flash Vision Exp (Off-Peak)","$0.22","$0.66","$0.007","-","$15"],["Hy3","$0.14","$0.58","$0.035","-","$60"]
+        ["Grok 4.6","$2.00","$6.00","$0.50","-","$15"],["GPT 5.6 Luna","$0.20","$1.20","$0.02","$0.25","$15"],["GLM-5.3-Flash","$0.15","$0.50","$0.03","-","$15"],["GLM-5.3","$1.40","$4.40","$0.26","-","$15"],["GLM-5.2","$1.40","$4.40","$0.26","-","$60"],["GLM-5.1","$1.40","$4.40","$0.26","-","$60"],["Kimi K3","$3.00","$15.00","$0.30","-","$15"],["Kimi K2.7 Code","$0.95","$4.00","$0.19","-","$60"],["Kimi K2.6","$0.95","$4.00","$0.16","-","$60"],["LongCat-2.0","$0.30","$1.20","$0.006","-","$60"],["MiMo V2.5","$0.14","$0.28","$0.0028","-","$60"],["MiMo V2.5 Pro","$0.435","$0.87","$0.003625","-","$15"],["MiniMax M3","$0.30","$1.20","$0.06","-","$60"],        ["MiniMax M2.7","$0.30","$1.20","$0.06","$0.375","$60"],["Muse Spark 1.3 Contributor","$0.10","$0.20","$0.002","-","$60"],["Muse Spark 1.2 Contributor","$0.10","$0.20","$0.002","-","$60"],["Qwen3.8 Max","$2.00","$6.00","$0.25","$2.50","$15"],["Qwen3.8 Flash","$0.15","$0.47","$0.016","$0.20","$30"],["Qwen3.7 Max","$2.50","$7.50","$0.50","$3.125","$60"],["Qwen3.7 Plus","$0.40","$1.60","$0.04","$0.50","$60"],["Qwen3.6 Plus","$0.50","$3.00","$0.05","$0.625","$60"],["DeepSeek V4 Pro (Off-Peak)","$0.66","$1.98","$0.022","-","$15"],["DeepSeek V4 Flash (Off-Peak)","$0.22","$0.66","$0.007","-","$30"],["DeepSeek V4 Flash Vision Exp (Off-Peak)","$0.22","$0.66","$0.007","-","$15"],["Hy4 preview","$0.834","$2.501","$0.042","-","$30"],["Hy3","$0.14","$0.58","$0.035","-","$60"]
       ],
       endpoints: [
-        ["Grok 4.6","grok-4.6"],["GPT 5.6 Luna","gpt-5.6-luna"],["GLM-5.3-Flash","glm-5.3-flash"],["GLM-5.3","glm-5.3"],["GLM-5.2","glm-5.2"],["GLM-5.1","glm-5.1"],["Kimi K3","kimi-k3"],["Kimi K2.7 Code","kimi-k2.7-code"],["Kimi K2.6","kimi-k2.6"],["LongCat-2.0","longcat-2.0"],["DeepSeek V4 Pro","deepseek-v4-pro"],["DeepSeek V4 Flash","deepseek-v4-flash"],["DeepSeek V4 Flash Vision Exp","deepseek-v4-flash-vision-exp"],["MiMo-V2.5","mimo-v2.5"],["MiMo-V2.5-Pro","mimo-v2.5-pro"],["MiniMax M3","minimax-m3"],["MiniMax M2.7","minimax-m2.7"],["Muse Spark 1.2 Contributor","muse-spark-1.2-contributor"],["Qwen3.8 Max","qwen3.8-max"],["Qwen3.8 Flash","qwen3.8-flash"],["Qwen3.7 Max","qwen3.7-max"],["Qwen3.7 Plus","qwen3.7-plus"],["Qwen3.6 Plus","qwen3.6-plus"],["Hy3","hy3"]
+        ["Grok 4.6","grok-4.6"],["GPT 5.6 Luna","gpt-5.6-luna"],["GLM-5.3-Flash","glm-5.3-flash"],["GLM-5.3","glm-5.3"],["GLM-5.2","glm-5.2"],["GLM-5.1","glm-5.1"],["Kimi K3","kimi-k3"],["Kimi K2.7 Code","kimi-k2.7-code"],["Kimi K2.6","kimi-k2.6"],["LongCat-2.0","longcat-2.0"],["DeepSeek V4 Pro","deepseek-v4-pro"],["DeepSeek V4 Flash","deepseek-v4-flash"],["DeepSeek V4 Flash Vision Exp","deepseek-v4-flash-vision-exp"],["Hy4 preview","hy4-preview"],["MiMo-V2.5","mimo-v2.5"],["MiMo-V2.5-Pro","mimo-v2.5-pro"],["MiniMax M3","minimax-m3"],        ["MiniMax M2.7","minimax-m2.7"],["Muse Spark 1.3 Contributor","muse-spark-1.3-contributor"],["Muse Spark 1.2 Contributor","muse-spark-1.2-contributor"],["Qwen3.8 Max","qwen3.8-max"],["Qwen3.8 Flash","qwen3.8-flash"],["Qwen3.7 Max","qwen3.7-max"],["Qwen3.7 Plus","qwen3.7-plus"],["Qwen3.6 Plus","qwen3.6-plus"],["Hy3","hy3"]
       ]
     };
 
@@ -1557,6 +1563,94 @@
         }
       });
       console.log(TAG, 'Injected quotas into', items.length, 'dropdown items');
+      try { injectMaxHead(items); } catch (eH) {}
+      try { highlightMaxRows(items); } catch (eH2) {}
+      try { checkMaxChange(); } catch (eH3) {}
+    }
+
+    function computeMax() {
+      var max = 0, tops = [];
+      Object.keys(quotaMap).forEach(function (k) {
+        var q = quotaMap[k];
+        if (q && q.reqMonth > max) max = q.reqMonth;
+      });
+      if (!max) return null;
+      Object.keys(quotaMap).forEach(function (k) {
+        if (quotaMap[k] && quotaMap[k].reqMonth === max) tops.push(quotaMap[k]);
+      });
+      var second = null;
+      Object.keys(quotaMap).forEach(function (k) {
+        var q = quotaMap[k];
+        if (q && q.reqMonth < max && (!second || q.reqMonth > second.reqMonth)) second = q;
+      });
+      return { max: max, tops: tops, second: second };
+    }
+    function injectMaxHead(items) {
+      if (!getSetting('maxQuota', true)) return;
+      if (!items || !items.length) return;
+      var info = computeMax();
+      if (!info) return;
+      var container = items[0].parentElement;
+      if (!container) return;
+      var label = info.tops.map(function (t) { return t.name; }).join(' / ');
+      var today = new Date().toLocaleDateString('zh-CN');
+      var html = '🏆今日最大 ' + label + ' ' + info.max.toLocaleString() + '/月' + (info.second ? ' · Top2 ' + info.second.name + ' ' + info.second.reqMonth.toLocaleString() : '') + ' · ' + today + '更新';
+      var el = container.querySelector('#oc-max-head');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'oc-max-head';
+        el.style.cssText = 'position:sticky;top:0;z-index:5;background:#161616;color:#e0e0e0;font-size:11px;padding:6px 10px;border-bottom:1px solid #333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default;';
+        container.insertBefore(el, container.firstChild);
+      }
+      el.textContent = html;
+      el.title = info.tops.map(function (t) { return t.name + ' ' + t.reqMonth.toLocaleString() + '/月'; }).join('\n') + (info.second ? '\nTop2 ' + info.second.name + ' ' + info.second.reqMonth.toLocaleString() + '/月' : '') + '\n数据来自 docs/go';
+    }
+    function highlightMaxRows(items) {
+      if (!getSetting('maxQuota', true)) return;
+      var info = computeMax();
+      if (!info) return;
+      items.forEach(function (item) {
+        var key = item.getAttribute('data-option-key') || '';
+        var modelId = key.split(':').pop().toLowerCase().replace(/[^a-z0-9]/g, '');
+        var quota = quotaMap[modelId];
+        if (!quota) {
+          var keys = Object.keys(quotaMap);
+          for (var i = 0; i < keys.length; i++) {
+            if (keys[i].indexOf(modelId) !== -1 || modelId.indexOf(keys[i]) !== -1) { quota = quotaMap[keys[i]]; break; }
+          }
+        }
+        var crown = item.querySelector('.oc-max-crown');
+        if (quota && quota.reqMonth === info.max) {
+          item.style.outline = '1px solid #d29922';
+          item.style.borderRadius = '6px';
+          if (!crown) {
+            crown = document.createElement('span');
+            crown.className = 'oc-max-crown';
+            crown.textContent = '🏆';
+            crown.style.cssText = 'margin-right:2px;flex-shrink:0;';
+            crown.title = '今日最大月额度 ' + info.max.toLocaleString() + '/月';
+            item.insertBefore(crown, item.firstChild);
+          }
+        } else {
+          if (item.style.outline === '1px solid rgb(210, 153, 34)') { item.style.outline = ''; item.style.borderRadius = ''; }
+          if (crown) crown.remove();
+        }
+      });
+    }
+    function checkMaxChange() {
+      if (!getSetting('maxQuota', true)) return;
+      var info = computeMax();
+      if (!info) return;
+      var cur = info.tops.map(function (t) { return t.name; }).sort().join('|') + '|' + info.max;
+      var prev = null, prevDate = null;
+      try { prev = S('maxquota_v1'); prevDate = S('maxquota_date'); } catch (e) {}
+      var today = new Date().toLocaleDateString('zh-CN');
+      if (prev && prev !== cur) {
+        try { toast('🏆 Go最大额度变更：' + info.tops.map(function (t) { return t.name; }).join('/') + ' ' + info.max.toLocaleString() + '/月', '#d29922'); } catch (eT) {}
+      } else if (prevDate !== today) {
+        try { toast('🏆今日最大 ' + info.tops.map(function (t) { return t.name; }).join('/') + ' ' + info.max.toLocaleString() + '/月', '#2ea043'); } catch (eT2) {}
+      }
+      try { S('maxquota_v1', cur); S('maxquota_date', today); } catch (eS) {}
     }
 
     function findBottomModelEl() {
