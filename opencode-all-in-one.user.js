@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.12.0
+// @version      1.12.1
 // @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(12s窗口) + ESC单按中断 + 断连自动续对话 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.11.1
 // @author       pass
 // @match        https://opencode.ai/*
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.12.1 今日最大头条移到搜索框之上（面板根，不再混进分组）
 // v1.12.0 模型面板置顶今日最大额度头条＋最大行描边＋易主/首开提醒，SNAPSHOT 补 Hy4 preview
 // v1.11.1 修复刷新 new-session 带 draftId 弹旧对话（reload 时清理参数）
 // v1.11.0 去掉 4747 入口（按用户要求改存书签）
@@ -1585,25 +1586,77 @@
       });
       return { max: max, tops: tops, second: second };
     }
+    function findDropdownSearch() {
+      var sels = ['input[placeholder*="搜索"]', 'input[placeholder*="Search"]', 'input[type="search"]'];
+      for (var i = 0; i < sels.length; i++) {
+        var inputs = document.querySelectorAll(sels[i]);
+        for (var j = 0; j < inputs.length; j++) {
+          var inp = inputs[j];
+          var r = null;
+          try { r = inp.getBoundingClientRect(); } catch (e) {}
+          if (r && r.width > 100 && r.height > 0) return inp;
+        }
+      }
+      return null;
+    }
     function injectMaxHead(items) {
       if (!getSetting('maxQuota', true)) return;
       if (!items || !items.length) return;
       var info = computeMax();
       if (!info) return;
-      var container = items[0].parentElement;
-      if (!container) return;
       var label = info.tops.map(function (t) { return t.name; }).join(' / ');
       var today = new Date().toLocaleDateString('zh-CN');
       var html = '🏆今日最大 ' + label + ' ' + info.max.toLocaleString() + '/月' + (info.second ? ' · Top2 ' + info.second.name + ' ' + info.second.reqMonth.toLocaleString() : '') + ' · ' + today + '更新';
-      var el = container.querySelector('#oc-max-head');
+      var title = info.tops.map(function (t) { return t.name + ' ' + t.reqMonth.toLocaleString() + '/月'; }).join('\n') + (info.second ? '\nTop2 ' + info.second.name + ' ' + info.second.reqMonth.toLocaleString() + '/月' : '') + '\n数据来自 docs/go';
+      // 首选：面板根＋搜索框之上（与分组列表平级，不伪装成模型行）
+      var searchEl = findDropdownSearch();
+      var panel = null, anchor = null;
+      if (searchEl) {
+        var n = items[0];
+        while (n && n !== document.body && n !== document.documentElement) {
+          if (n.contains(searchEl)) { panel = n; break; }
+          n = n.parentElement;
+        }
+        if (panel) {
+          anchor = searchEl;
+          while (anchor && anchor.parentElement !== panel) anchor = anchor.parentElement;
+          if (!anchor) panel = null;
+        }
+      }
+      var el = document.getElementById('oc-max-head');
+      var wantCss = 'display:block;width:100%;box-sizing:border-box;flex:none;flex-shrink:0;background:#1c1a12;color:#e8c547;font-size:11px;font-weight:600;padding:7px 10px;border-bottom:1px solid #d29922;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default;pointer-events:none;';
+      if (panel && anchor) {
+        // 清掉旧位置（分组内）的残留头，避免重复
+        var stale = panel.querySelectorAll('#oc-max-head');
+        for (var s = 0; s < stale.length; s++) {
+          if (stale[s] !== el) { try { stale[s].remove(); } catch (eR) {} }
+        }
+        if (!el || el.parentElement !== panel) {
+          if (el && el.parentElement) { try { el.remove(); } catch (eR2) {} el = null; }
+          el = document.createElement('div');
+          el.id = 'oc-max-head';
+          el.style.cssText = wantCss;
+          try { panel.insertBefore(el, anchor); } catch (eI) { panel = null; }
+        }
+        if (panel && el) {
+          el.style.cssText = wantCss;
+          el.textContent = html;
+          el.title = title;
+          return;
+        }
+      }
+      // 回退：分组列表顶部 sticky（搜索框不可定位时）
+      var container = items[0].parentElement;
+      if (!container) return;
+      el = container.querySelector('#oc-max-head');
       if (!el) {
         el = document.createElement('div');
         el.id = 'oc-max-head';
-        el.style.cssText = 'position:sticky;top:0;z-index:5;background:#161616;color:#e0e0e0;font-size:11px;padding:6px 10px;border-bottom:1px solid #333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default;';
+        el.style.cssText = 'position:sticky;top:0;z-index:5;background:#1c1a12;color:#e8c547;font-size:11px;font-weight:600;padding:6px 10px;border-bottom:1px solid #d29922;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default;pointer-events:none;';
         container.insertBefore(el, container.firstChild);
       }
       el.textContent = html;
-      el.title = info.tops.map(function (t) { return t.name + ' ' + t.reqMonth.toLocaleString() + '/月'; }).join('\n') + (info.second ? '\nTop2 ' + info.second.name + ' ' + info.second.reqMonth.toLocaleString() + '/月' : '') + '\n数据来自 docs/go';
+      el.title = title;
     }
     function highlightMaxRows(items) {
       if (!getSetting('maxQuota', true)) return;
