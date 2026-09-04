@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.12.5
+// @version      1.12.6
 // @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(12s窗口) + ESC单按中断 + 断连自动续对话 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.11.1
 // @author       pass
 // @match        https://opencode.ai/*
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.12.6 国家评分搬进 Top5 榜行内，模型行退回纯额度（hover 保留全量）
 // v1.12.5 行标签恢复国家＋评分显示（训练标识留 hover，名字保持全显）
 // v1.12.4 最大行皇冠改左上角叠加（零占位）＋行名 Contributor 后缀缩写（全名进 hover）
 // v1.12.3 模型行标签瘦身：行内只留月额度，国家/评分/训练收进 hover
@@ -1558,7 +1559,7 @@
         var tag = document.createElement('span');
         tag.className = 'oc-quota-tag';
         tag.style.cssText = 'color:#666;font-size:10px;margin-left:6px;white-space:nowrap;flex-shrink:0;';
-        tag.innerHTML = quota.reqMonth.toLocaleString() + '/月' + (country ? ' <span style="color:#888;">(' + country + ')</span>' : '') + (scoreInfo ? ' <span style="color:' + scoreInfo.color + ';font-weight:600;">' + scoreInfo.score + '分</span>' : '');
+        tag.textContent = quota.reqMonth.toLocaleString() + '/月';
         var tipLines = [quota.name + ' ' + quota.reqMonth.toLocaleString() + '/月'];
         if (quota.req5h) tipLines.push('5h ' + quota.req5h.toLocaleString());
         if (country) tipLines.push('国家 ' + country);
@@ -1620,13 +1621,13 @@
         var q = quotaMap[k];
         if (!q || !q.reqMonth) return;
         if (!byMonth[q.reqMonth]) byMonth[q.reqMonth] = [];
-        byMonth[q.reqMonth].push(q.name);
+        byMonth[q.reqMonth].push({ key: k, name: q.name });
       });
       var months = Object.keys(byMonth).map(Number).sort(function (a, b) { return b - a; });
       var rows = [];
       for (var i = 0; i < months.length && rows.length < limit; i++) {
-        var names = byMonth[months[i]].slice().sort();
-        rows.push({ reqMonth: months[i], names: names });
+        var entries = byMonth[months[i]].slice().sort(function (a, b) { return a.name < b.name ? -1 : 1; });
+        rows.push({ reqMonth: months[i], names: entries.map(function (e) { return e.name; }), keys: entries.map(function (e) { return e.key; }) });
       }
       return rows;
     }
@@ -1646,10 +1647,34 @@
         nm.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
         nm.textContent = row.names.map(shortQuotaName).join(' / ');
         nm.title = row.names.join(' / ');
+        line.appendChild(rank); line.appendChild(nm);
+        // 国家＋评分（并列取最高分，国家取首个有数据的，缺数据静默省略）
+        var country = null, scoreInfo = null;
+        for (var ci = 0; ci < row.keys.length; ci++) {
+          if (!country && GO_MODULE.__getCountry) country = GO_MODULE.__getCountry(row.keys[ci]);
+          if (GO_MODULE.__getScore) {
+            var si = GO_MODULE.__getScore(row.keys[ci]);
+            if (si && (!scoreInfo || si.score > scoreInfo.score)) scoreInfo = si;
+          }
+        }
+        if (country) {
+          var ct = document.createElement('span');
+          ct.style.cssText = 'flex:none;opacity:.65;font-weight:400;';
+          ct.textContent = '(' + country + ')';
+          line.appendChild(ct);
+        }
+        if (scoreInfo) {
+          var sc = document.createElement('span');
+          sc.style.cssText = 'flex:none;font-weight:700;';
+          try { sc.style.color = scoreInfo.color; } catch (eC) {}
+          sc.textContent = scoreInfo.score + '分';
+          sc.title = 'AA 智力指数';
+          line.appendChild(sc);
+        }
         var num = document.createElement('span');
         num.style.cssText = 'flex:none;font-variant-numeric:tabular-nums;';
         num.textContent = row.reqMonth.toLocaleString() + '/月';
-        line.appendChild(rank); line.appendChild(nm); line.appendChild(num);
+        line.appendChild(num);
         el.appendChild(line);
       });
       el.title = rows.map(function (row, i) { return (i + 1) + '. ' + row.names.join(' / ') + ' ' + row.reqMonth.toLocaleString() + '/月'; }).join('\n') + '\n数据来自 docs/go';
