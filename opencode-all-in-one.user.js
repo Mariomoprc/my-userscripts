@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.12.3
+// @version      1.12.4
 // @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(12s窗口) + ESC单按中断 + 断连自动续对话 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.11.1
 // @author       pass
 // @match        https://opencode.ai/*
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.12.4 最大行皇冠改左上角叠加（零占位）＋行名 Contributor 后缀缩写（全名进 hover）
 // v1.12.3 模型行标签瘦身：行内只留月额度，国家/评分/训练收进 hover
 // v1.12.2 头条升级为 Go月额度Top5榜（短名＋并列合并＋hover全名）
 // v1.12.1 今日最大头条移到搜索框之上（面板根，不再混进分组）
@@ -1726,16 +1727,29 @@
         if (quota && quota.reqMonth === info.max) {
           item.style.outline = '1px solid #d29922';
           item.style.borderRadius = '6px';
+          if (!item.dataset.ocRel) { item.dataset.ocRel = '1'; item.style.position = 'relative'; }
           if (!crown) {
             crown = document.createElement('span');
             crown.className = 'oc-max-crown';
             crown.textContent = '🏆';
-            crown.style.cssText = 'margin-right:2px;flex-shrink:0;';
+            crown.style.cssText = 'position:absolute;left:0;top:-7px;font-size:9px;line-height:1;background:#1c1a12;border-radius:4px;padding:0 1px;pointer-events:none;';
             crown.title = '今日最大月额度 ' + info.max.toLocaleString() + '/月';
-            item.insertBefore(crown, item.firstChild);
+            item.appendChild(crown);
           }
+          // 行名超长后缀缩写（全名保留在 hover），省出行内空间
+          try {
+            var walker = document.createTreeWalker(item, NodeFilter.SHOW_TEXT, null);
+            var tn, targets = [];
+            while ((tn = walker.nextNode())) targets.push(tn);
+            targets.forEach(function (t) {
+              var p = t.parentElement;
+              if (p && (p.closest('.oc-quota-tag') || p.closest('.oc-peak-tag') || p.classList.contains('oc-max-crown'))) return;
+              if (t.nodeValue && t.nodeValue.indexOf(' Contributor') !== -1) t.nodeValue = t.nodeValue.replace(/ Contributor/g, '');
+            });
+          } catch (eT) {}
         } else {
           if (item.style.outline === '1px solid rgb(210, 153, 34)') { item.style.outline = ''; item.style.borderRadius = ''; }
+          if (item.dataset.ocRel) { delete item.dataset.ocRel; item.style.position = ''; }
           if (crown) crown.remove();
         }
       });
