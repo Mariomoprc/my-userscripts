@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.12.2
+// @version      1.12.3
 // @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(12s窗口) + ESC单按中断 + 断连自动续对话 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.11.1
 // @author       pass
 // @match        https://opencode.ai/*
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.12.3 模型行标签瘦身：行内只留月额度，国家/评分/训练收进 hover
 // v1.12.2 头条升级为 Go月额度Top5榜（短名＋并列合并＋hover全名）
 // v1.12.1 今日最大头条移到搜索框之上（面板根，不再混进分组）
 // v1.12.0 模型面板置顶今日最大额度头条＋最大行描边＋易主/首开提醒，SNAPSHOT 补 Hy4 preview
@@ -1555,7 +1556,15 @@
         var tag = document.createElement('span');
         tag.className = 'oc-quota-tag';
         tag.style.cssText = 'color:#666;font-size:10px;margin-left:6px;white-space:nowrap;flex-shrink:0;';
-        tag.innerHTML = quota.reqMonth.toLocaleString() + '/月' + (country ? ' <span style="color:#888;">(' + country + ')</span>' : '') + (scoreInfo ? ' <span style="color:' + scoreInfo.color + ';font-weight:600;">' + scoreInfo.score + '分</span>' : '') + (privacyInfo && privacyInfo.trainedOnUserData ? ' <span style="color:#f85149;font-weight:600;">⚠ 训练</span>' : '');
+        tag.textContent = quota.reqMonth.toLocaleString() + '/月';
+        var tipLines = [quota.name + ' ' + quota.reqMonth.toLocaleString() + '/月'];
+        if (quota.req5h) tipLines.push('5h ' + quota.req5h.toLocaleString());
+        if (country) tipLines.push('国家 ' + country);
+        if (scoreInfo) tipLines.push('评分 ' + scoreInfo.score + '分');
+        if (privacyInfo && privacyInfo.trainedOnUserData) tipLines.push('⚠ 会用请求数据训练');
+        tipLines.push('数据来自 docs/go');
+        tag.title = tipLines.join('\n');
+        if (!item.title) item.title = tipLines.join('\n');
         item.appendChild(tag);
         // DS 峰时 badge (A)
         var peakBadge = buildPeakBadge(modelId);
