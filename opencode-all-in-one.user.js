@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.12.8
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(12s窗口) + ESC单按中断 + 断连自动续对话 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.11.1
+// @version      1.13.0
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(手动刷新) + 静音 capture(12s窗口) + ESC单按中断 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 代码换行 | v1.13.0
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.13.0 保守精简：删除草稿持久化（串台根治）+删除4747绿点（已退役）+自动重载改手动+TAB/静音/自续默认关闭+折叠阈值50→200+ESC去window.stop
 // v1.12.8 去掉模型行悬浮提示（行内月额度保留，榜头/峰谷hover保留）
 // v1.12.7 workspace 用量区上方嵌入 Go 月额度 Top5 榜（复用 Top5 数据源＋配色，hover 全名）
 // v1.12.6 国家评分搬进 Top5 榜行内，模型行退回纯额度（hover 保留全量）
@@ -101,12 +102,12 @@
 
   var SETTINGS = [
     { key: 'goPanel', label: 'Go 额度面板', def: true },
-    { key: 'tabCycle', label: 'Tab 键切换代理', def: true },
+    { key: 'tabCycle', label: 'Tab 键切换代理', def: false },
     { key: 'pasteImg', label: '粘贴图片', def: true },
     { key: 'pasteCompress', label: '粘贴图片压缩', def: true },
     { key: 'dragDrop', label: '拖拽链接/文字', def: true },
     { key: 'questionKeys', label: '选项键盘导航', def: true },
-    { key: 'memSilence', label: '静音 capture 会话', def: true },
+    { key: 'memSilence', label: '静音 capture 会话', def: false },
     { key: 'peakHint', label: 'DS峰时提醒', def: true },
     { key: 'maxQuota', label: '今日最大额度头条', def: true },
     { key: 'usageTop5', label: '用量区额度Top5', def: true },
@@ -114,7 +115,7 @@
     { key: 'toolFold', label: '长输出折叠', def: true },
     { key: 'smartScroll', label: '智能滚动', def: true },
     { key: 'reasonFold', label: '推理折叠', def: true },
-    { key: 'draftSave', label: '草稿持久化', def: true },
+    { key: 'autoResume', label: '断连自动续对话', def: false },
     { key: 'codeWrap', label: '代码换行切换', def: true }
   ];
 
@@ -2090,22 +2091,19 @@
       if (track) track.style.display = 'block';
       if (fill) { fill.style.transition = 'none'; fill.style.width = '0%'; void fill.offsetWidth; fill.style.transition = 'width 2s linear'; fill.style.width = '100%'; }
       var remain = 2.0;
-      if (text) text.innerHTML = '<span class="oc-title">后端已重连</span><span style="opacity:.65;margin-left:6px" class="oc-countdown">' + remain.toFixed(1) + 's 后自动刷新</span>';
+      if (text) text.innerHTML = '<span class="oc-title">后端已重连</span><span style="opacity:.65;margin-left:6px" class="oc-countdown">手动点重试刷新</span>';
       if (countdownTimer) clearInterval(countdownTimer);
       countdownTimer = setInterval(function () {
         remain -= 0.1;
         if (remain < 0) remain = 0;
         var cd = bannerEl && bannerEl.querySelector('.oc-countdown');
-        if (cd) cd.textContent = remain.toFixed(1) + 's 后自动刷新';
+        if (cd) cd.textContent = '手动点重试刷新';
         if (remain <= 0) clearInterval(countdownTimer);
       }, 100);
       // lock to avoid double reload within 10s
       try { if (sessionStorage.getItem('oc_reload_lock') && Date.now() - Number(sessionStorage.getItem('oc_reload_lock')) < 10000) return; } catch (e) {}
       if (reloadTimer) clearTimeout(reloadTimer);
-      reloadTimer = setTimeout(function () {
-        try { sessionStorage.setItem('oc_reload_lock', String(Date.now())); } catch (e2) {}
-        location.reload();
-      }, 2000);
+      console.log(TAG, 'backend reconnected, manual refresh required');
     }
     function setDisconnected(on) {
       if (on === disconnected && on) return;
@@ -2206,7 +2204,7 @@
       try { var m = s.metadata && s.metadata['opencode-mem']; if (m && m.internal) return true; } catch (e) {}
       return false;
     }
-    function enabled() { return getSetting('memSilence', true); }
+    function enabled() { return getSetting('memSilence', false); }
     function isCaptureWindow() {
       try {
         if (!enabled()) return false;
@@ -2588,7 +2586,7 @@
   //  >50 行或 >10KB 的 tool 输出 → 默认折叠，点击展开
   // ════════════════════════════════════════════════════════════
   var TOOL_FOLD_MODULE = (function () {
-    var LINE_THRESHOLD = 50;
+    var LINE_THRESHOLD = 200;
     var SIZE_THRESHOLD = 10 * 1024;
     var FOLDED_ATTR = '__oc_tf_folded';
     var STYLE_ID = 'oc-tool-fold-style';
@@ -2832,259 +2830,17 @@
   })();
 
   // ════════════════════════════════════════════════════════════
-  //  DRAFT_MODULE — 草稿持久化 (参考 oc-remote Draft persistence)
-  //  输入框内容按会话 ID 存 localStorage，刷新/切换会话恢复
-  // ════════════════════════════════════════════════════════════
+  // DRAFT_MODULE removed v1.13.0
   var DRAFT_MODULE = (function () {
-    var PREFIX = 'ocall_draft_';
-    var currentSession = null;
-    var saveTimer = null;
-    var hookInstalled = false;
-
-    function getSessionId() {
-      var m = location.pathname.match(/\/session\/([^/?#]+)/);
-      if (m && m[1]) return m[1];
-      try {
-        var m2 = location.href.match(/\/session\/([^/?#&]+)/);
-        if (m2 && m2[1]) return m2[1];
-      } catch (e2) {}
-      try {
-        var sp = new URLSearchParams(location.search);
-        var q = sp.get('session') || sp.get('sessionId') || sp.get('sid');
-        if (q) return q;
-      } catch (e3) {}
-      try {
-        var el = document.querySelector('[data-session-id]');
-        if (el) {
-          var v = el.getAttribute('data-session-id');
-          if (v) return v;
-        }
-      } catch (e4) {}
-      return null;
-    }
-
-    function getInput() {
-      return document.querySelector('[data-component="prompt-input"] [contenteditable="true"]') ||
-             document.querySelector('[data-component="prompt-input"] textarea') ||
-             document.querySelector('[contenteditable="true"]') ||
-             document.querySelector('textarea');
-    }
-
-    function readInput(el) {
-      if (!el) return '';
-      if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') return el.value || '';
-      return el.textContent || el.innerText || '';
-    }
-
-    function writeInput(el, text) {
-      if (!el) return;
-      if (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT') {
-        el.value = text;
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-      } else if (el.isContentEditable) {
-        el.textContent = text;
-        if (text) {
-          try {
-            var range = document.createRange();
-            var sel = window.getSelection();
-            range.selectNodeContents(el);
-            range.collapse(false);
-            sel.removeAllRanges();
-            sel.addRange(range);
-          } catch (e) {}
-        }
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-    }
-
-    function clearDraft(sid) {
-      if (!sid) sid = getSessionId();
-      if (!sid) return;
-      try { localStorage.removeItem(PREFIX + sid); } catch (e) {}
-    }
-
-    function saveDraft() {
-      var sid = getSessionId();
-      if (!sid) return;
-      var el = getInput();
-      if (!el) return;
-      if (el !== document.activeElement && document.hasFocus && !document.hasFocus()) return;
-      var text = readInput(el);
-      if (!text.trim()) { try { localStorage.removeItem(PREFIX + sid); } catch (e2) {} return; }
-      try { localStorage.setItem(PREFIX + sid, text); } catch (e3) {}
-    }
-
-    function saveDraftDebounced() {
-      if (saveTimer) clearTimeout(saveTimer);
-      saveTimer = setTimeout(saveDraft, 350);
-    }
-
-    function handleSwitch() {
-      var newSid = getSessionId();
-      if (!newSid) return;
-      if (newSid === currentSession) return;
-      var oldSid = currentSession;
-      var el = getInput();
-      if (el && oldSid) {
-        var oldText = readInput(el);
-        if (oldText.trim()) {
-          try { localStorage.setItem(PREFIX + oldSid, oldText); } catch (e) {}
-        } else {
-          try { localStorage.removeItem(PREFIX + oldSid); } catch (e2) {}
-        }
-      }
-      currentSession = newSid;
-      var saved = null;
-      try { saved = localStorage.getItem(PREFIX + newSid); } catch (e3) {}
-      if (!el) {
-        if (saved) console.log(TAG, 'DRAFT: pending restore for', newSid.slice(0, 12));
-        return;
-      }
-      var curText = readInput(el);
-      if (saved) {
-        if (curText !== saved) {
-          writeInput(el, saved);
-          console.log(TAG, 'DRAFT: restored for', newSid.slice(0, 12));
-        } else {
-          currentSession = newSid;
-        }
-      } else {
-        if (oldSid && curText) {
-          var oldSaved = null;
-          try { oldSaved = localStorage.getItem(PREFIX + oldSid); } catch (e4) {}
-          if (oldSaved && curText === oldSaved) {
-            writeInput(el, '');
-            console.log(TAG, 'DRAFT: cleared for new session', newSid.slice(0, 12));
-          }
-        }
-      }
-    }
-
-    function installHooks() {
-      if (hookInstalled) return;
-      hookInstalled = true;
-      try {
-        var origPush = history.pushState;
-        var origReplace = history.replaceState;
-        history.pushState = function () {
-          var r = origPush.apply(this, arguments);
-          setTimeout(handleSwitch, 80);
-          return r;
-        };
-        history.replaceState = function () {
-          var r = origReplace.apply(this, arguments);
-          setTimeout(handleSwitch, 80);
-          return r;
-        };
-        window.addEventListener('popstate', function () { setTimeout(handleSwitch, 80); });
-      } catch (e5) {}
-      window.addEventListener('hashchange', function () { setTimeout(handleSwitch, 80); });
-      document.addEventListener('visibilitychange', function () {
-        if (!document.hidden) setTimeout(handleSwitch, 120);
-      });
-      window.addEventListener('focus', function () { setTimeout(handleSwitch, 120); });
-      document.addEventListener('click', function (e) {
-        var t = e.target;
-        try {
-          if (t && t.closest) {
-            var tab = t.closest('a[href*="/session/"], [data-session-id], [role="tab"]');
-            if (tab) setTimeout(handleSwitch, 180);
-            var sendBtn = t.closest('button');
-            if (sendBtn) {
-              var nearInput = false;
-              try { nearInput = !!sendBtn.closest('[data-component="prompt-input"], form'); } catch (e6) {}
-              if (nearInput || sendBtn.getAttribute('aria-label') || (sendBtn.textContent || '').trim() === '') {
-                setTimeout(function () {
-                  var sid = getSessionId() || currentSession;
-                  var el2 = getInput();
-                  var txt = el2 ? readInput(el2) : '';
-                  if (!txt.trim()) clearDraft(sid);
-                }, 400);
-              }
-            }
-          }
-        } catch (e7) {}
-      }, true);
-      document.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
-          var el3 = getInput();
-          if (el3 && document.activeElement === el3) {
-            setTimeout(function () {
-              var sid2 = getSessionId() || currentSession;
-              var txt2 = el3 ? readInput(el3) : '';
-              if (!txt2.trim()) clearDraft(sid2);
-            }, 400);
-          }
-        }
-      }, true);
-      var fetchHooked = false;
-      function hookFetchForClear() {
-        if (fetchHooked || !window.fetch) return;
-        var orig = window.fetch;
-        if (orig.__ocDraftHooked) return;
-        fetchHooked = true;
-        var wrapped = function (input, init) {
-          var url = typeof input === 'string' ? input : (input && input.url) || '';
-          var isSend = false;
-          try {
-            var method = (init && init.method) || 'GET';
-            isSend = method.toUpperCase() === 'POST' && (url.indexOf('/session') !== -1 || url.indexOf('/api/session') !== -1);
-          } catch (e8) {}
-          var p = orig.apply(this, arguments);
-          if (isSend) {
-            p.then(function (r) {
-              try {
-                if (r && r.ok) {
-                  var sid3 = getSessionId() || currentSession;
-                  setTimeout(function () { clearDraft(sid3); }, 300);
-                }
-              } catch (e9) {}
-              return r;
-            }).catch(function (err) { throw err; });
-          }
-          return p;
-        };
-        wrapped.__ocDraftHooked = true;
-        try { window.fetch = wrapped; } catch (e10) {}
-      }
-      hookFetchForClear();
-      setTimeout(hookFetchForClear, 800);
-    }
-
     function init() {
-      if (!isLocalhost4096) return;
-      try { currentSession = getSessionId(); } catch (e) {}
-      if (currentSession) {
-        try {
-          var curEl = getInput();
-          var saved0 = localStorage.getItem(PREFIX + currentSession);
-          var curTxt0 = curEl ? readInput(curEl) : '';
-          if (saved0 && curEl && !curTxt0.trim()) {
-            writeInput(curEl, saved0);
-            console.log(TAG, 'DRAFT: initial restore for', currentSession.slice(0, 12));
-          }
-        } catch (e0) {}
-      } else {
-        restoreLoop: try { currentSession = getSessionId(); } catch (eLoop) {}
-      }
-      installHooks();
-      document.addEventListener('input', function (e) {
-        var el4 = getInput();
-        if (!el4) return;
-        if (e.target === el4 || el4.contains(e.target)) saveDraftDebounced();
-      }, true);
-      document.addEventListener('keyup', function (e) {
-        var el5 = getInput();
-        if (el5 && document.activeElement === el5) saveDraftDebounced();
-      }, true);
-      setInterval(function () { handleSwitch(); }, 1200);
-      console.log(TAG, 'DRAFT_MODULE enabled (isolated+debounced)');
+      try {
+        var ks = [];
+        for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && k.indexOf('ocall_draft_') === 0) ks.push(k); }
+        ks.forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+        if (ks.length) console.log('[OC] DRAFT leftover cleaned:' + ks.length);
+      } catch (e) {}
     }
-
-    function restoreDraft() { handleSwitch(); }
-
-    return { init: init, save: saveDraft, _handleSwitch: handleSwitch, _getSessionId: getSessionId };
+    return { init: init };
   })();
 
   // ════════════════════════════════════════════════════════════
@@ -3159,93 +2915,7 @@
   // MEM_4747_ENTRY 已移除：按用户要求去掉 4747 入口，改存书签 javascript:window.open('http://127.0.0.1:4747')
 
   // ════════════════════════════════════════════════════════════
-  //  MEM_4747_WEB_STATUS — 4747 web 左上角 logo 同款绿点
-  // ════════════════════════════════════════════════════════════
-  var MEM_4747_WEB_STATUS = (function () {
-    var STYLE_ID = 'oc-mem-4747-web-style';
-    var DOT_ID = 'oc-mem-4747-web-dot';
-    function ensureStyle() {
-      if (document.getElementById(STYLE_ID)) return;
-      var st = document.createElement('style');
-      st.id = STYLE_ID;
-      st.textContent = '#' + DOT_ID + '{width:7px;height:7px;border-radius:50%;background:#6e7681;box-shadow:0 0 0 4px rgba(110,118,129,.15);display:inline-block;transition:background .15s,box-shadow .15s;flex-shrink:0}#' + DOT_ID + '.oc-mem-ok{background:#2ea043;box-shadow:0 0 0 4px rgba(46,160,67,.18)} #' + DOT_ID + '[style*="position: absolute"]{border:2px solid #1a1a1a;width:8px;height:8px}';
-      (document.head || document.documentElement).appendChild(st);
-    }
-    function findLogoWrap() {
-      var pool = document.querySelectorAll('aside a[href="/"] span, a[href="/"] span, a[href="/"] div, [class*="opencode-mem"] span');
-      for (var p = 0; p < pool.length; p++) {
-        if (pool[p].textContent.trim().toLowerCase().indexOf('opencode') !== -1 && pool[p].children.length === 0) return pool[p];
-      }
-      var a = document.querySelector('aside a[href="/"]') || document.querySelector('a[href="/"]');
-      if (a) return a;
-      var spans = document.querySelectorAll('span, div');
-      for (var i = 0; i < spans.length; i++) {
-        if (spans[i].textContent.trim().toLowerCase().indexOf('opencode') !== -1 && spans[i].children.length === 0) return spans[i];
-      }
-      return document.querySelector('header') || document.querySelector('aside') || document.querySelector('nav');
-    }
-    function injectDot() {
-      if (document.getElementById(DOT_ID)) return true;
-      var target = findLogoWrap();
-      if (!target) return false;
-      ensureStyle();
-      var dot = document.createElement('span');
-      dot.id = DOT_ID;
-      dot.title = '4747 未检测';
-      if (target.tagName === 'SPAN' && target.textContent.trim() === 'opencode-mem') {
-        target.style.position = 'relative';
-        target.style.display = 'inline-flex';
-        target.style.alignItems = 'center';
-        target.insertAdjacentElement('afterend', dot);
-        dot.style.position = 'absolute';
-        dot.style.top = '-4px';
-        dot.style.right = '-10px';
-        console.log(TAG, '4747 web logo dot injected (span+afterend)');
-        return true;
-      }
-      if (target.tagName === 'A' && target.querySelector('span.truncate')) {
-        var span = target.querySelector('span.truncate');
-        span.style.position = 'relative';
-        span.insertAdjacentElement('afterend', dot);
-        dot.style.position = 'absolute';
-        dot.style.top = '-4px';
-        dot.style.right = '-10px';
-        console.log(TAG, '4747 web logo dot injected (a>span afterend)');
-        return true;
-      }
-      target.style.position = 'relative';
-      target.appendChild(dot);
-      console.log(TAG, '4747 web logo dot injected (fallback append)');
-      return true;
-    }
-    function probe() {
-      var dot = document.getElementById(DOT_ID);
-      if (!dot) return;
-      try {
-        fetch(location.origin, { method: 'HEAD', mode: 'no-cors', cache: 'no-store' }).then(function () {
-          dot.classList.add('oc-mem-ok');
-          dot.title = '4747 在线';
-        }).catch(function () {
-          dot.classList.remove('oc-mem-ok');
-          dot.title = '4747 未检测';
-        });
-      } catch (e) {}
-    }
-    function initWeb() {
-      if (!isMemWeb) return;
-      ensureStyle();
-      var tries = 0;
-      var timer = setInterval(function () {
-        tries++;
-        if (injectDot()) { clearInterval(timer); probe(); setInterval(probe, 30000); return; }
-        if (tries > 20) clearInterval(timer);
-      }, 600);
-      var obs = new MutationObserver(function () { if (!document.getElementById(DOT_ID)) injectDot(); });
-      try { if (document.body) obs.observe(document.body, { childList: true, subtree: true }); } catch (e2) {}
-      console.log(TAG, 'MEM 4747 web status enabled');
-    }
-    return { init: initWeb };
-  })();
+  // MEM_4747_WEB_STATUS removed v1.13.0 (4747 retired)
 
   // ════════════════════════════════════════════════════════════
   //  ESC single-press abort
@@ -3260,7 +2930,7 @@
       return null;
     }
     function abortFetch() {
-      try { window.stop(); } catch(e){}
+      // v1.13.0 removed window.stop()
       var stop=findStopBtn();
       if(stop){ try{ stop.click(); return true; }catch(e2){} }
       try{ var ev=new KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,bubbles:true,cancelable:true}); document.dispatchEvent(ev); }catch(e3){}
@@ -3345,7 +3015,7 @@
       if (getSetting('goPanel', true)) {
         MODEL_QUOTA.init();
       }
-      if (getSetting('tabCycle', true)) {
+      if (getSetting('tabCycle', false)) {
         if (document.readyState === 'loading') {
           document.addEventListener('DOMContentLoaded', TAB_MODULE.init);
         } else {
@@ -3359,9 +3029,13 @@
         QUESTION_MODULE.init();
       }
       CONNECTION_MODULE.init();
-      MEM_CAPTURE_SILENCE_MODULE.init();
+      if (getSetting('memSilence', false)) {
+        try { MEM_CAPTURE_SILENCE_MODULE.init(); } catch (e) {}
+      }
       try { ESC_MODULE.init(); } catch (e) {}
-      try { AUTO_RESUME_MODULE.init(); } catch (e) {}
+      if (getSetting('autoResume', false)) {
+        try { AUTO_RESUME_MODULE.init(); } catch (e) {}
+      }
       if (getSetting('largeImg', true)) {
         try { LARGE_IMAGE_MODULE.init(); } catch (e) {}
       }
@@ -3374,9 +3048,7 @@
       if (getSetting('reasonFold', true)) {
         try { REASONING_FOLD_MODULE.init(); } catch (e) {}
       }
-      if (getSetting('draftSave', true)) {
-        try { DRAFT_MODULE.init(); } catch (e) {}
-      }
+      try { DRAFT_MODULE.init(); } catch (e) {} // v1.13.0: only cleans leftover keys
       if (getSetting('codeWrap', true)) {
         try { CODE_WRAP_MODULE.init(); } catch (e) {}
       }
@@ -3385,8 +3057,8 @@
       if (getSetting('goPanel', true)) MODEL_QUOTA.init();
       if (getSetting('pasteImg', true)) PASTE_MODULE.init();
     }
-    if (isMemWeb) {
-      try { MEM_4747_WEB_STATUS.init(); } catch (e) {}
+    if (false) { // v1.13.0 4747 retired
+      try { } catch (e) {}
     }
   }
 
