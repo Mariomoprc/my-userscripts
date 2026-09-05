@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.12.7
+// @version      1.12.8
 // @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(10s上限+前景补探活) + 静音 capture(12s窗口) + ESC单按中断 + 断连自动续对话 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 草稿持久化 + 代码换行 | v1.11.1
 // @author       pass
 // @match        https://opencode.ai/*
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.12.8 去掉模型行悬浮提示（行内月额度保留，榜头/峰谷hover保留）
 // v1.12.7 workspace 用量区上方嵌入 Go 月额度 Top5 榜（复用 Top5 数据源＋配色，hover 全名）
 // v1.12.6 国家评分搬进 Top5 榜行内，模型行退回纯额度（hover 保留全量）
 // v1.12.5 行标签恢复国家＋评分显示（训练标识留 hover，名字保持全显）
@@ -1700,21 +1701,12 @@
         }
         if (!quota) return;
 
-        var scoreInfo = GO_MODULE.__getScore(modelId);
-        var privacyInfo = GO_MODULE.__getPrivacy(modelId);
-        var country = GO_MODULE.__getCountry ? GO_MODULE.__getCountry(modelId) : null;
         var tag = document.createElement('span');
         tag.className = 'oc-quota-tag';
         tag.style.cssText = 'color:#666;font-size:10px;margin-left:6px;white-space:nowrap;flex-shrink:0;';
         tag.textContent = quota.reqMonth.toLocaleString() + '/月';
-        var tipLines = [quota.name + ' ' + quota.reqMonth.toLocaleString() + '/月'];
-        if (quota.req5h) tipLines.push('5h ' + quota.req5h.toLocaleString());
-        if (country) tipLines.push('国家 ' + country);
-        if (scoreInfo) tipLines.push('评分 ' + scoreInfo.score + '分');
-        if (privacyInfo && privacyInfo.trainedOnUserData) tipLines.push('⚠ 会用请求数据训练');
-        tipLines.push('数据来自 docs/go');
-        tag.title = tipLines.join('\n');
-        if (!item.title) item.title = tipLines.join('\n');
+        try { tag.removeAttribute('title'); } catch (eT) {}
+        try { item.removeAttribute('title'); } catch (eI) {}
         item.appendChild(tag);
         // DS 峰时 badge (A)
         var peakBadge = buildPeakBadge(modelId);
