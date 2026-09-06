@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.13.0
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(静默压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线提示(手动刷新) + 静音 capture(12s窗口) + ESC单按中断 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 代码换行 | v1.13.0
+// @version      1.14.0
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 代码换行 + 设置面板 | v1.14.0
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.14.0 重连恢复2s自动刷新+菜单收成设置面板2入口+删静音capture+15项全默认开
 // v1.13.0 保守精简：删除草稿持久化（串台根治）+删除4747绿点（已退役）+自动重载改手动+TAB/静音/自续默认关闭+折叠阈值50→200+ESC去window.stop
 // v1.12.8 去掉模型行悬浮提示（行内月额度保留，榜头/峰谷hover保留）
 // v1.12.7 workspace 用量区上方嵌入 Go 月额度 Top5 榜（复用 Top5 数据源＋配色，hover 全名）
@@ -101,22 +102,21 @@
   }
 
   var SETTINGS = [
-    { key: 'goPanel', label: 'Go 额度面板', def: true },
-    { key: 'tabCycle', label: 'Tab 键切换代理', def: false },
-    { key: 'pasteImg', label: '粘贴图片', def: true },
-    { key: 'pasteCompress', label: '粘贴图片压缩', def: true },
-    { key: 'dragDrop', label: '拖拽链接/文字', def: true },
-    { key: 'questionKeys', label: '选项键盘导航', def: true },
-    { key: 'memSilence', label: '静音 capture 会话', def: false },
-    { key: 'peakHint', label: 'DS峰时提醒', def: true },
-    { key: 'maxQuota', label: '今日最大额度头条', def: true },
-    { key: 'usageTop5', label: '用量区额度Top5', def: true },
-    { key: 'largeImg', label: '大图懒加载', def: true },
-    { key: 'toolFold', label: '长输出折叠', def: true },
-    { key: 'smartScroll', label: '智能滚动', def: true },
-    { key: 'reasonFold', label: '推理折叠', def: true },
-    { key: 'autoResume', label: '断连自动续对话', def: false },
-    { key: 'codeWrap', label: '代码换行切换', def: true }
+    { key: 'goPanel', label: 'Go 额度面板', def: true, group: '额度' },
+    { key: 'tabCycle', label: 'Tab 键切换代理', def: true, group: '输入' },
+    { key: 'pasteImg', label: '粘贴图片', def: true, group: '输入' },
+    { key: 'pasteCompress', label: '粘贴图片压缩', def: true, group: '输入' },
+    { key: 'dragDrop', label: '拖拽链接/文字', def: true, group: '输入' },
+    { key: 'questionKeys', label: '选项键盘导航', def: true, group: '输入' },
+    { key: 'peakHint', label: 'DS峰时提醒', def: true, group: '额度' },
+    { key: 'maxQuota', label: '今日最大额度头条', def: true, group: '额度' },
+    { key: 'usageTop5', label: '用量区额度Top5', def: true, group: '额度' },
+    { key: 'largeImg', label: '大图懒加载', def: true, group: '阅读' },
+    { key: 'toolFold', label: '长输出折叠', def: true, group: '阅读' },
+    { key: 'smartScroll', label: '智能滚动', def: true, group: '阅读' },
+    { key: 'reasonFold', label: '推理折叠', def: true, group: '阅读' },
+    { key: 'autoResume', label: '断连自动续对话', def: true, group: '实验' },
+    { key: 'codeWrap', label: '代码换行切换', def: true, group: '输入' }
   ];
 
   function toast(text, color) {
@@ -127,12 +127,57 @@
     setTimeout(function () { if (d.parentNode) d.remove(); }, 3500);
   }
 
-  SETTINGS.forEach(function (s) {
-    GM_registerMenuCommand((getSetting(s.key, s.def) ? '✓ ' : '✗ ') + s.label, function () {
-      var next = !getSetting(s.key, s.def);
-      setSetting(s.key, next);
-      toast((next ? '✓ 已开启' : '✗ 已关闭') + '：' + s.label, next ? '#2ea043' : '#f85149');
-    });
+  var SETTINGS_PANEL_MODULE = (function () {
+    var panelEl = null;
+    var GROUPS = ['额度', '输入', '阅读', '实验'];
+    function build() {
+      if (panelEl) return panelEl;
+      var st = document.getElementById('oc-settings-style');
+      if (!st) {
+        st = document.createElement('style');
+        st.id = 'oc-settings-style';
+        st.textContent = '#oc-settings-panel{position:fixed;right:16px;bottom:16px;z-index:2147483647;width:300px;max-height:70vh;overflow:auto;background:rgba(22,22,22,.95);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:12px 14px;color:#e6edf3;font-size:12px;backdrop-filter:blur(10px)}#oc-settings-panel h4{margin:10px 0 6px;font-size:11px;opacity:.6}#oc-settings-panel label{display:flex;align-items:center;gap:8px;padding:4px 0;cursor:pointer}#oc-settings-panel .oc-sp-head{display:flex;align-items:center;justify-content:space-between;font-weight:600}#oc-settings-panel .oc-sp-close{border:none;background:transparent;color:inherit;opacity:.6;cursor:pointer;font-size:14px}';
+        (document.head || document.documentElement).appendChild(st);
+      }
+      var el = document.createElement('div');
+      el.id = 'oc-settings-panel';
+      el.style.display = 'none';
+      var html = '<div class="oc-sp-head"><span>OpenCode 设置</span><button class="oc-sp-close" title="关闭">✕</button></div>';
+      GROUPS.forEach(function (g) {
+        html += '<h4>' + g + '</h4>';
+        SETTINGS.filter(function (s) { return s.group === g; }).forEach(function (s) {
+          var on = getSetting(s.key, s.def);
+          html += '<label><input type="checkbox" data-key="' + s.key + '"' + (on ? ' checked' : '') + '><span>' + s.label + '</span></label>';
+        });
+      });
+      el.innerHTML = html;
+      el.querySelector('.oc-sp-close').addEventListener('click', function () { el.style.display = 'none'; });
+      el.querySelectorAll('input[type=checkbox]').forEach(function (box) {
+        box.addEventListener('change', function () {
+          var k = box.getAttribute('data-key');
+          var s = null;
+          for (var i = 0; i < SETTINGS.length; i++) { if (SETTINGS[i].key === k) { s = SETTINGS[i]; break; } }
+          setSetting(k, box.checked);
+          toast((box.checked ? '✓ 已开启' : '✗ 已关闭') + '：' + (s ? s.label : k), box.checked ? '#2ea043' : '#f85149');
+        });
+      });
+      document.body.appendChild(el);
+      panelEl = el;
+      return el;
+    }
+    function toggle() {
+      var el = build();
+      el.style.display = (el.style.display === 'none' ? 'block' : 'none');
+    }
+    return { toggle: toggle };
+  })();
+
+  GM_registerMenuCommand('⚙ OpenCode 设置', function () {
+    SETTINGS_PANEL_MODULE.toggle();
+  });
+  GM_registerMenuCommand('↺ 恢复默认', function () {
+    SETTINGS.forEach(function (s) { try { localStorage.removeItem(SET_PREFIX + s.key); } catch (e) {} });
+    toast('已恢复默认（全开），刷新页面生效', '#2ea043');
   });
 
   var host = location.hostname;
@@ -2075,7 +2120,7 @@
       el.innerHTML = '<span class="oc-dot"></span><span class="oc-text"><span class="oc-title">后端已断开 (4096)</span><span style="opacity:.65;margin-left:6px">等待重连…</span></span><span class="oc-actions"><button class="oc-retry" title="立即重试">重试</button><button class="oc-close" title="关闭">✕</button></span><div class="oc-progress-track" style="display:none"><div class="oc-progress-fill"></div></div>';
       var retry = el.querySelector('.oc-retry');
       var close = el.querySelector('.oc-close');
-      if (retry) retry.addEventListener('click', function (e) { e.stopPropagation(); failCount = 0; probe(); toast('正在重试…', '#1f6feb'); });
+      if (retry) retry.addEventListener('click', function (e) { e.stopPropagation(); try { sessionStorage.setItem('oc_reload_lock', String(Date.now())); } catch (err) {} location.reload(); });
       if (close) close.addEventListener('click', function (e) { e.stopPropagation(); removeBanner(); disconnected = false; try { document.title = origTitle || document.title.replace(/^● 掉线 - /, ''); } catch (err) {} });
       document.body.appendChild(el);
       requestAnimationFrame(function () { requestAnimationFrame(function () { el.classList.add('oc-visible'); }); });
@@ -2091,19 +2136,23 @@
       if (track) track.style.display = 'block';
       if (fill) { fill.style.transition = 'none'; fill.style.width = '0%'; void fill.offsetWidth; fill.style.transition = 'width 2s linear'; fill.style.width = '100%'; }
       var remain = 2.0;
-      if (text) text.innerHTML = '<span class="oc-title">后端已重连</span><span style="opacity:.65;margin-left:6px" class="oc-countdown">手动点重试刷新</span>';
+      if (text) text.innerHTML = '<span class="oc-title">后端已重连</span><span style="opacity:.65;margin-left:6px" class="oc-countdown">' + remain.toFixed(1) + 's 后自动刷新</span>';
       if (countdownTimer) clearInterval(countdownTimer);
       countdownTimer = setInterval(function () {
         remain -= 0.1;
         if (remain < 0) remain = 0;
         var cd = bannerEl && bannerEl.querySelector('.oc-countdown');
-        if (cd) cd.textContent = '手动点重试刷新';
+        if (cd) cd.textContent = remain.toFixed(1) + 's 后自动刷新';
         if (remain <= 0) clearInterval(countdownTimer);
       }, 100);
       // lock to avoid double reload within 10s
       try { if (sessionStorage.getItem('oc_reload_lock') && Date.now() - Number(sessionStorage.getItem('oc_reload_lock')) < 10000) return; } catch (e) {}
       if (reloadTimer) clearTimeout(reloadTimer);
-      console.log(TAG, 'backend reconnected, manual refresh required');
+      reloadTimer = setTimeout(function () {
+        try { sessionStorage.setItem('oc_reload_lock', String(Date.now())); } catch (e2) {}
+        location.reload();
+      }, 2000);
+      console.log(TAG, 'backend reconnected, auto reload in 2s');
     }
     function setDisconnected(on) {
       if (on === disconnected && on) return;
@@ -2193,303 +2242,6 @@
     return { init: init };
   })();
 
-  // ════════════════════════════════════════════════════════════
-  //  静音 opencode-mem capture (仅 localhost:4096, 前端静音不改后端写入)
-  // ════════════════════════════════════════════════════════════
-  var MEM_CAPTURE_SILENCE_MODULE = (function () {
-    var CAPTURE_TITLE = 'opencode-mem capture';
-    function isCaptureSession(s) {
-      if (!s) return false;
-      if (s.title === CAPTURE_TITLE) return true;
-      try { var m = s.metadata && s.metadata['opencode-mem']; if (m && m.internal) return true; } catch (e) {}
-      return false;
-    }
-    function enabled() { return getSetting('memSilence', false); }
-    function isCaptureWindow() {
-      try {
-        if (!enabled()) return false;
-        if (!window.__oc_lastCaptureAt) return false;
-        if (Date.now() - window.__oc_lastCaptureAt > 12000) return false;
-        // precise: capture must be more recent than last normal session update
-        if (window.__oc_lastNormalAt && window.__oc_lastNormalAt > window.__oc_lastCaptureAt) return false;
-        return true;
-      } catch (e) { return false; }
-    }
-    function hookAudio() {
-      try {
-        var proto = window.HTMLAudioElement && window.HTMLAudioElement.prototype;
-        if (proto && !proto.__ocMemHooked) {
-          var origPlay = proto.play;
-          proto.__ocMemHooked = true;
-          proto.play = function () {
-            try {
-              if (isCaptureWindow()) {
-                console.log(TAG, 'MEM silence: Audio.play suppressed (capture precise)');
-                return Promise.resolve();
-              }
-            } catch (e3) {}
-            return origPlay.apply(this, arguments);
-          };
-          try { Audio.prototype.play = proto.play; } catch (e) {}
-        }
-        // AudioContext (Web Audio API) - opencode web may use oscillator/beep
-        try {
-          var AC = window.AudioContext || window.webkitAudioContext;
-          if (AC && AC.prototype && !AC.prototype.__ocMemHooked) {
-            AC.prototype.__ocMemHooked = true;
-            var origResume = AC.prototype.resume;
-            if (origResume) {
-              AC.prototype.resume = function () {
-                if (isCaptureWindow()) {
-                  console.log(TAG, 'MEM silence: AudioContext.resume suppressed');
-                  return Promise.resolve();
-                }
-                return origResume.apply(this, arguments);
-              };
-            }
-            var origCreateOsc = AC.prototype.createOscillator;
-            if (origCreateOsc) {
-              AC.prototype.createOscillator = function () {
-                var osc = origCreateOsc.apply(this, arguments);
-                var origStart = osc.start;
-                osc.start = function () {
-                  if (isCaptureWindow()) {
-                    console.log(TAG, 'MEM silence: Oscillator.start suppressed');
-                    return;
-                  }
-                  return origStart.apply(this, arguments);
-                };
-                return osc;
-              };
-            }
-          }
-        } catch (e4) {}
-        // Notification - unconditional for capture (no time window), to kill +20 spam - robust getter hook
-        try {
-          if (!window.__ocNotifHooked) {
-            window.__ocNotifHooked = true;
-            var OrigNotif = window.Notification;
-            var checkCapture = function (title, opts) {
-              try {
-                if (!enabled()) return false;
-                var txt = (title || '') + ' ' + ((opts && opts.body) || '');
-                var low = txt.toLowerCase();
-                return low.indexOf('opencode-mem capture') !== -1 || low.indexOf('opencode-mem') !== -1;
-              } catch (e) { return false; }
-            };
-            var WrappedNotif = function (title, opts) {
-              if (checkCapture(title, opts)) {
-                console.log(TAG, 'MEM silence: Notification suppressed (unconditional capture)');
-                // return dummy notification that does nothing
-                this.title = title; this.body = opts && opts.body; this.close = function () {};
-                return;
-              }
-              if (isCaptureWindow()) {
-                console.log(TAG, 'MEM silence: Notification suppressed (capture window)');
-                this.title = title; this.body = opts && opts.body; this.close = function () {};
-                return;
-              }
-              return new OrigNotif(title, opts);
-            };
-            WrappedNotif.requestPermission = OrigNotif.requestPermission ? OrigNotif.requestPermission.bind(OrigNotif) : function () { return Promise.resolve('granted'); };
-            try { WrappedNotif.permission = OrigNotif.permission; } catch (e) {}
-            WrappedNotif.__ocMemHooked = true;
-            // use getter to survive early caching
-            try {
-              Object.defineProperty(window, 'Notification', {
-                configurable: true,
-                get: function () { return WrappedNotif; },
-                set: function (v) { OrigNotif = v; WrappedNotif.requestPermission = v.requestPermission ? v.requestPermission.bind(v) : WrappedNotif.requestPermission; }
-              });
-            } catch (e) { window.Notification = WrappedNotif; }
-            try { window.Notification = WrappedNotif; } catch (e2) {}
-            try { if (window.self) Object.defineProperty(window.self, 'Notification', { configurable: true, get: function () { return WrappedNotif; } }); } catch (e3) {}
-          }
-          // ServiceWorker showNotification bypass
-          try {
-            if (window.ServiceWorkerRegistration && window.ServiceWorkerRegistration.prototype && !window.ServiceWorkerRegistration.prototype.__ocMemHooked) {
-              var origShow = window.ServiceWorkerRegistration.prototype.showNotification;
-              if (origShow) {
-                window.ServiceWorkerRegistration.prototype.__ocMemHooked = true;
-                window.ServiceWorkerRegistration.prototype.showNotification = function (title, opts) {
-                  try {
-                    if (enabled()) {
-                      var txt0 = (title || '') + ' ' + ((opts && opts.body) || '');
-                      var low0 = txt0.toLowerCase();
-                      if (low0.indexOf('opencode-mem capture') !== -1 || low0.indexOf('opencode-mem') !== -1) {
-                        console.log(TAG, 'MEM silence: SW Notification suppressed (unconditional capture)');
-                        return Promise.resolve();
-                      }
-                    }
-                    if (enabled() && isCaptureWindow()) {
-                      console.log(TAG, 'MEM silence: SW Notification suppressed (capture window)');
-                      return Promise.resolve();
-                    }
-                    if (enabled()) {
-                      var txt = (title || '') + ' ' + ((opts && opts.body) || '');
-                      var low = txt.toLowerCase();
-                      if (low.indexOf('opencode-mem capture') !== -1 || low.indexOf('opencode-mem') !== -1) {
-                        console.log(TAG, 'MEM silence: SW Notification suppressed');
-                        return Promise.resolve();
-                      }
-                    }
-                  } catch (e7) {}
-                  return origShow.apply(this, arguments);
-                };
-              }
-            }
-          } catch (e8) {}
-        } catch (e5) {}
-      } catch (e) {}
-    }
-    function hookFetch() {
-      try {
-        if (window.__ocFetchMemHooked || !window.fetch) return;
-        var origFetch = window.fetch;
-        window.__ocFetchMemHooked = true;
-        window.fetch = function (input, init) {
-          var url = typeof input === 'string' ? input : (input && input.url) || '';
-          var bodyStr = '';
-          try { bodyStr = init && init.body ? (typeof init.body === 'string' ? init.body : JSON.stringify(init.body)) : ''; } catch (e) {}
-          // detect capture session creation: POST /session with title or internal metadata
-          var isCaptureCreate = false;
-          if (url.indexOf('/session') !== -1 && init && init.method === 'POST' && bodyStr) {
-            if (bodyStr.indexOf('opencode-mem capture') !== -1 || bodyStr.indexOf('"internal":true') !== -1 || bodyStr.indexOf('opencode-mem') !== -1) isCaptureCreate = true;
-          }
-          if (isCaptureCreate || url.indexOf('opencode-mem') !== -1) { try { window.__oc_lastCaptureAt = Date.now(); console.log(TAG, 'MEM silence: capture fetch detected', url); } catch (e) {} }
-          return origFetch.apply(this, arguments).then(function (res) {
-            try {
-              if (url.indexOf('/api/sessions') !== -1 || url.indexOf('/api/session') !== -1 || url.indexOf('/session') !== -1) {
-                var clone = res.clone();
-                return clone.json().then(function (data) {
-                  // track lastCapture vs lastNormal for precise window
-                  try {
-                    var sessions = null;
-                    if (Array.isArray(data)) sessions = data;
-                    else if (data && Array.isArray(data.sessions)) sessions = data.sessions;
-                    else if (data && data.data && Array.isArray(data.data)) sessions = data.data;
-                    if (sessions) {
-                      var hasCapture = false, hasNormal = false;
-                      for (var i = 0; i < sessions.length; i++) { if (isCaptureSession(sessions[i])) { hasCapture = true; break; } }
-                      for (var j = 0; j < sessions.length; j++) { if (!isCaptureSession(sessions[j])) { hasNormal = true; break; } }
-                      if (hasCapture) window.__oc_lastCaptureAt = Date.now();
-                      if (hasNormal) window.__oc_lastNormalAt = Date.now();
-                    }
-                  } catch (e6) {}
-                  if (!enabled()) return res;
-                  var filtered = false;
-                  if (Array.isArray(data)) {
-                    var before = data.length;
-                    data = data.filter(function (s) { return !isCaptureSession(s); });
-                    filtered = data.length !== before;
-                  } else if (data && Array.isArray(data.sessions)) {
-                    var b = data.sessions.length;
-                    data.sessions = data.sessions.filter(function (s) { return !isCaptureSession(s); });
-                    filtered = data.sessions.length !== b;
-                  } else if (data && data.data && Array.isArray(data.data)) {
-                    var b2 = data.data.length;
-                    data.data = data.data.filter(function (s) { return !isCaptureSession(s); });
-                    filtered = data.data.length !== b2;
-                  }
-                  if (filtered) {
-                    console.log(TAG, 'MEM silence: filtered capture from', url);
-                    return new Response(JSON.stringify(data), { status: res.status, statusText: res.statusText, headers: res.headers });
-                  }
-                  return res;
-                }).catch(function () { return res; });
-              }
-            } catch (e2) {}
-            return res;
-          });
-        };
-      } catch (e) {}
-    }
-    function hideCaptureDOM() {
-      if (!enabled()) return;
-      try {
-        var found = false;
-        document.querySelectorAll('[data-title="opencode-mem capture"], [title="opencode-mem capture"]').forEach(function (el) {
-          found = true;
-          var row = el.closest ? (el.closest('[data-session-id]') || el.closest('li') || el.closest('[role="row"]') || el) : el;
-          if (row) row.style.display = 'none';
-        });
-        document.querySelectorAll('[data-session-id]').forEach(function (row) {
-          var t = row.getAttribute('data-title') || row.getAttribute('title') || '';
-          if (t === 'opencode-mem capture') { found = true; row.style.display = 'none'; }
-        });
-        if (found) window.__oc_lastCaptureAt = Date.now();
-      } catch (e) {}
-    }
-    function hookWS() {
-      try {
-        if (window.__ocWSMemHooked) return;
-        window.__ocWSMemHooked = true;
-        var OrigWS = window.WebSocket;
-        if (!OrigWS) return;
-        window.WebSocket = function (url, protos) {
-          var ws = protos ? new OrigWS(url, protos) : new OrigWS(url);
-          var origAdd = ws.addEventListener;
-          ws.addEventListener = function (type, listener, opts) {
-            if (type === 'message') {
-              var wrapped = function (ev) {
-                try {
-                  var d = ev && ev.data ? (typeof ev.data === 'string' ? ev.data : '') : '';
-                  if (d && (d.indexOf('opencode-mem capture') !== -1 || d.indexOf('opencode-mem') !== -1 || d.indexOf('"internal":true') !== -1)) {
-                    window.__oc_lastCaptureAt = Date.now();
-                    console.log(TAG, 'MEM silence: WS capture detected');
-                  }
-                } catch (e) {}
-                return listener.call(this, ev);
-              };
-              return origAdd.call(this, type, wrapped, opts);
-            }
-            return origAdd.call(this, type, listener, opts);
-          };
-          var desc = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(ws), 'onmessage');
-          if (desc && desc.configurable) {
-            Object.defineProperty(ws, 'onmessage', {
-              configurable: true,
-              get: function () { return this.__oc_onmessage || null; },
-              set: function (fn) {
-                this.__oc_onmessage = fn;
-                if (!fn) { try { Object.getPrototypeOf(ws).onmessage = null; } catch (e) {} return; }
-                var self = this;
-                var wrapped2 = function (ev) {
-                  try {
-                    var d2 = ev && ev.data ? (typeof ev.data === 'string' ? ev.data : '') : '';
-                    if (d2 && (d2.indexOf('opencode-mem capture') !== -1 || d2.indexOf('opencode-mem') !== -1)) window.__oc_lastCaptureAt = Date.now();
-                  } catch (e2) {}
-                  return fn.call(self, ev);
-                };
-                try { Object.getPrototypeOf(ws).onmessage = wrapped2; } catch (e3) { ws.__oc_onmessage = wrapped2; }
-              }
-            });
-          }
-          return ws;
-        };
-        window.WebSocket.prototype = OrigWS.prototype;
-        try { Object.setPrototypeOf(window.WebSocket, OrigWS); } catch (e) {}
-      } catch (e4) {}
-    }
-    function init() {
-      if (!isLocalhost4096) return;
-      hookAudio();
-      hookFetch();
-      hookWS();
-      try {
-        var st = document.createElement('style');
-        st.id = 'oc-mem-silence-style';
-        st.textContent = '[data-title="opencode-mem capture"]{display:none !important}[data-session-id] [data-title="opencode-mem capture"]{display:none !important}';
-        (document.head || document.documentElement).appendChild(st);
-      } catch (e) {}
-      setInterval(hideCaptureDOM, 1000);
-      try { var mo = new MutationObserver(hideCaptureDOM); mo.observe(document.body, { childList: true, subtree: true }); } catch (e) {}
-      console.log(TAG, 'MEM capture silence enabled');
-    }
-    return { init: init };
-  })();
-
-  // ════════════════════════════════════════════════════════════
   //  LARGE_IMAGE_MODULE — 大图懒加载/降采样 (参考 oc-remote Image optimization)
   //  >200KB base64 图片 → 占位 + IntersectionObserver 进入视口才解码 + canvas ≤1280px
   // ════════════════════════════════════════════════════════════
@@ -3015,7 +2767,7 @@
       if (getSetting('goPanel', true)) {
         MODEL_QUOTA.init();
       }
-      if (getSetting('tabCycle', false)) {
+      if (getSetting('tabCycle', true)) {
         if (document.readyState === 'loading') {
           document.addEventListener('DOMContentLoaded', TAB_MODULE.init);
         } else {
@@ -3029,11 +2781,8 @@
         QUESTION_MODULE.init();
       }
       CONNECTION_MODULE.init();
-      if (getSetting('memSilence', false)) {
-        try { MEM_CAPTURE_SILENCE_MODULE.init(); } catch (e) {}
-      }
       try { ESC_MODULE.init(); } catch (e) {}
-      if (getSetting('autoResume', false)) {
+      if (getSetting('autoResume', true)) {
         try { AUTO_RESUME_MODULE.init(); } catch (e) {}
       }
       if (getSetting('largeImg', true)) {
