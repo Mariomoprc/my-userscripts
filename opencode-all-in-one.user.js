@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.14.1
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 代码换行 + 设置面板 | v1.14.1
+// @version      1.14.2
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 代码换行 + 设置面板 | v1.14.2
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.14.2 ESC检测改按键同步全量+在途流计数+Cancel选择器+按键日志
 // v1.14.1 ESC即停：停止按钮缓存+流式Abort注册表+硬中断可选开关（默认关）
 // v1.14.0 重连恢复2s自动刷新+菜单收成设置面板2入口+删静音capture+15项全默认开
 // v1.13.0 保守精简：删除草稿持久化（串台根治）+删除4747绿点（已退役）+自动重载改手动+TAB/静音/自续默认关闭+折叠阈值50→200+ESC去window.stop
@@ -2286,7 +2287,7 @@
       scheduleNext();
       console.log(TAG, '后端连接监测已启用 (localhost:4096) 10s上限+visibilitychange补探活');
     }
-    return { init: init, abortStreams: abortStreams };
+    return { init: init, abortStreams: abortStreams, streamCount: function () { return streamCtrls.length; } };
   })();
 
   //  LARGE_IMAGE_MODULE — 大图懒加载/降采样 (参考 oc-remote Image optimization)
@@ -2728,7 +2729,7 @@
       try { return el && el.isConnected !== false && el.offsetParent !== undefined; } catch (e) { return !!el; }
     }
     function findStopBtn() {
-      var sels = ['button[title*="停止"]','button[title*="Stop"]','button[aria-label*="停止"]','button[aria-label*="Stop"]','[data-testid*="stop"]'];
+      var sels = ['button[title*="停止"]','button[title*="Stop"]','button[aria-label*="停止"]','button[aria-label*="Stop"]','button[title*="取消"]','button[title*="Cancel"]','button[aria-label*="取消"]','button[aria-label*="Cancel"]','[data-testid*="stop"]','[data-testid*="cancel"]'];
       for (var i=0;i<sels.length;i++) { try{ var el=document.querySelector(sels[i]); if(el) return el; }catch(e){} }
       return null;
     }
@@ -2737,9 +2738,20 @@
       if (hit) return hit;
       try {
         var btns=document.querySelectorAll('button');
-        for (var j=0;j<btns.length;j++) { var t=(btns[j].textContent||'').trim(); if(t==='停止'||t==='Stop'||t.indexOf('中断')!==-1) return btns[j]; }
+        for (var j=0;j<btns.length;j++) {
+          var t=(btns[j].textContent||'').trim();
+          var al=btns[j].getAttribute ? ((btns[j].getAttribute('aria-label')||'') + ' ' + (btns[j].getAttribute('title')||'')) : '';
+          if(t==='停止'||t==='Stop'||t==='取消'||t==='Cancel'||t.indexOf('中断')!==-1||al.indexOf('停止')!==-1||al.indexOf('Stop')!==-1||al.indexOf('取消')!==-1||al.indexOf('Cancel')!==-1) return btns[j];
+        }
       } catch (e) {}
       return null;
+    }
+    function liveStreamCount() {
+      try {
+        if (typeof CONNECTION_MODULE !== 'undefined' && CONNECTION_MODULE.streamCount) return CONNECTION_MODULE.streamCount();
+        if (window.__ocStreamCtrls) return window.__ocStreamCtrls.length;
+      } catch (e) {}
+      return 0;
     }
     function refreshCache(force) {
       var now = Date.now();
@@ -2783,22 +2795,19 @@
         var now=Date.now();
         if (now - lastEsc < 400) { e.preventDefault(); e.stopPropagation(); return; }
         lastEsc=now;
-        if (cachedStop && cachedStop.isConnected) {
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          abortFetch();
-          console.log(TAG,'ESC abort triggered (cached)');
-          return;
-        }
-        refreshCache(false);
-        if (cachedGen || document.querySelector('button[title*="Stop"]')) {
+        var stop = (cachedStop && cachedStop.isConnected) ? cachedStop : findStopSlow();
+        if (stop) cachedStop = stop;
+        var streams = liveStreamCount();
+        var generating = !!(stop || streams > 0 || document.querySelector('[data-generating="true"]') || document.querySelector('.oc-generating'));
+        try { console.log(TAG, 'ESC key stop=' + !!stop + ' streams=' + streams + ' gen=' + generating); } catch (eL) {}
+        if (generating) {
           e.preventDefault();
           e.stopImmediatePropagation();
           abortFetch();
           console.log(TAG,'ESC abort triggered');
         }
       }, true);
-      console.log(TAG,'ESC single-press enabled v1.14.1');
+      console.log(TAG,'ESC single-press enabled v1.14.2');
     }
     return { init: init };
   })();
