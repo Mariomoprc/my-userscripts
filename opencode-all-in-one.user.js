@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.14.0
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 代码换行 + 设置面板 | v1.14.0
+// @version      1.14.1
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 代码换行 + 设置面板 | v1.14.1
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.14.1 ESC即停：停止按钮缓存+流式Abort注册表+硬中断可选开关（默认关）
 // v1.14.0 重连恢复2s自动刷新+菜单收成设置面板2入口+删静音capture+15项全默认开
 // v1.13.0 保守精简：删除草稿持久化（串台根治）+删除4747绿点（已退役）+自动重载改手动+TAB/静音/自续默认关闭+折叠阈值50→200+ESC去window.stop
 // v1.12.8 去掉模型行悬浮提示（行内月额度保留，榜头/峰谷hover保留）
@@ -116,6 +117,7 @@
     { key: 'smartScroll', label: '智能滚动', def: true, group: '阅读' },
     { key: 'reasonFold', label: '推理折叠', def: true, group: '阅读' },
     { key: 'autoResume', label: '断连自动续对话', def: true, group: '实验' },
+    { key: 'escHard', label: 'ESC硬中断兜底', def: false, group: '实验' },
     { key: 'codeWrap', label: '代码换行切换', def: true, group: '输入' }
   ];
 
@@ -2098,6 +2100,17 @@
     var MIN_INTERVAL = 1000;
     var MAX_INTERVAL = 10000;
     var origFetch = window.fetch;
+    var streamCtrls = [];
+    try { window.__ocStreamCtrls = streamCtrls; } catch (e0) {}
+    function abortStreams() {
+      var n = streamCtrls.length;
+      for (var i = 0; i < streamCtrls.length; i++) { try { streamCtrls[i].abort(); } catch (e) {} }
+      streamCtrls.length = 0;
+      return n;
+    }
+    try {
+      window.__ocAbortStreams = abortStreams;
+    } catch (e00) {}
     var bannerEl = null;
     var reloadTimer = null;
     var countdownTimer = null;
@@ -2196,11 +2209,44 @@
       window.fetch = function (input, init) {
         var url = typeof input === 'string' ? input : (input && input.url) || '';
         var isSelf = url.indexOf(location.origin) === 0 || url.indexOf('localhost:4096') !== -1;
-        var signal = init && init.signal;
-        if (signal && signal.aborted) {
+        var method = '';
+        try { method = (init && init.method ? init.method : 'GET').toUpperCase(); } catch (eM) {}
+        var isStreamPost = (typeof input === 'string') && isSelf && method === 'POST';
+        var appSignal = init && init.signal;
+        var ctrl = null;
+        var outInit = init;
+        if (isStreamPost) {
+          try {
+            ctrl = new AbortController();
+            streamCtrls.push(ctrl);
+            outInit = {};
+            if (init) { for (var k in init) { try { outInit[k] = init[k]; } catch (eK) {} } }
+            if (appSignal) {
+              if (appSignal.aborted) { try { ctrl.abort(); } catch (eA) {} }
+              else if (appSignal.addEventListener) {
+                (function (c) {
+                  try {
+                    appSignal.addEventListener('abort', function () { try { c.abort(); } catch (e2) {} }, { once: true });
+                  } catch (eL) {}
+                })(ctrl);
+              }
+            }
+            outInit.signal = ctrl.signal;
+          } catch (eC) { ctrl = null; outInit = init; }
+        }
+        var signal = (outInit && outInit.signal) || appSignal;
+        if (signal && signal.aborted && !ctrl) {
           return origFetch.apply(this, arguments);
         }
-        return origFetch.apply(this, arguments).then(function (r) {
+        var args = (outInit !== init) ? [input, outInit] : arguments;
+        function done() {
+          if (ctrl) {
+            var ix = streamCtrls.indexOf(ctrl);
+            if (ix !== -1) streamCtrls.splice(ix, 1);
+          }
+        }
+        return origFetch.apply(this, args).then(function (r) {
+          done();
           if (isSelf) {
             var alive = r.ok || r.status === 401 || r.status === 403 || (r.status >= 200 && r.status < 500);
             if (alive) { failCount = 0; if (disconnected) setDisconnected(false); }
@@ -2208,6 +2254,7 @@
           }
           return r;
         }, function (err) {
+          done();
           var isAbort = false;
           try {
             isAbort = (err && (err.name === 'AbortError' || err.name === 'Abort')) ||
@@ -2239,7 +2286,7 @@
       scheduleNext();
       console.log(TAG, '后端连接监测已启用 (localhost:4096) 10s上限+visibilitychange补探活');
     }
-    return { init: init };
+    return { init: init, abortStreams: abortStreams };
   })();
 
   //  LARGE_IMAGE_MODULE — 大图懒加载/降采样 (参考 oc-remote Image optimization)
@@ -2674,36 +2721,84 @@
   // ════════════════════════════════════════════════════════════
   var ESC_MODULE = (function () {
     var lastEsc = 0;
+    var cachedStop = null;
+    var cachedGen = false;
+    var lastScan = 0;
+    function isAlive(el) {
+      try { return el && el.isConnected !== false && el.offsetParent !== undefined; } catch (e) { return !!el; }
+    }
     function findStopBtn() {
-      var sels = ['button[title*="停止"]','button[title*="Stop"]','button[aria-label*="停止"]','button[aria-label*="Stop"]','[data-testid*="stop"]','button:has-text("停止")'];
+      var sels = ['button[title*="停止"]','button[title*="Stop"]','button[aria-label*="停止"]','button[aria-label*="Stop"]','[data-testid*="stop"]'];
       for (var i=0;i<sels.length;i++) { try{ var el=document.querySelector(sels[i]); if(el) return el; }catch(e){} }
-      var btns=document.querySelectorAll('button');
-      for (var j=0;j<btns.length;j++) { var t=(btns[j].textContent||'').trim(); if(t==='停止'||t==='Stop'||t.indexOf('中断')!==-1) return btns[j]; }
       return null;
     }
+    function findStopSlow() {
+      var hit = findStopBtn();
+      if (hit) return hit;
+      try {
+        var btns=document.querySelectorAll('button');
+        for (var j=0;j<btns.length;j++) { var t=(btns[j].textContent||'').trim(); if(t==='停止'||t==='Stop'||t.indexOf('中断')!==-1) return btns[j]; }
+      } catch (e) {}
+      return null;
+    }
+    function refreshCache(force) {
+      var now = Date.now();
+      if (!force && now - lastScan < 1000) return;
+      lastScan = now;
+      try {
+        if (cachedStop && !cachedStop.isConnected) cachedStop = null;
+        if (!cachedStop) cachedStop = findStopBtn();
+        if (!cachedStop && force) cachedStop = findStopSlow();
+        cachedGen = !!(document.querySelector('[data-generating="true"]') || cachedStop || document.querySelector('.oc-generating') || document.querySelector('button[title*="Stop"]'));
+      } catch (e) {}
+    }
     function abortFetch() {
-      // v1.13.0 removed window.stop()
-      var stop=findStopBtn();
-      if(stop){ try{ stop.click(); return true; }catch(e2){} }
-      try{ var ev=new KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,bubbles:true,cancelable:true}); document.dispatchEvent(ev); }catch(e3){}
-      return false;
+      var n = 0;
+      try {
+        if (typeof CONNECTION_MODULE !== 'undefined' && CONNECTION_MODULE.abortStreams) n = CONNECTION_MODULE.abortStreams();
+        else if (window.__ocAbortStreams) n = window.__ocAbortStreams();
+      } catch (e0) {}
+      var stop = (cachedStop && cachedStop.isConnected) ? cachedStop : findStopBtn();
+      if (!stop) { try { stop = findStopSlow(); } catch (eS) {} }
+      if (stop) { cachedStop = stop; try{ stop.click(); }catch(e2){} }
+      try {
+        if (getSetting('escHard', false)) { window.stop(); }
+      } catch (eH) {}
+      if (!stop && !n) {
+        try{ var ev=new KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,bubbles:true,cancelable:true}); ev.__ocSynthetic = true; document.dispatchEvent(ev); }catch(e3){}
+      }
+      return !!(stop || n);
     }
     function init() {
       if (!isLocalhost4096 && !isMemWeb) return;
+      refreshCache(true);
+      try {
+        var mo = new MutationObserver(function () { refreshCache(false); });
+        if (document.body) mo.observe(document.body, { childList: true, subtree: true });
+        else document.addEventListener('DOMContentLoaded', function () { try { mo.observe(document.body, { childList: true, subtree: true }); } catch (e) {} });
+      } catch (eM) {}
       document.addEventListener('keydown', function (e) {
         if (e.key !== 'Escape' && e.keyCode !== 27) return;
+        if (e.__ocSynthetic) return;
         var now=Date.now();
         if (now - lastEsc < 400) { e.preventDefault(); e.stopPropagation(); return; }
         lastEsc=now;
-        var hasGenerating=document.querySelector('[data-generating="true"]') || document.querySelector('button[title*="停止"]') || document.querySelector('.oc-generating');
-        if (hasGenerating || document.querySelector('button[title*="Stop"]')) {
+        if (cachedStop && cachedStop.isConnected) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          abortFetch();
+          console.log(TAG,'ESC abort triggered (cached)');
+          return;
+        }
+        refreshCache(false);
+        if (cachedGen || document.querySelector('button[title*="Stop"]')) {
           e.preventDefault();
           e.stopImmediatePropagation();
           abortFetch();
           console.log(TAG,'ESC abort triggered');
         }
       }, true);
-      console.log(TAG,'ESC single-press enabled');
+      console.log(TAG,'ESC single-press enabled v1.14.1');
     }
     return { init: init };
   })();
