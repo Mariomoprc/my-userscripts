@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.14.2
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 代码换行 + 设置面板 | v1.14.2
+// @version      1.14.3
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 代码换行 + 设置面板 | v1.14.3
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.14.3 流式中暂停4重型DOM扫描+结束后一次补扫（ESC让路主线程）
 // v1.14.2 ESC检测改按键同步全量+在途流计数+Cancel选择器+按键日志
 // v1.14.1 ESC即停：停止按钮缓存+流式Abort注册表+硬中断可选开关（默认关）
 // v1.14.0 重连恢复2s自动刷新+菜单收成设置面板2入口+删静音capture+15项全默认开
@@ -128,6 +129,14 @@
     d.textContent = text;
     document.body.appendChild(d);
     setTimeout(function () { if (d.parentNode) d.remove(); }, 3500);
+  }
+
+  function ocStreaming() {
+    try {
+      if (window.__ocStreamCtrls && window.__ocStreamCtrls.length > 0) return true;
+      if (typeof CONNECTION_MODULE !== 'undefined' && CONNECTION_MODULE.streamCount && CONNECTION_MODULE.streamCount() > 0) return true;
+    } catch (e) {}
+    return false;
   }
 
   var SETTINGS_PANEL_MODULE = (function () {
@@ -2355,8 +2364,14 @@
       scan();
       var pending = [];
       var t = null;
+      var catchUpT = null;
       function flush() {
         t = null;
+        if (typeof ocStreaming === 'function' && ocStreaming()) {
+          pending.length = 0;
+          if (!catchUpT) catchUpT = setTimeout(function () { catchUpT = null; if (ocStreaming()) { if (!t) t = setTimeout(flush, 900); return; } try { scan(document); } catch (e) {} }, 900);
+          return;
+        }
         var batch = pending.slice(); pending.length = 0;
         for (var i = 0; i < batch.length; i++) {
           var n = batch[i];
@@ -2435,8 +2450,14 @@
       scan();
       var pending2 = [];
       var t2 = null;
+      var catchUpT2 = null;
       function flush2() {
         t2 = null;
+        if (typeof ocStreaming === 'function' && ocStreaming()) {
+          pending2.length = 0;
+          if (!catchUpT2) catchUpT2 = setTimeout(function () { catchUpT2 = null; if (ocStreaming()) { if (!t2) t2 = setTimeout(flush2, 900); return; } try { scan(document); } catch (e) {} }, 900);
+          return;
+        }
         var batch = pending2.slice(); pending2.length = 0;
         for (var i = 0; i < batch.length; i++) {
           var n = batch[i];
@@ -2605,8 +2626,14 @@
       scan();
       var pending3 = [];
       var t3 = null;
+      var catchUpT3 = null;
       function flush3() {
         t3 = null;
+        if (typeof ocStreaming === 'function' && ocStreaming()) {
+          pending3.length = 0;
+          if (!catchUpT3) catchUpT3 = setTimeout(function () { catchUpT3 = null; if (ocStreaming()) { if (!t3) t3 = setTimeout(flush3, 900); return; } try { scan(document); } catch (e) {} }, 900);
+          return;
+        }
         var batch = pending3.slice(); pending3.length = 0;
         for (var i = 0; i < batch.length; i++) {
           if (batch[i].querySelectorAll) scan(batch[i]);
@@ -2686,8 +2713,14 @@
       scan();
       var pending4 = [];
       var t4 = null;
+      var catchUpT4 = null;
       function flush4() {
         t4 = null;
+        if (typeof ocStreaming === 'function' && ocStreaming()) {
+          pending4.length = 0;
+          if (!catchUpT4) catchUpT4 = setTimeout(function () { catchUpT4 = null; if (ocStreaming()) { if (!t4) t4 = setTimeout(flush4, 900); return; } try { scan(document); } catch (e) {} }, 900);
+          return;
+        }
         var batch = pending4.slice(); pending4.length = 0;
         for (var i = 0; i < batch.length; i++) {
           var n = batch[i];
@@ -2807,7 +2840,7 @@
           console.log(TAG,'ESC abort triggered');
         }
       }, true);
-      console.log(TAG,'ESC single-press enabled v1.14.2');
+      console.log(TAG,'ESC single-press enabled v1.14.3');
     }
     return { init: init };
   })();
