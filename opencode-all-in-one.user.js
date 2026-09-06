@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.14.3
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 代码换行 + 设置面板 | v1.14.3
+// @version      1.14.4
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 代码换行 + 设置面板 | v1.14.4
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.14.4 诊断版：ESC必弹toast+流式POST跟踪日志（定罪用，下版删）
 // v1.14.3 流式中暂停4重型DOM扫描+结束后一次补扫（ESC让路主线程）
 // v1.14.2 ESC检测改按键同步全量+在途流计数+Cancel选择器+按键日志
 // v1.14.1 ESC即停：停止按钮缓存+流式Abort注册表+硬中断可选开关（默认关）
@@ -2242,6 +2243,7 @@
               }
             }
             outInit.signal = ctrl.signal;
+            try { console.log(TAG, 'TRACKED stream POST ' + url.slice(-80)); } catch (eTr) {}
           } catch (eC) { ctrl = null; outInit = init; }
         }
         var signal = (outInit && outInit.signal) || appSignal;
@@ -2833,6 +2835,7 @@
         var streams = liveStreamCount();
         var generating = !!(stop || streams > 0 || document.querySelector('[data-generating="true"]') || document.querySelector('.oc-generating'));
         try { console.log(TAG, 'ESC key stop=' + !!stop + ' streams=' + streams + ' gen=' + generating); } catch (eL) {}
+        try { toast('ESC stop=' + !!stop + ' streams=' + streams + ' gen=' + generating, generating ? '#2ea043' : '#888'); } catch (eT) {}
         if (generating) {
           e.preventDefault();
           e.stopImmediatePropagation();
@@ -2840,7 +2843,7 @@
           console.log(TAG,'ESC abort triggered');
         }
       }, true);
-      console.log(TAG,'ESC single-press enabled v1.14.3');
+      console.log(TAG,'ESC single-press enabled v1.14.4');
     }
     return { init: init };
   })();
