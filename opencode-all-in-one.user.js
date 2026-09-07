@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.15.3
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 设置面板(精简版) | v1.15.3
+// @version      1.15.4
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 设置面板(精简版) | v1.15.4
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.15.4 删慢回复toast+断连横幅美化：呼吸光环/省略号/扫光/恢复进度+刷新前保输入
 // v1.15.3 卡死提示写明原因：流/停止钮/标记分类免开F12
 // v1.15.2 卡死误报降噪：心跳补文本更新+新轮次重置+隐藏停止按钮不算生成
 // v1.15.1 恢复断连自动续+删ESC自刷
@@ -2158,7 +2159,7 @@
       if (document.getElementById('oc-conn-style')) return;
       var st = document.createElement('style');
       st.id = 'oc-conn-style';
-      st.textContent = '#oc-disconnected-banner{position:fixed;bottom:calc(72px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%) translateY(8px);opacity:0;z-index:2147483647;max-width:520px;width:calc(100% - 32px);padding:11px 14px;border-radius:12px;display:flex;align-items:center;gap:10px;font-size:12px;line-height:1.4;transition:opacity 180ms,transform 180ms,border-color 300ms,background 300ms;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);pointer-events:auto;box-shadow:0 12px 28px rgba(0,0,0,.18)}#oc-disconnected-banner.oc-visible{opacity:1;transform:translateX(-50%) translateY(0)}#oc-disconnected-banner .oc-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;animation:oc-pulse 1.6s infinite}#oc-disconnected-banner.oc-state-offline{border:1px solid rgba(255,255,255,.10);background:rgba(22,22,22,.88);color:#e6edf3;box-shadow:0 12px 28px rgba(0,0,0,.45)}#oc-disconnected-banner.oc-state-offline .oc-dot{background:#f85149;box-shadow:0 0 0 6px rgba(248,81,73,.18)}#oc-disconnected-banner.oc-state-online{border:1px solid rgba(255,255,255,.10);background:rgba(16,24,18,.92);color:#e6edf3;box-shadow:0 12px 28px rgba(0,0,0,.45)}#oc-disconnected-banner.oc-state-online .oc-dot{background:#2ea043;box-shadow:0 0 0 6px rgba(46,160,67,.18)}#oc-disconnected-banner .oc-text{flex:1;min-width:0}#oc-disconnected-banner .oc-actions{display:flex;gap:6px;align-items:center;flex-shrink:0}#oc-disconnected-banner .oc-retry{padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.08);color:inherit;font-size:11px;cursor:pointer}#oc-disconnected-banner .oc-retry:hover{background:rgba(255,255,255,.14)}#oc-disconnected-banner .oc-close{width:24px;height:24px;border-radius:6px;border:none;background:transparent;color:inherit;opacity:.6;cursor:pointer;font-size:14px;line-height:1}#oc-disconnected-banner .oc-close:hover{opacity:1;background:rgba(255,255,255,.08)}#oc-disconnected-banner .oc-progress-track{position:absolute;left:0;right:0;bottom:0;height:2px;background:rgba(255,255,255,.08);border-radius:0 0 12px 12px;overflow:hidden}#oc-disconnected-banner .oc-progress-fill{height:100%;width:0%;background:linear-gradient(90deg,#2ea043,#3fb950);transition:width 2s linear}@keyframes oc-pulse{0%{transform:scale(1)}50%{transform:scale(1.12)}100%{transform:scale(1)}}@media(prefers-color-scheme:light){#oc-disconnected-banner.oc-state-offline{background:rgba(255,255,255,.94);border-color:rgba(0,0,0,.08);color:#24292f;box-shadow:0 12px 28px rgba(0,0,0,.12)}#oc-disconnected-banner.oc-state-online{background:rgba(242,255,242,.96);border-color:rgba(0,0,0,.08);color:#24292f}#oc-disconnected-banner.oc-state-offline .oc-dot{box-shadow:0 0 0 6px rgba(248,81,73,.12)}#oc-disconnected-banner.oc-state-online .oc-dot{box-shadow:0 0 0 6px rgba(46,160,67,.12)}#oc-disconnected-banner .oc-retry{border-color:rgba(0,0,0,.08);background:rgba(0,0,0,.04)}#oc-disconnected-banner .oc-retry:hover{background:rgba(0,0,0,.08)}#oc-disconnected-banner .oc-progress-track{background:rgba(0,0,0,.06)}}';
+      st.textContent = '#oc-disconnected-banner{position:fixed;bottom:calc(72px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%) translateY(8px);opacity:0;z-index:2147483647;max-width:520px;width:calc(100% - 32px);padding:11px 14px;border-radius:12px;display:flex;align-items:center;gap:10px;font-size:12px;line-height:1.4;transition:opacity 180ms,transform 180ms,border-color 300ms,background 300ms;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);pointer-events:auto;box-shadow:0 12px 28px rgba(0,0,0,.18)}#oc-disconnected-banner.oc-visible{opacity:1;transform:translateX(-50%) translateY(0)}#oc-disconnected-banner .oc-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;animation:oc-pulse 1.6s infinite}#oc-disconnected-banner.oc-state-offline{border:1px solid rgba(255,255,255,.10);background:rgba(22,22,22,.88);color:#e6edf3;box-shadow:0 12px 28px rgba(0,0,0,.45)}#oc-disconnected-banner.oc-state-offline .oc-dot{background:#f85149;box-shadow:0 0 0 6px rgba(248,81,73,.18)}#oc-disconnected-banner.oc-state-online{border:1px solid rgba(255,255,255,.10);background:rgba(16,24,18,.92);color:#e6edf3;box-shadow:0 12px 28px rgba(0,0,0,.45)}#oc-disconnected-banner.oc-state-online .oc-dot{background:#2ea043;box-shadow:0 0 0 6px rgba(46,160,67,.18)}#oc-disconnected-banner .oc-text{flex:1;min-width:0}#oc-disconnected-banner .oc-actions{display:flex;gap:6px;align-items:center;flex-shrink:0}#oc-disconnected-banner .oc-retry{padding:6px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.08);color:inherit;font-size:11px;cursor:pointer}#oc-disconnected-banner .oc-retry:hover{background:rgba(255,255,255,.14)}#oc-disconnected-banner .oc-close{width:24px;height:24px;border-radius:6px;border:none;background:transparent;color:inherit;opacity:.6;cursor:pointer;font-size:14px;line-height:1}#oc-disconnected-banner .oc-close:hover{opacity:1;background:rgba(255,255,255,.08)}#oc-disconnected-banner .oc-progress-track{position:absolute;left:0;right:0;bottom:0;height:2px;background:rgba(255,255,255,.08);border-radius:0 0 12px 12px;overflow:hidden}#oc-disconnected-banner .oc-progress-fill{height:100%;width:0%;background:linear-gradient(90deg,#2ea043,#3fb950);transition:width 2s linear}@keyframes oc-pulse{0%{transform:scale(1)}50%{transform:scale(1.12)}100%{transform:scale(1)}}#oc-disconnected-banner{overflow:hidden}#oc-disconnected-banner.oc-visible{animation:oc-pop .24s ease-out}#oc-disconnected-banner .oc-ellipsis i{display:inline-block;animation:oc-blink 1.2s infinite;font-style:normal}#oc-disconnected-banner .oc-ellipsis i:nth-child(2){animation-delay:.2s}#oc-disconnected-banner .oc-ellipsis i:nth-child(3){animation-delay:.4s}#oc-disconnected-banner.oc-state-offline .oc-dot{animation:oc-pulse 1.6s infinite,oc-ring 1.6s infinite}#oc-disconnected-banner.oc-state-online .oc-progress-fill{background:linear-gradient(90deg,#2ea043,#3fb950,#2ea043);background-size:200% 100%;animation:oc-stripes 1s linear infinite}#oc-disconnected-banner.oc-state-offline::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 30%,rgba(255,255,255,.07) 50%,transparent 70%);transform:translateX(-100%);animation:oc-sweep 2.6s ease-in-out infinite;pointer-events:none}@keyframes oc-pop{from{transform:translateX(-50%) translateY(8px) scale(.97)}to{transform:translateX(-50%) translateY(0) scale(1)}}@keyframes oc-ring{0%{box-shadow:0 0 0 4px rgba(248,81,73,.22)}50%{box-shadow:0 0 0 9px rgba(248,81,73,.06)}100%{box-shadow:0 0 0 4px rgba(248,81,73,.22)}}@keyframes oc-blink{0%,100%{opacity:.2}50%{opacity:1}}@keyframes oc-stripes{from{background-position:0 0}to{background-position:-40px 0}}@keyframes oc-sweep{0%{transform:translateX(-100%)}60%,100%{transform:translateX(100%)}}@media(prefers-color-scheme:light){#oc-disconnected-banner.oc-state-offline{background:rgba(255,255,255,.94);border-color:rgba(0,0,0,.08);color:#24292f;box-shadow:0 12px 28px rgba(0,0,0,.12)}#oc-disconnected-banner.oc-state-online{background:rgba(242,255,242,.96);border-color:rgba(0,0,0,.08);color:#24292f}#oc-disconnected-banner.oc-state-offline .oc-dot{box-shadow:0 0 0 6px rgba(248,81,73,.12)}#oc-disconnected-banner.oc-state-online .oc-dot{box-shadow:0 0 0 6px rgba(46,160,67,.12)}#oc-disconnected-banner .oc-retry{border-color:rgba(0,0,0,.08);background:rgba(0,0,0,.04)}#oc-disconnected-banner .oc-retry:hover{background:rgba(0,0,0,.08)}#oc-disconnected-banner .oc-progress-track{background:rgba(0,0,0,.06)}}';
       (document.head || document.documentElement).appendChild(st);
     }
     function clearTimers() { if (reloadTimer) { clearTimeout(reloadTimer); reloadTimer = null; } if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; } }
@@ -2169,10 +2170,10 @@
       var el = document.createElement('div');
       el.id = 'oc-disconnected-banner';
       el.className = 'oc-state-offline';
-      el.innerHTML = '<span class="oc-dot"></span><span class="oc-text"><span class="oc-title">后端已断开 (4096)</span><span style="opacity:.65;margin-left:6px">等待重连…</span></span><span class="oc-actions"><button class="oc-retry" title="立即重试">重试</button><button class="oc-close" title="关闭">✕</button></span><div class="oc-progress-track" style="display:none"><div class="oc-progress-fill"></div></div>';
+      el.innerHTML = '<span class="oc-dot"></span><span class="oc-text"><span class="oc-title">后端已断开 (4096)</span><span class="oc-sub" style="opacity:.65;margin-left:6px">正在自动重连<span class="oc-ellipsis"><i>.</i><i>.</i><i>.</i></span> · 恢复后自动刷新</span></span><span class="oc-actions"><button class="oc-retry" title="立即重试">重试</button><button class="oc-close" title="关闭">✕</button></span><div class="oc-progress-track" style="display:none"><div class="oc-progress-fill"></div></div>';
       var retry = el.querySelector('.oc-retry');
       var close = el.querySelector('.oc-close');
-      if (retry) retry.addEventListener('click', function (e) { e.stopPropagation(); try { sessionStorage.setItem('oc_reload_lock', String(Date.now())); } catch (err) {} location.reload(); });
+      if (retry) retry.addEventListener('click', function (e) { e.stopPropagation(); try { ocSaveInputDraft(); } catch (err0) {} try { sessionStorage.setItem('oc_reload_lock', String(Date.now())); } catch (err) {} location.reload(); });
       if (close) close.addEventListener('click', function (e) { e.stopPropagation(); removeBanner(); disconnected = false; try { document.title = origTitle || document.title.replace(/^● 掉线 - /, ''); } catch (err) {} });
       document.body.appendChild(el);
       requestAnimationFrame(function () { requestAnimationFrame(function () { el.classList.add('oc-visible'); }); });
@@ -2188,7 +2189,7 @@
       if (track) track.style.display = 'block';
       if (fill) { fill.style.transition = 'none'; fill.style.width = '0%'; void fill.offsetWidth; fill.style.transition = 'width 2s linear'; fill.style.width = '100%'; }
       var remain = 2.0;
-      if (text) text.innerHTML = '<span class="oc-title">后端已重连</span><span style="opacity:.65;margin-left:6px" class="oc-countdown">' + remain.toFixed(1) + 's 后自动刷新</span>';
+      if (text) text.innerHTML = '<span class="oc-title">后端已重连 · 正在恢复对话</span><span style="opacity:.65;margin-left:6px" class="oc-countdown">' + remain.toFixed(1) + 's 后自动刷新</span>';
       if (countdownTimer) clearInterval(countdownTimer);
       countdownTimer = setInterval(function () {
         remain -= 0.1;
@@ -2201,6 +2202,7 @@
       try { if (sessionStorage.getItem('oc_reload_lock') && Date.now() - Number(sessionStorage.getItem('oc_reload_lock')) < 10000) return; } catch (e) {}
       if (reloadTimer) clearTimeout(reloadTimer);
       reloadTimer = setTimeout(function () {
+        try { ocSaveInputDraft(); } catch (eSave) {}
         try { sessionStorage.setItem('oc_reload_lock', String(Date.now())); } catch (e2) {}
         location.reload();
       }, 2000);
@@ -2218,7 +2220,6 @@
         if (!disconnected) return;
         disconnected = false;
         try { document.title = origTitle || document.title.replace(/^● 掉线 - /, ''); } catch (e2) {}
-        toast('✓ 后端已重连', '#2ea043');
         switchToReconnect();
       }
     }
@@ -2490,28 +2491,6 @@
         if (document.body) flowObs.observe(document.body, { childList: true, subtree: true, characterData: true });
       } catch (eF) {}
       try {
-        setInterval(function () {
-          try {
-            var stop = (cachedStop && cachedStop.isConnected) ? cachedStop : null;
-            var stopVisible = false;
-            try { stopVisible = !!(stop && stop.isConnected && stop.getClientRects && stop.getClientRects().length > 0); } catch (eV) { stopVisible = !!stop; }
-            var streams = liveStreamCount();
-            var gen = !!(stopVisible || streams > 0 || document.querySelector('[data-generating="true"]'));
-            if (!gen) { stuckWarnedAt = 0; flowAt = 0; prevGen = false; return; }
-            if (!prevGen || !flowAt) { flowAt = Date.now(); prevGen = true; return; }
-            if (Date.now() - flowAt > 20000 && Date.now() - stuckWarnedAt > 60000) {
-              stuckWarnedAt = Date.now();
-              var idleS = Math.round((Date.now() - flowAt) / 1000);
-              var dg = false;
-              try { dg = !!document.querySelector('[data-generating="true"]'); } catch (eDg) {}
-              var reason = streams > 0 ? '后端传输中但无渲染' : (stopVisible ? '界面停生成态疑等done' : (dg ? '生成标记残留' : '无在途流'));
-              toast('会话流停滞（' + idleS + 's无新增，' + reason + '）：可刷新复位', '#f0883e');
-              try { console.log(TAG, 'stream stall suspected, no flow ' + idleS + 's stop=' + !!stop + ' vis=' + stopVisible + ' streams=' + streams + ' dg=' + dg); } catch (eL2) {}
-            }
-          } catch (e) {}
-        }, 5000);
-      } catch (eW) {}
-      try {
         var mo = new MutationObserver(function () { refreshCache(false); });
         if (document.body) mo.observe(document.body, { childList: true, subtree: true });
         else document.addEventListener('DOMContentLoaded', function () { try { mo.observe(document.body, { childList: true, subtree: true }); } catch (e) {} });
@@ -2535,7 +2514,7 @@
           console.log(TAG,'ESC abort triggered');
         }
       }, true);
-      console.log(TAG,'ESC single-press enabled v1.15.3');
+      console.log(TAG,'ESC single-press enabled v1.15.4');
     }
     return { init: init };
   })();
