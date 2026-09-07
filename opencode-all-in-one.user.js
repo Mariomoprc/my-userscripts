@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.14.6
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 代码换行 + 设置面板 | v1.14.6
+// @version      1.15.0
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 设置面板(精简版) | v1.15.0
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.15.0 slim：删大图懒加载/长输出折叠/智能滚动/推理折叠/代码换行/断连自续/硬中断开关
 // v1.14.6 20秒无流预警toast+自动刷新前保输入框（刷新后回填）
 // v1.14.5 abort后8秒UI仍转圈则自动刷新复位（上游卡done事件）
 // v1.14.4 诊断版：ESC必弹toast+流式POST跟踪日志（定罪用，下版删）
@@ -117,14 +118,7 @@
     { key: 'peakHint', label: 'DS峰时提醒', def: true, group: '额度' },
     { key: 'maxQuota', label: '今日最大额度头条', def: true, group: '额度' },
     { key: 'usageTop5', label: '用量区额度Top5', def: true, group: '额度' },
-    { key: 'largeImg', label: '大图懒加载', def: true, group: '阅读' },
-    { key: 'toolFold', label: '长输出折叠', def: true, group: '阅读' },
-    { key: 'smartScroll', label: '智能滚动', def: true, group: '阅读' },
-    { key: 'reasonFold', label: '推理折叠', def: true, group: '阅读' },
-    { key: 'autoResume', label: '断连自动续对话', def: true, group: '实验' },
     { key: 'escReload', label: 'ESC后卡死自动刷新', def: true, group: '实验' },
-    { key: 'escHard', label: 'ESC硬中断兜底', def: false, group: '实验' },
-    { key: 'codeWrap', label: '代码换行切换', def: true, group: '输入' }
   ];
 
   function toast(text, color) {
@@ -134,14 +128,6 @@
     d.textContent = text;
     document.body.appendChild(d);
     setTimeout(function () { if (d.parentNode) d.remove(); }, 3500);
-  }
-
-  function ocStreaming() {
-    try {
-      if (window.__ocStreamCtrls && window.__ocStreamCtrls.length > 0) return true;
-      if (typeof CONNECTION_MODULE !== 'undefined' && CONNECTION_MODULE.streamCount && CONNECTION_MODULE.streamCount() > 0) return true;
-    } catch (e) {}
-    return false;
   }
 
   function ocFindInput() {
@@ -2340,188 +2326,7 @@
     return { init: init, abortStreams: abortStreams, streamCount: function () { return streamCtrls.length; } };
   })();
 
-  //  LARGE_IMAGE_MODULE — 大图懒加载/降采样 (参考 oc-remote Image optimization)
-  //  >200KB base64 图片 → 占位 + IntersectionObserver 进入视口才解码 + canvas ≤1280px
-  // ════════════════════════════════════════════════════════════
-  var LARGE_IMAGE_MODULE = (function () {
-    var THRESHOLD = 200 * 1024;
-    var MAX_DIM = 1280;
-    var PROCESSED = '__oc_li_done';
 
-    function processImg(img) {
-      if (img[PROCESSED]) return;
-      var src = img.src || '';
-      if (!src || src.indexOf('data:image') !== 0) return;
-      if (src.length < THRESHOLD) return;
-      img[PROCESSED] = true;
-      var kb = Math.round(src.length / 1024);
-      var origW = img.naturalWidth, origH = img.naturalHeight;
-      var placeholder = document.createElement('div');
-      placeholder.className = 'oc-li-placeholder';
-      placeholder.style.cssText = 'display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border:1px dashed rgba(255,255,255,.2);border-radius:8px;background:rgba(255,255,255,.04);color:#888;font-size:12px;cursor:pointer;max-width:100%;';
-      placeholder.innerHTML = '<span>⬜</span><span>图片 ' + kb + 'KB' + (origW ? ' (' + origW + '×' + origH + ')' : '') + '</span><span style="color:#58a6ff;">[点击加载]</span>';
-      placeholder.title = '点击加载此图片（已降采样到 ≤' + MAX_DIM + 'px）';
-      var rect = img.getBoundingClientRect();
-      if (rect.width > 0) placeholder.style.width = Math.min(rect.width, 400) + 'px';
-      img.style.display = 'none';
-      img.parentNode && img.parentNode.insertBefore(placeholder, img);
-      function loadAndDownsample() {
-        var canvas = document.createElement('canvas');
-        var ctx = canvas.getContext('2d');
-        var w = origW || img.naturalWidth || MAX_DIM;
-        var h = origH || img.naturalHeight || MAX_DIM;
-        if (w > MAX_DIM || h > MAX_DIM) {
-          var scale = MAX_DIM / Math.max(w, h);
-          w = Math.round(w * scale);
-          h = Math.round(h * scale);
-        }
-        canvas.width = w;
-        canvas.height = h;
-        ctx.drawImage(img, 0, 0, w, h);
-        var outSrc = canvas.toDataURL('image/webp', 0.8);
-        img.src = outSrc;
-        img.style.display = '';
-        img.style.maxWidth = '100%';
-        img.style.height = 'auto';
-        placeholder.remove();
-        console.log(TAG, 'LARGE_IMAGE: downsampled', kb + 'KB →', Math.round(outSrc.length / 1024) + 'KB', w + '×' + h);
-      }
-      placeholder.addEventListener('click', function () { loadAndDownsample(); });
-      var observer = new IntersectionObserver(function (entries) {
-        for (var i = 0; i < entries.length; i++) {
-          if (entries[i].isIntersecting) { observer.disconnect(); loadAndDownsample(); return; }
-        }
-      }, { rootMargin: '200px' });
-      observer.observe(placeholder);
-    }
-
-    function scan(root) {
-      var imgs = (root || document).querySelectorAll('img[src^="data:image"]');
-      for (var i = 0; i < imgs.length; i++) processImg(imgs[i]);
-    }
-
-    function init() {
-      if (!isLocalhost4096) return;
-      scan();
-      var pending = [];
-      var t = null;
-      var catchUpT = null;
-      function flush() {
-        t = null;
-        if (typeof ocStreaming === 'function' && ocStreaming()) {
-          pending.length = 0;
-          if (!catchUpT) catchUpT = setTimeout(function () { catchUpT = null; if (ocStreaming()) { if (!t) t = setTimeout(flush, 900); return; } try { scan(document); } catch (e) {} }, 900);
-          return;
-        }
-        var batch = pending.slice(); pending.length = 0;
-        for (var i = 0; i < batch.length; i++) {
-          var n = batch[i];
-          if (n.tagName === 'IMG') processImg(n);
-          if (n.querySelectorAll) scan(n);
-        }
-      }
-      var obs = new MutationObserver(function (muts) {
-        for (var i = 0; i < muts.length; i++) {
-          for (var j = 0; j < muts[i].addedNodes.length; j++) {
-            var n = muts[i].addedNodes[j];
-            if (n.nodeType !== 1) continue;
-            pending.push(n);
-            if (pending.length > 40) break;
-          }
-        }
-        if (!t) t = setTimeout(flush, 120);
-      });
-      if (document.body) obs.observe(document.body, { childList: true, subtree: true });
-      console.log(TAG, 'LARGE_IMAGE_MODULE enabled (>' + (THRESHOLD / 1024) + 'KB threshold) [throttled]');
-    }
-    return { init: init, scan: scan };
-  })();
-
-  // ════════════════════════════════════════════════════════════
-  //  TOOL_FOLD_MODULE — 长输出折叠 (参考 oc-remote expandable tool-call cards)
-  //  >50 行或 >10KB 的 tool 输出 → 默认折叠，点击展开
-  // ════════════════════════════════════════════════════════════
-  var TOOL_FOLD_MODULE = (function () {
-    var LINE_THRESHOLD = 200;
-    var SIZE_THRESHOLD = 10 * 1024;
-    var FOLDED_ATTR = '__oc_tf_folded';
-    var STYLE_ID = 'oc-tool-fold-style';
-
-    function ensureStyle() {
-      if (document.getElementById(STYLE_ID)) return;
-      var st = document.createElement('style');
-      st.id = STYLE_ID;
-      st.textContent = '.oc-tf-btn{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border:1px solid rgba(255,255,255,.15);border-radius:6px;background:rgba(255,255,255,.06);color:#8b949e;font-size:11px;cursor:pointer;margin:4px 0;transition:background .15s}.oc-tf-btn:hover{background:rgba(255,255,255,.12)}.oc-tf-folded{max-height:120px;overflow:hidden;position:relative}.oc-tf-folded::after{content:"";position:absolute;bottom:0;left:0;right:0;height:40px;background:linear-gradient(transparent,rgba(30,30,30,.95))}';
-      (document.head || document.documentElement).appendChild(st);
-    }
-
-    function foldBlock(el) {
-      if (el[FOLDED_ATTR]) return;
-      var text = el.textContent || '';
-      var lines = text.split('\n');
-      var isLong = lines.length > LINE_THRESHOLD || text.length > SIZE_THRESHOLD;
-      if (!isLong) return;
-      el[FOLDED_ATTR] = true;
-      el.classList.add('oc-tf-folded');
-      var btn = document.createElement('button');
-      btn.className = 'oc-tf-btn';
-      var kb = Math.round(text.length / 1024);
-      btn.textContent = '▸ 展开 ' + lines.length + ' 行' + (kb > 1 ? ' / ' + kb + 'KB' : '');
-      btn.addEventListener('click', function () {
-        var folded = el.classList.contains('oc-tf-folded');
-        if (folded) {
-          el.classList.remove('oc-tf-folded');
-          btn.textContent = '▾ 折叠';
-        } else {
-          el.classList.add('oc-tf-folded');
-          btn.textContent = '▸ 展开 ' + lines.length + ' 行' + (kb > 1 ? ' / ' + kb + 'KB' : '');
-        }
-      });
-      el.parentNode && el.parentNode.insertBefore(btn, el);
-    }
-
-    function scan(root) {
-      var targets = (root || document).querySelectorAll('pre, code, [class*="output"], [class*="tool"]');
-      for (var i = 0; i < targets.length; i++) foldBlock(targets[i]);
-    }
-
-    function init() {
-      if (!isLocalhost4096) return;
-      ensureStyle();
-      scan();
-      var pending2 = [];
-      var t2 = null;
-      var catchUpT2 = null;
-      function flush2() {
-        t2 = null;
-        if (typeof ocStreaming === 'function' && ocStreaming()) {
-          pending2.length = 0;
-          if (!catchUpT2) catchUpT2 = setTimeout(function () { catchUpT2 = null; if (ocStreaming()) { if (!t2) t2 = setTimeout(flush2, 900); return; } try { scan(document); } catch (e) {} }, 900);
-          return;
-        }
-        var batch = pending2.slice(); pending2.length = 0;
-        for (var i = 0; i < batch.length; i++) {
-          var n = batch[i];
-          if (n.tagName === 'PRE' || n.tagName === 'CODE') foldBlock(n);
-          if (n.querySelectorAll) scan(n);
-        }
-      }
-      var obs = new MutationObserver(function (muts) {
-        for (var i = 0; i < muts.length; i++) {
-          for (var j = 0; j < muts[i].addedNodes.length; j++) {
-            var n = muts[i].addedNodes[j];
-            if (n.nodeType !== 1) continue;
-            pending2.push(n);
-            if (pending2.length > 40) break;
-          }
-        }
-        if (!t2) t2 = setTimeout(flush2, 140);
-      });
-      if (document.body) obs.observe(document.body, { childList: true, subtree: true });
-      console.log(TAG, 'TOOL_FOLD_MODULE enabled (>' + LINE_THRESHOLD + ' lines) [throttled]');
-    }
-    return { init: init };
-  })();
 
   // ════════════════════════════════════════════════════════════
   //  PASTE_MODULE 增强 — 粘贴图片压缩 (参考 oc-remote Image optimization controls)
@@ -2573,129 +2378,7 @@
     return { compress: compressImage };
   })();
 
-  // ════════════════════════════════════════════════════════════
-  //  SMART_SCROLL_MODULE — 智能滚动 (参考 oc-remote Smart scroll behavior)
-  //  手动上滚暂停自动滚动 +「↓ 回到底部」浮标
-  // ════════════════════════════════════════════════════════════
-  var SMART_SCROLL_MODULE = (function () {
-    var autoScroll = true;
-    var fab = null;
-    var STYLE_ID = 'oc-smart-scroll-style';
 
-    function ensureStyle() {
-      if (document.getElementById(STYLE_ID)) return;
-      var st = document.createElement('style');
-      st.id = STYLE_ID;
-      st.textContent = '#oc-scroll-fab{position:fixed;bottom:80px;right:20px;z-index:2147483646;padding:8px 14px;border-radius:20px;border:1px solid rgba(255,255,255,.15);background:rgba(30,30,30,.92);color:#8b949e;font-size:12px;cursor:pointer;display:none;box-shadow:0 2px 8px rgba(0,0,0,.3);transition:opacity .15s}#oc-scroll-fab:hover{background:rgba(50,50,50,.95);color:#e6edf3}';
-      (document.head || document.documentElement).appendChild(st);
-    }
-
-    function createFab() {
-      if (fab) return fab;
-      fab = document.createElement('button');
-      fab.id = 'oc-scroll-fab';
-      fab.textContent = '↓ 回到底部';
-      fab.addEventListener('click', function () {
-        autoScroll = true;
-        fab.style.display = 'none';
-        window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
-      });
-      document.body && document.body.appendChild(fab);
-      return fab;
-    }
-
-    function onScroll() {
-      var atBottom = (window.innerHeight + window.scrollY) >= (document.documentElement.scrollHeight - 100);
-      if (atBottom) {
-        autoScroll = true;
-        if (fab) fab.style.display = 'none';
-      } else if (autoScroll) {
-        autoScroll = false;
-        createFab();
-        fab.style.display = 'block';
-      }
-    }
-
-    function init() {
-      if (!isLocalhost4096) return;
-      ensureStyle();
-      window.addEventListener('scroll', onScroll, { passive: true });
-      console.log(TAG, 'SMART_SCROLL_MODULE enabled');
-    }
-    return { init: init, isAutoScroll: function () { return autoScroll; } };
-  })();
-
-  // ════════════════════════════════════════════════════════════
-  //  REASONING_FOLD_MODULE — 推理折叠 (参考 oc-remote Collapsible reasoning)
-  //  reasoning 内容默认折叠，点击展开
-  // ════════════════════════════════════════════════════════════
-  var REASONING_FOLD_MODULE = (function () {
-    var STYLE_ID = 'oc-reason-fold-style';
-    var FOLDED_ATTR = '__oc_rf_done';
-
-    function ensureStyle() {
-      if (document.getElementById(STYLE_ID)) return;
-      var st = document.createElement('style');
-      st.id = STYLE_ID;
-      st.textContent = '.oc-rf-folded{max-height:80px;overflow:hidden;position:relative;opacity:.7}.oc-rf-folded::after{content:"";position:absolute;bottom:0;left:0;right:0;height:30px;background:linear-gradient(transparent,rgba(30,30,30,.95))}.oc-rf-btn{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border:1px solid rgba(255,255,255,.12);border-radius:5px;background:rgba(255,255,255,.05);color:#8b949e;font-size:11px;cursor:pointer;margin:2px 0}';
-      (document.head || document.documentElement).appendChild(st);
-    }
-
-    function foldReasoning(el) {
-      if (el[FOLDED_ATTR]) return;
-      el[FOLDED_ATTR] = true;
-      el.classList.add('oc-rf-folded');
-      var btn = document.createElement('button');
-      btn.className = 'oc-rf-btn';
-      btn.textContent = '▸ 展开推理';
-      btn.addEventListener('click', function () {
-        var folded = el.classList.contains('oc-rf-folded');
-        if (folded) { el.classList.remove('oc-rf-folded'); btn.textContent = '▾ 折叠推理'; }
-        else { el.classList.add('oc-rf-folded'); btn.textContent = '▸ 展开推理'; }
-      });
-      el.parentNode && el.parentNode.insertBefore(btn, el);
-    }
-
-    function scan(root) {
-      var targets = (root || document).querySelectorAll('[class*="reasoning"], [data-type="reasoning"]');
-      for (var i = 0; i < targets.length; i++) foldReasoning(targets[i]);
-    }
-
-    function init() {
-      if (!isLocalhost4096) return;
-      ensureStyle();
-      scan();
-      var pending3 = [];
-      var t3 = null;
-      var catchUpT3 = null;
-      function flush3() {
-        t3 = null;
-        if (typeof ocStreaming === 'function' && ocStreaming()) {
-          pending3.length = 0;
-          if (!catchUpT3) catchUpT3 = setTimeout(function () { catchUpT3 = null; if (ocStreaming()) { if (!t3) t3 = setTimeout(flush3, 900); return; } try { scan(document); } catch (e) {} }, 900);
-          return;
-        }
-        var batch = pending3.slice(); pending3.length = 0;
-        for (var i = 0; i < batch.length; i++) {
-          if (batch[i].querySelectorAll) scan(batch[i]);
-        }
-      }
-      var obs = new MutationObserver(function (muts) {
-        for (var i = 0; i < muts.length; i++) {
-          for (var j = 0; j < muts[i].addedNodes.length; j++) {
-            var n = muts[i].addedNodes[j];
-            if (n.nodeType !== 1) continue;
-            pending3.push(n);
-            if (pending3.length > 40) break;
-          }
-        }
-        if (!t3) t3 = setTimeout(flush3, 160);
-      });
-      if (document.body) obs.observe(document.body, { childList: true, subtree: true });
-      console.log(TAG, 'REASONING_FOLD_MODULE enabled [throttled]');
-    }
-    return { init: init };
-  })();
 
   // ════════════════════════════════════════════════════════════
   // DRAFT_MODULE removed v1.13.0
@@ -2711,80 +2394,6 @@
     return { init: init };
   })();
 
-  // ════════════════════════════════════════════════════════════
-  //  CODE_WRAP_MODULE — 代码换行切换 (参考 oc-remote Code word wrap)
-  //  代码块加「换行/滚动」切换按钮
-  // ════════════════════════════════════════════════════════════
-  var CODE_WRAP_MODULE = (function () {
-    var STYLE_ID = 'oc-code-wrap-style';
-    var DONE_ATTR = '__oc_cw_done';
-
-    function ensureStyle() {
-      if (document.getElementById(STYLE_ID)) return;
-      var st = document.createElement('style');
-      st.id = STYLE_ID;
-      st.textContent = '.oc-cw-btn{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border:1px solid rgba(255,255,255,.1);border-radius:4px;background:rgba(255,255,255,.05);color:#8b949e;font-size:10px;cursor:pointer;position:absolute;top:4px;right:48px;z-index:1;opacity:.45;transition:opacity .15s,background .15s}.oc-cw-btn:hover{background:rgba(255,255,255,.12);opacity:1}pre:hover .oc-cw-btn{opacity:.85}.oc-cw-wrapped pre,.oc-cw-wrapped code{white-space:pre-wrap!important;word-break:break-all!important}';
-      (document.head || document.documentElement).appendChild(st);
-    }
-
-    function addButton(pre) {
-      if (pre[DONE_ATTR]) return;
-      pre[DONE_ATTR] = true;
-      pre.style.position = 'relative';
-      pre.classList.add('oc-cw-wrapped');
-      var btn = document.createElement('button');
-      btn.className = 'oc-cw-btn';
-      btn.textContent = '↕ 换行';
-      btn.addEventListener('click', function () {
-        var wrapped = pre.classList.contains('oc-cw-wrapped');
-        if (wrapped) { pre.classList.remove('oc-cw-wrapped'); btn.textContent = '↔ 滚动'; }
-        else { pre.classList.add('oc-cw-wrapped'); btn.textContent = '↕ 换行'; }
-      });
-      pre.appendChild(btn);
-    }
-
-    function scan(root) {
-      var pres = (root || document).querySelectorAll('pre');
-      for (var i = 0; i < pres.length; i++) addButton(pres[i]);
-    }
-
-    function init() {
-      if (!isLocalhost4096) return;
-      ensureStyle();
-      scan();
-      var pending4 = [];
-      var t4 = null;
-      var catchUpT4 = null;
-      function flush4() {
-        t4 = null;
-        if (typeof ocStreaming === 'function' && ocStreaming()) {
-          pending4.length = 0;
-          if (!catchUpT4) catchUpT4 = setTimeout(function () { catchUpT4 = null; if (ocStreaming()) { if (!t4) t4 = setTimeout(flush4, 900); return; } try { scan(document); } catch (e) {} }, 900);
-          return;
-        }
-        var batch = pending4.slice(); pending4.length = 0;
-        for (var i = 0; i < batch.length; i++) {
-          var n = batch[i];
-          if (n.tagName === 'PRE') addButton(n);
-          if (n.querySelectorAll) scan(n);
-        }
-      }
-      var obs = new MutationObserver(function (muts) {
-        for (var i = 0; i < muts.length; i++) {
-          for (var j = 0; j < muts[i].addedNodes.length; j++) {
-            var n = muts[i].addedNodes[j];
-            if (n.nodeType !== 1) continue;
-            pending4.push(n);
-            if (pending4.length > 40) break;
-          }
-        }
-        if (!t4) t4 = setTimeout(flush4, 180);
-      });
-      if (document.body) obs.observe(document.body, { childList: true, subtree: true });
-      console.log(TAG, 'CODE_WRAP_MODULE enabled [throttled]');
-    }
-    return { init: init };
-  })();
 
   // MEM_4747_ENTRY 已移除：按用户要求去掉 4747 入口，改存书签 javascript:window.open('http://127.0.0.1:4747')
 
@@ -2857,9 +2466,6 @@
       var stop = (cachedStop && cachedStop.isConnected) ? cachedStop : findStopBtn();
       if (!stop) { try { stop = findStopSlow(); } catch (eS) {} }
       if (stop) { cachedStop = stop; try{ stop.click(); }catch(e2){} }
-      try {
-        if (getSetting('escHard', false)) { window.stop(); }
-      } catch (eH) {}
       if (!stop && !n) {
         try{ var ev=new KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,bubbles:true,cancelable:true}); ev.__ocSynthetic = true; document.dispatchEvent(ev); }catch(e3){}
       }
@@ -2938,44 +2544,11 @@
           console.log(TAG,'ESC abort triggered');
         }
       }, true);
-      console.log(TAG,'ESC single-press enabled v1.14.6');
+      console.log(TAG,'ESC single-press enabled v1.15.0-slim');
     }
     return { init: init };
   })();
 
-  // ════════════════════════════════════════════════════════════
-  //  AUTO_RESUME — 断连恢复后自动继续中断对话
-  // ════════════════════════════════════════════════════════════
-  var AUTO_RESUME_MODULE = (function () {
-    function findContinueBtn() {
-      var btns = document.querySelectorAll('button');
-      for (var i=0;i<btns.length;i++) {
-        var t=(btns[i].textContent||'').trim();
-        if (t==='继续'||t==='Continue'||t==='重试'||t==='Retry'||t.indexOf('继续')!==-1) return btns[i];
-      }
-      return document.querySelector('button[title*="继续"], button[title*="Continue"], [data-testid*="continue"]');
-    }
-    function init() {
-      if (!isLocalhost4096) return;
-      var key='oc_auto_resume_'+location.pathname;
-      var pending=sessionStorage.getItem(key);
-      if (pending && Date.now()-parseInt(pending,10) < 30000) {
-        sessionStorage.removeItem(key);
-        setTimeout(function(){
-          var btn=findContinueBtn();
-          if (btn) { try{ btn.click(); console.log(TAG,'auto-resume clicked'); }catch(e){} }
-        }, 1500);
-      }
-      window.addEventListener('beforeunload', function(){
-        var banner=document.getElementById('oc-disconnected-banner');
-        if (banner && banner.classList.contains('oc-visible')) {
-          try{ sessionStorage.setItem(key, String(Date.now())); }catch(e){}
-        }
-      });
-      console.log(TAG,'auto-resume enabled');
-    }
-    return { init: init };
-  })();
 
   // ════════════════════════════════════════════════════════════
   //  Main entry
@@ -3017,25 +2590,7 @@
       }
       CONNECTION_MODULE.init();
       try { ESC_MODULE.init(); } catch (e) {}
-      if (getSetting('autoResume', true)) {
-        try { AUTO_RESUME_MODULE.init(); } catch (e) {}
-      }
-      if (getSetting('largeImg', true)) {
-        try { LARGE_IMAGE_MODULE.init(); } catch (e) {}
-      }
-      if (getSetting('toolFold', true)) {
-        try { TOOL_FOLD_MODULE.init(); } catch (e) {}
-      }
-      if (getSetting('smartScroll', true)) {
-        try { SMART_SCROLL_MODULE.init(); } catch (e) {}
-      }
-      if (getSetting('reasonFold', true)) {
-        try { REASONING_FOLD_MODULE.init(); } catch (e) {}
-      }
       try { DRAFT_MODULE.init(); } catch (e) {} // v1.13.0: only cleans leftover keys
-      if (getSetting('codeWrap', true)) {
-        try { CODE_WRAP_MODULE.init(); } catch (e) {}
-      }
     } else if (isLocalWeb) {
       // Fallback for other local ports if script ever runs there (should not due to @include)
       if (getSetting('goPanel', true)) MODEL_QUOTA.init();
