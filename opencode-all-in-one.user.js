@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.14.4
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 代码换行 + 设置面板 | v1.14.4
+// @version      1.14.5
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 代码换行 + 设置面板 | v1.14.5
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.14.5 abort后8秒UI仍转圈则自动刷新复位（上游卡done事件）
 // v1.14.4 诊断版：ESC必弹toast+流式POST跟踪日志（定罪用，下版删）
 // v1.14.3 流式中暂停4重型DOM扫描+结束后一次补扫（ESC让路主线程）
 // v1.14.2 ESC检测改按键同步全量+在途流计数+Cancel选择器+按键日志
@@ -120,6 +121,7 @@
     { key: 'smartScroll', label: '智能滚动', def: true, group: '阅读' },
     { key: 'reasonFold', label: '推理折叠', def: true, group: '阅读' },
     { key: 'autoResume', label: '断连自动续对话', def: true, group: '实验' },
+    { key: 'escReload', label: 'ESC后卡死自动刷新', def: true, group: '实验' },
     { key: 'escHard', label: 'ESC硬中断兜底', def: false, group: '实验' },
     { key: 'codeWrap', label: '代码换行切换', def: true, group: '输入' }
   ];
@@ -2799,6 +2801,7 @@
         cachedGen = !!(document.querySelector('[data-generating="true"]') || cachedStop || document.querySelector('.oc-generating') || document.querySelector('button[title*="Stop"]'));
       } catch (e) {}
     }
+    var lastAbortAt = 0;
     function abortFetch() {
       var n = 0;
       try {
@@ -2814,7 +2817,25 @@
       if (!stop && !n) {
         try{ var ev=new KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,bubbles:true,cancelable:true}); ev.__ocSynthetic = true; document.dispatchEvent(ev); }catch(e3){}
       }
+      lastAbortAt = Date.now();
+      scheduleStuckCheck();
       return !!(stop || n);
+    }
+    function scheduleStuckCheck() {
+      setTimeout(function () {
+        try {
+          if (Date.now() - lastAbortAt < 8000) return;
+          if (liveStreamCount() > 0) return;
+          var stop = findStopBtn() || findStopSlow();
+          if (!stop || !stop.isConnected) return;
+          if (getSetting('escReload', true)) {
+            toast('ESC后界面仍在转圈，自动刷新复位…', '#f0883e');
+            setTimeout(function () { location.reload(); }, 800);
+          } else {
+            toast('ESC已停服，界面卡住可手动刷新', '#f0883e');
+          }
+        } catch (e) {}
+      }, 8500);
     }
     function init() {
       if (!isLocalhost4096 && !isMemWeb) return;
@@ -2843,7 +2864,7 @@
           console.log(TAG,'ESC abort triggered');
         }
       }, true);
-      console.log(TAG,'ESC single-press enabled v1.14.4');
+      console.log(TAG,'ESC single-press enabled v1.14.5');
     }
     return { init: init };
   })();
