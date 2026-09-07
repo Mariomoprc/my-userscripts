@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.15.2
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 设置面板(精简版) | v1.15.2
+// @version      1.15.3
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 设置面板(精简版) | v1.15.3
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.15.3 卡死提示写明原因：流/停止钮/标记分类免开F12
 // v1.15.2 卡死误报降噪：心跳补文本更新+新轮次重置+隐藏停止按钮不算生成
 // v1.15.1 恢复断连自动续+删ESC自刷
 // v1.15.0 slim：删大图懒加载/长输出折叠/智能滚动/推理折叠/代码换行/断连自续/硬中断开关
@@ -2501,8 +2502,11 @@
             if (Date.now() - flowAt > 20000 && Date.now() - stuckWarnedAt > 60000) {
               stuckWarnedAt = Date.now();
               var idleS = Math.round((Date.now() - flowAt) / 1000);
-              toast('会话流疑似卡死（' + idleS + '秒无数据）：可刷新页面复位', '#f0883e');
-              try { console.log(TAG, 'stream stall suspected, no flow ' + idleS + 's stop=' + !!stop + ' vis=' + stopVisible + ' streams=' + streams); } catch (eL2) {}
+              var dg = false;
+              try { dg = !!document.querySelector('[data-generating="true"]'); } catch (eDg) {}
+              var reason = streams > 0 ? '后端传输中但无渲染' : (stopVisible ? '界面停生成态疑等done' : (dg ? '生成标记残留' : '无在途流'));
+              toast('会话流停滞（' + idleS + 's无新增，' + reason + '）：可刷新复位', '#f0883e');
+              try { console.log(TAG, 'stream stall suspected, no flow ' + idleS + 's stop=' + !!stop + ' vis=' + stopVisible + ' streams=' + streams + ' dg=' + dg); } catch (eL2) {}
             }
           } catch (e) {}
         }, 5000);
@@ -2531,7 +2535,7 @@
           console.log(TAG,'ESC abort triggered');
         }
       }, true);
-      console.log(TAG,'ESC single-press enabled v1.15.2');
+      console.log(TAG,'ESC single-press enabled v1.15.3');
     }
     return { init: init };
   })();
