@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.15.1
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 设置面板(精简版) | v1.15.1
+// @version      1.15.2
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 设置面板(精简版) | v1.15.2
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.15.2 卡死误报降噪：心跳补文本更新+新轮次重置+隐藏停止按钮不算生成
 // v1.15.1 恢复断连自动续+删ESC自刷
 // v1.15.0 slim：删大图懒加载/长输出折叠/智能滚动/推理折叠/代码换行/断连自续/硬中断开关
 // v1.14.6 20秒无流预警toast+自动刷新前保输入框（刷新后回填）
@@ -2450,6 +2451,7 @@
     }
     var flowAt = 0;
     var stuckWarnedAt = 0;
+    var prevGen = false;
     function noteFlow(n) {
       try {
         if (n && n.classList && n.classList.contains('oc-toast')) return;
@@ -2479,24 +2481,28 @@
       try {
         var flowObs = new MutationObserver(function (muts) {
           for (var i = 0; i < muts.length; i++) {
+            if (muts[i].type === 'characterData') { noteFlow(muts[i].target); break; }
             var an = muts[i].addedNodes;
             for (var j = 0; j < an.length; j++) { if (an[j].nodeType === 1) { noteFlow(an[j]); break; } }
           }
         });
-        if (document.body) flowObs.observe(document.body, { childList: true, subtree: true });
+        if (document.body) flowObs.observe(document.body, { childList: true, subtree: true, characterData: true });
       } catch (eF) {}
       try {
         setInterval(function () {
           try {
             var stop = (cachedStop && cachedStop.isConnected) ? cachedStop : null;
+            var stopVisible = false;
+            try { stopVisible = !!(stop && stop.isConnected && stop.getClientRects && stop.getClientRects().length > 0); } catch (eV) { stopVisible = !!stop; }
             var streams = liveStreamCount();
-            var gen = !!(stop || streams > 0 || document.querySelector('[data-generating="true"]'));
-            if (!gen) { stuckWarnedAt = 0; return; }
-            if (!flowAt) flowAt = Date.now();
+            var gen = !!(stopVisible || streams > 0 || document.querySelector('[data-generating="true"]'));
+            if (!gen) { stuckWarnedAt = 0; flowAt = 0; prevGen = false; return; }
+            if (!prevGen || !flowAt) { flowAt = Date.now(); prevGen = true; return; }
             if (Date.now() - flowAt > 20000 && Date.now() - stuckWarnedAt > 60000) {
               stuckWarnedAt = Date.now();
-              toast('会话流疑似卡死（20秒无数据）：可刷新页面复位', '#f0883e');
-              try { console.log(TAG, 'stream stall suspected, no flow 20s'); } catch (eL2) {}
+              var idleS = Math.round((Date.now() - flowAt) / 1000);
+              toast('会话流疑似卡死（' + idleS + '秒无数据）：可刷新页面复位', '#f0883e');
+              try { console.log(TAG, 'stream stall suspected, no flow ' + idleS + 's stop=' + !!stop + ' vis=' + stopVisible + ' streams=' + streams); } catch (eL2) {}
             }
           } catch (e) {}
         }, 5000);
@@ -2525,7 +2531,7 @@
           console.log(TAG,'ESC abort triggered');
         }
       }, true);
-      console.log(TAG,'ESC single-press enabled v1.15.1');
+      console.log(TAG,'ESC single-press enabled v1.15.2');
     }
     return { init: init };
   })();
