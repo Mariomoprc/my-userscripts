@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.15.0
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 设置面板(精简版) | v1.15.0
+// @version      1.15.1
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 设置面板(精简版) | v1.15.1
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.15.1 恢复断连自动续+删ESC自刷
 // v1.15.0 slim：删大图懒加载/长输出折叠/智能滚动/推理折叠/代码换行/断连自续/硬中断开关
 // v1.14.6 20秒无流预警toast+自动刷新前保输入框（刷新后回填）
 // v1.14.5 abort后8秒UI仍转圈则自动刷新复位（上游卡done事件）
@@ -118,7 +119,7 @@
     { key: 'peakHint', label: 'DS峰时提醒', def: true, group: '额度' },
     { key: 'maxQuota', label: '今日最大额度头条', def: true, group: '额度' },
     { key: 'usageTop5', label: '用量区额度Top5', def: true, group: '额度' },
-    { key: 'escReload', label: 'ESC后卡死自动刷新', def: true, group: '实验' },
+    { key: 'autoResume', label: '断连自动续对话', def: true, group: '实验' },
   ];
 
   function toast(text, color) {
@@ -2447,7 +2448,6 @@
         cachedGen = !!(document.querySelector('[data-generating="true"]') || cachedStop || document.querySelector('.oc-generating') || document.querySelector('button[title*="Stop"]'));
       } catch (e) {}
     }
-    var lastAbortAt = 0;
     var flowAt = 0;
     var stuckWarnedAt = 0;
     function noteFlow(n) {
@@ -2469,26 +2469,7 @@
       if (!stop && !n) {
         try{ var ev=new KeyboardEvent('keydown',{key:'Escape',code:'Escape',keyCode:27,bubbles:true,cancelable:true}); ev.__ocSynthetic = true; document.dispatchEvent(ev); }catch(e3){}
       }
-      lastAbortAt = Date.now();
-      scheduleStuckCheck();
       return !!(stop || n);
-    }
-    function scheduleStuckCheck() {
-      setTimeout(function () {
-        try {
-          if (Date.now() - lastAbortAt < 8000) return;
-          if (liveStreamCount() > 0) return;
-          var stop = findStopBtn() || findStopSlow();
-          if (!stop || !stop.isConnected) return;
-          if (getSetting('escReload', true)) {
-            ocSaveInputDraft();
-            toast('ESC后界面仍在转圈，自动刷新复位…', '#f0883e');
-            setTimeout(function () { location.reload(); }, 800);
-          } else {
-            toast('ESC已停服，界面卡住可手动刷新', '#f0883e');
-          }
-        } catch (e) {}
-      }, 8500);
     }
     function init() {
       if (!isLocalhost4096 && !isMemWeb) return;
@@ -2544,11 +2525,45 @@
           console.log(TAG,'ESC abort triggered');
         }
       }, true);
-      console.log(TAG,'ESC single-press enabled v1.15.0-slim');
+      console.log(TAG,'ESC single-press enabled v1.15.1');
     }
     return { init: init };
   })();
 
+
+  // ════════════════════════════════════════════════════════════
+  //  AUTO_RESUME — 断连恢复后自动继续中断对话
+  // ════════════════════════════════════════════════════════════
+  var AUTO_RESUME_MODULE = (function () {
+    function findContinueBtn() {
+      var btns = document.querySelectorAll('button');
+      for (var i=0;i<btns.length;i++) {
+        var t=(btns[i].textContent||'').trim();
+        if (t==='继续'||t==='Continue'||t==='重试'||t==='Retry'||t.indexOf('继续')!==-1) return btns[i];
+      }
+      return document.querySelector('button[title*="继续"], button[title*="Continue"], [data-testid*="continue"]');
+    }
+    function init() {
+      if (!isLocalhost4096) return;
+      var key='oc_auto_resume_'+location.pathname;
+      var pending=sessionStorage.getItem(key);
+      if (pending && Date.now()-parseInt(pending,10) < 30000) {
+        sessionStorage.removeItem(key);
+        setTimeout(function(){
+          var btn=findContinueBtn();
+          if (btn) { try{ btn.click(); console.log(TAG,'auto-resume clicked'); }catch(e){} }
+        }, 1500);
+      }
+      window.addEventListener('beforeunload', function(){
+        var banner=document.getElementById('oc-disconnected-banner');
+        if (banner && banner.classList.contains('oc-visible')) {
+          try{ sessionStorage.setItem(key, String(Date.now())); }catch(e){}
+        }
+      });
+      console.log(TAG,'auto-resume enabled');
+    }
+    return { init: init };
+  })();
 
   // ════════════════════════════════════════════════════════════
   //  Main entry
@@ -2590,6 +2605,9 @@
       }
       CONNECTION_MODULE.init();
       try { ESC_MODULE.init(); } catch (e) {}
+      if (getSetting('autoResume', true)) {
+        try { AUTO_RESUME_MODULE.init(); } catch (e) {}
+      }
       try { DRAFT_MODULE.init(); } catch (e) {} // v1.13.0: only cleans leftover keys
     } else if (isLocalWeb) {
       // Fallback for other local ports if script ever runs there (should not due to @include)
