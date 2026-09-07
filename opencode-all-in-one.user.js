@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.14.5
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 代码换行 + 设置面板 | v1.14.5
+// @version      1.14.6
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 大图懒加载 + 长输出折叠 + 智能滚动 + 推理折叠 + 代码换行 + 设置面板 | v1.14.6
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.14.6 20秒无流预警toast+自动刷新前保输入框（刷新后回填）
 // v1.14.5 abort后8秒UI仍转圈则自动刷新复位（上游卡done事件）
 // v1.14.4 诊断版：ESC必弹toast+流式POST跟踪日志（定罪用，下版删）
 // v1.14.3 流式中暂停4重型DOM扫描+结束后一次补扫（ESC让路主线程）
@@ -128,6 +129,7 @@
 
   function toast(text, color) {
     var d = document.createElement('div');
+    d.className = 'oc-toast';
     d.style.cssText = 'position:fixed;top:10px;right:10px;z-index:2147483647;background:rgba(0,0,0,.92);color:' + (color || '#0f0') + ';padding:10px 14px;border-radius:8px;font-size:12px;font-family:monospace;max-width:360px;line-height:1.5;box-shadow:0 2px 8px rgba(0,0,0,.3);';
     d.textContent = text;
     document.body.appendChild(d);
@@ -140,6 +142,41 @@
       if (typeof CONNECTION_MODULE !== 'undefined' && CONNECTION_MODULE.streamCount && CONNECTION_MODULE.streamCount() > 0) return true;
     } catch (e) {}
     return false;
+  }
+
+  function ocFindInput() {
+    try {
+      return document.querySelector('[data-component="prompt-input"]') || document.querySelector('[contenteditable="true"]') || document.querySelector('textarea');
+    } catch (e) { return null; }
+  }
+  function ocGetInputText(el) {
+    try {
+      if (!el) return '';
+      if (typeof el.value === 'string') return el.value;
+      return el.innerText || el.textContent || '';
+    } catch (e) { return ''; }
+  }
+  function ocSaveInputDraft() {
+    try {
+      var el = ocFindInput();
+      var t = ocGetInputText(el);
+      if (t && t.trim()) { try { localStorage.setItem('oc_input_backup', t); } catch (e) {} return true; }
+    } catch (e) {}
+    return false;
+  }
+  function ocRestoreInputDraft() {
+    try {
+      var t = null;
+      try { t = localStorage.getItem('oc_input_backup'); } catch (e) {}
+      if (!t) return;
+      var el = ocFindInput();
+      if (!el) return;
+      if (ocGetInputText(el).trim()) { try { localStorage.removeItem('oc_input_backup'); } catch (e2) {} return; }
+      if (typeof el.value === 'string') { el.value = t; try { el.dispatchEvent(new Event('input', { bubbles: true })); } catch (e3) {} }
+      else { try { el.focus(); } catch (e6) {} try { document.execCommand('insertText', false, t); } catch (e4) { try { el.innerText = t; } catch (e7) {} } }
+      try { localStorage.removeItem('oc_input_backup'); } catch (e5) {}
+      toast('已恢复刷新前未发出的输入', '#2ea043');
+    } catch (e) {}
   }
 
   var SETTINGS_PANEL_MODULE = (function () {
@@ -2802,6 +2839,15 @@
       } catch (e) {}
     }
     var lastAbortAt = 0;
+    var flowAt = 0;
+    var stuckWarnedAt = 0;
+    function noteFlow(n) {
+      try {
+        if (n && n.classList && n.classList.contains('oc-toast')) return;
+        if (n && n.closest && n.closest('.oc-toast')) return;
+      } catch (e) {}
+      flowAt = Date.now();
+    }
     function abortFetch() {
       var n = 0;
       try {
@@ -2829,6 +2875,7 @@
           var stop = findStopBtn() || findStopSlow();
           if (!stop || !stop.isConnected) return;
           if (getSetting('escReload', true)) {
+            ocSaveInputDraft();
             toast('ESC后界面仍在转圈，自动刷新复位…', '#f0883e');
             setTimeout(function () { location.reload(); }, 800);
           } else {
@@ -2840,6 +2887,33 @@
     function init() {
       if (!isLocalhost4096 && !isMemWeb) return;
       refreshCache(true);
+      try { ocRestoreInputDraft(); } catch (eR) {}
+      try { setTimeout(function () { try { ocRestoreInputDraft(); } catch (eR2) {} }, 4000); } catch (eR3) {}
+      try {
+        var flowObs = new MutationObserver(function (muts) {
+          for (var i = 0; i < muts.length; i++) {
+            var an = muts[i].addedNodes;
+            for (var j = 0; j < an.length; j++) { if (an[j].nodeType === 1) { noteFlow(an[j]); break; } }
+          }
+        });
+        if (document.body) flowObs.observe(document.body, { childList: true, subtree: true });
+      } catch (eF) {}
+      try {
+        setInterval(function () {
+          try {
+            var stop = (cachedStop && cachedStop.isConnected) ? cachedStop : null;
+            var streams = liveStreamCount();
+            var gen = !!(stop || streams > 0 || document.querySelector('[data-generating="true"]'));
+            if (!gen) { stuckWarnedAt = 0; return; }
+            if (!flowAt) flowAt = Date.now();
+            if (Date.now() - flowAt > 20000 && Date.now() - stuckWarnedAt > 60000) {
+              stuckWarnedAt = Date.now();
+              toast('会话流疑似卡死（20秒无数据）：可刷新页面复位', '#f0883e');
+              try { console.log(TAG, 'stream stall suspected, no flow 20s'); } catch (eL2) {}
+            }
+          } catch (e) {}
+        }, 5000);
+      } catch (eW) {}
       try {
         var mo = new MutationObserver(function () { refreshCache(false); });
         if (document.body) mo.observe(document.body, { childList: true, subtree: true });
@@ -2864,7 +2938,7 @@
           console.log(TAG,'ESC abort triggered');
         }
       }, true);
-      console.log(TAG,'ESC single-press enabled v1.14.5');
+      console.log(TAG,'ESC single-press enabled v1.14.6');
     }
     return { init: init };
   })();
