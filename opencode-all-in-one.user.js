@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.15.4
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 设置面板(精简版) | v1.15.4
+// @version      1.15.5
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 设置面板(精简版) | v1.15.5
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.15.5 删停滞检测残留死代码（flowObs/noteFlow/flowAt/prevGen/stuckWarnedAt）
 // v1.15.4 删慢回复toast+断连横幅美化：呼吸光环/省略号/扫光/恢复进度+刷新前保输入
 // v1.15.3 卡死提示写明原因：流/停止钮/标记分类免开F12
 // v1.15.2 卡死误报降噪：心跳补文本更新+新轮次重置+隐藏停止按钮不算生成
@@ -2451,16 +2452,6 @@
         cachedGen = !!(document.querySelector('[data-generating="true"]') || cachedStop || document.querySelector('.oc-generating') || document.querySelector('button[title*="Stop"]'));
       } catch (e) {}
     }
-    var flowAt = 0;
-    var stuckWarnedAt = 0;
-    var prevGen = false;
-    function noteFlow(n) {
-      try {
-        if (n && n.classList && n.classList.contains('oc-toast')) return;
-        if (n && n.closest && n.closest('.oc-toast')) return;
-      } catch (e) {}
-      flowAt = Date.now();
-    }
     function abortFetch() {
       var n = 0;
       try {
@@ -2480,16 +2471,6 @@
       refreshCache(true);
       try { ocRestoreInputDraft(); } catch (eR) {}
       try { setTimeout(function () { try { ocRestoreInputDraft(); } catch (eR2) {} }, 4000); } catch (eR3) {}
-      try {
-        var flowObs = new MutationObserver(function (muts) {
-          for (var i = 0; i < muts.length; i++) {
-            if (muts[i].type === 'characterData') { noteFlow(muts[i].target); break; }
-            var an = muts[i].addedNodes;
-            for (var j = 0; j < an.length; j++) { if (an[j].nodeType === 1) { noteFlow(an[j]); break; } }
-          }
-        });
-        if (document.body) flowObs.observe(document.body, { childList: true, subtree: true, characterData: true });
-      } catch (eF) {}
       try {
         var mo = new MutationObserver(function () { refreshCache(false); });
         if (document.body) mo.observe(document.body, { childList: true, subtree: true });
@@ -2514,7 +2495,7 @@
           console.log(TAG,'ESC abort triggered');
         }
       }, true);
-      console.log(TAG,'ESC single-press enabled v1.15.4');
+      console.log(TAG,'ESC single-press enabled v1.15.5');
     }
     return { init: init };
   })();
