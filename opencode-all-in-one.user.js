@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         OpenCode All-in-One 增强
 // @namespace    http://tampermonkey.net/
-// @version      1.15.5
-// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 设置面板(精简版) | v1.15.5
+// @version      1.16.0
+// @description  OpenCode 全站增强：Go 模型额度面板 + 模型选择器额度+国家+评分+隐私显示 + Tab 切换代理 + 粘贴图片(压缩) + 选项键盘导航 + 拖拽网页/链接到输入框(防遮挡无黑屏) + 后端掉线2s自动刷新 + ESC单按中断 + DS峰时提醒 + 设置面板(精简版) | v1.16.0
 // @author       pass
 // @match        https://opencode.ai/*
 // @include      /^https?:\/\/localhost:4096/
@@ -22,6 +22,7 @@
 // ==/UserScript==
 
 // 版本历史：
+// v1.16.0 选择器Zen行去额度只留评分+全行补智力评分+Zen免费表默认前3+补1.3-free元数据
 // v1.15.5 删停滞检测残留死代码（flowObs/noteFlow/flowAt/prevGen/stuckWarnedAt）
 // v1.15.4 删慢回复toast+断连横幅美化：呼吸光环/省略号/扫光/恢复进度+刷新前保输入
 // v1.15.3 卡死提示写明原因：流/停止钮/标记分类免开F12
@@ -471,6 +472,7 @@
     };
 
     var ZEN_FREE_META = {
+      'muse-spark-1.3-contributor-free': { context: 1048576, modalities: ['text', 'image', 'video', 'pdf', 'audio'], reasoning: true, suggest: '多模态', score: 58, country: '美国', speed: 215.0, trainedOnUserData: true },
       'muse-spark-1.2-contributor-free': { context: 1048576, modalities: ['text', 'image', 'video', 'pdf', 'audio'], reasoning: true, suggest: '多模态', score: 57, country: '美国', speed: 211.7, trainedOnUserData: true },
       'nemotron-3-ultra-free': { context: 1000000, modalities: ['text'], reasoning: true, suggest: '长上下文', score: 48, country: '美国', speed: 157.3 },
       'hy3-free': { context: 190000, modalities: ['text'], reasoning: true, suggest: '通用', score: 42, country: '中国', speed: 67.4 },
@@ -876,6 +878,19 @@
         });
         zt.appendChild(ztb);
         zenBody.appendChild(zt);
+        if (zenFree.length > 3) {
+          var zRows = ztb.querySelectorAll('tr');
+          for (var zi = 3; zi < zRows.length; zi++) zRows[zi].style.display = 'none';
+          var zMore = document.createElement('div');
+          zMore.style.cssText = 'padding:6px;text-align:center;font-size:11px;color:#888;cursor:pointer;';
+          zMore.textContent = '展开全部（' + zenFree.length + ' 个）';
+          zMore.addEventListener('click', function () {
+            var collapsed = zRows[3].style.display === 'none';
+            for (var zj = 3; zj < zRows.length; zj++) zRows[zj].style.display = collapsed ? '' : 'none';
+            zMore.textContent = collapsed ? '只显示前 3 个' : '展开全部（' + zenFree.length + ' 个）';
+          });
+          zenBody.appendChild(zMore);
+        }
       } else {
         zenBody.innerHTML = '<span style="font-size:11px;color:#888;">暂无免费模型</span>';
       }
@@ -1181,7 +1196,7 @@
       if (wantVisible) setTimeout(function () { loadAndInject(false); }, 500);
     }
 
-    return { init: init, loadAndInject: loadAndInject, __parseTables: parseTables, __getSortedModels: function () { var sorted = SNAPSHOT.requests.map(function (r) { return { name: r[0], req5h: parseNum(r[1]), reqMonth: parseNum(r[3]), usage: parseNum(r[5]) }; }); sorted.sort(function (a, b) { return b.reqMonth - a.reqMonth; }); return sorted; }, __getScore: function (normId) { if (!normId) return null; var keys = Object.keys(MODEL_META); for (var i = 0; i < keys.length; i++) { if (norm(keys[i]) === normId) { var meta = MODEL_META[keys[i]]; var s = Math.round(meta.aaScore || meta.cap * 10); return { score: s, color: scoreColor(s) }; } } return null; }, __getPrivacy: function (normId) { if (!normId) return null; var keys = Object.keys(MODEL_META); for (var i = 0; i < keys.length; i++) { if (norm(keys[i]) === normId) { var meta = MODEL_META[keys[i]]; return { trainedOnUserData: !!meta.trainedOnUserData }; } } return null; }, __getCountry: function (normId) { if (!normId) return null; var keys = Object.keys(MODEL_META); for (var i = 0; i < keys.length; i++) { if (norm(keys[i]) === normId) { var meta = MODEL_META[keys[i]]; return meta.country || null; } } return null; }, __getMeta: function (normId) { if (!normId) return null; var keys = Object.keys(MODEL_META); for (var i = 0; i < keys.length; i++) { if (norm(keys[i]) === normId) return MODEL_META[keys[i]]; } return null; } };
+    return { init: init, loadAndInject: loadAndInject, __parseTables: parseTables, __getSortedModels: function () { var sorted = SNAPSHOT.requests.map(function (r) { return { name: r[0], req5h: parseNum(r[1]), reqMonth: parseNum(r[3]), usage: parseNum(r[5]) }; }); sorted.sort(function (a, b) { return b.reqMonth - a.reqMonth; }); return sorted; }, __getScore: function (normId) { if (!normId) return null; var keys = Object.keys(MODEL_META); for (var i = 0; i < keys.length; i++) { if (norm(keys[i]) === normId) { var meta = MODEL_META[keys[i]]; var s = Math.round(meta.aaScore || meta.cap * 10); return { score: s, color: scoreColor(s) }; } } return null; }, __getPrivacy: function (normId) { if (!normId) return null; var keys = Object.keys(MODEL_META); for (var i = 0; i < keys.length; i++) { if (norm(keys[i]) === normId) { var meta = MODEL_META[keys[i]]; return { trainedOnUserData: !!meta.trainedOnUserData }; } } return null; }, __getCountry: function (normId) { if (!normId) return null; var keys = Object.keys(MODEL_META); for (var i = 0; i < keys.length; i++) { if (norm(keys[i]) === normId) { var meta = MODEL_META[keys[i]]; return meta.country || null; } } return null; }, __getZenMeta: function (normId) { if (!normId) return null; var zkeys = Object.keys(ZEN_FREE_META); for (var j = 0; j < zkeys.length; j++) { if (norm(zkeys[j]) === normId) { var zmeta = ZEN_FREE_META[zkeys[j]]; var zs = zmeta.score || 0; return { score: zs, color: scoreColor(zs) }; } } return null; }, __getMeta: function (normId) { if (!normId) return null; var keys = Object.keys(MODEL_META); for (var i = 0; i < keys.length; i++) { if (norm(keys[i]) === normId) return MODEL_META[keys[i]]; } return null; } };
   })();
 
   var TAB_MODULE = (function () {
@@ -1765,17 +1780,57 @@
       });
     }
 
+    function isZenFreeId(rawId) {
+      if (!rawId) return false;
+      if (rawId === 'big-pickle' || rawId === 'bigpickle') return true;
+      return /-free$/.test(rawId);
+    }
+    function resolveScore(normId) {
+      try {
+        if (GO_MODULE.__getZenMeta) {
+          var z = GO_MODULE.__getZenMeta(normId);
+          if (z && z.score) return z;
+        }
+      } catch (eZ) {}
+      try {
+        if (GO_MODULE.__getScore) {
+          var g = GO_MODULE.__getScore(normId);
+          if (g && g.score) return g;
+        }
+      } catch (eG) {}
+      return null;
+    }
+    function appendScoreTag(item, scoreInfo) {
+      if (!scoreInfo || !scoreInfo.score) return;
+      if (item.querySelector('.oc-score-tag')) return;
+      var sc = document.createElement('span');
+      sc.className = 'oc-score-tag';
+      sc.style.cssText = 'font-size:10px;margin-left:6px;white-space:nowrap;flex-shrink:0;font-weight:700;color:' + (scoreInfo.color || '#888') + ';';
+      sc.textContent = scoreInfo.score + '分';
+      sc.title = 'AA 智力指数';
+      item.appendChild(sc);
+    }
+
     function injectQuotasIntoDropdown() {
       // Find dropdown with model options
       var items = document.querySelectorAll('[data-option-key]');
       if (!items.length) return;
 
       items.forEach(function (item) {
-        if (item.querySelector('.oc-quota-tag')) return; // Already injected
+        if (item.querySelector('.oc-quota-tag') || item.querySelector('.oc-score-tag')) return; // Already injected
 
         var key = item.getAttribute('data-option-key') || '';
-        var modelId = key.split(':').pop().toLowerCase().replace(/[^a-z0-9]/g, '');
+        var rawId = key.split(':').pop().toLowerCase();
+        var modelId = rawId.replace(/[^a-z0-9]/g, '');
         if (!modelId) return;
+
+        var scoreInfo = resolveScore(modelId);
+
+        // Zen 免费行：不显示额度，只显示智力评分
+        if (isZenFreeId(rawId)) {
+          appendScoreTag(item, scoreInfo);
+          return;
+        }
 
         // Look up quota by model ID
         var quota = quotaMap[modelId];
@@ -1803,6 +1858,8 @@
           peakBadge.setAttribute('data-peak-model', modelId);
           item.appendChild(peakBadge);
         }
+        // Go/其他行：额度之外再补智力评分
+        appendScoreTag(item, scoreInfo);
       });
       console.log(TAG, 'Injected quotas into', items.length, 'dropdown items');
       try { injectMaxHead(items); } catch (eH) {}
