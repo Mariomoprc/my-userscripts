@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         OpenCode Go 最佳模型
 // @namespace    http://tampermonkey.net/
-// @version      2.0.0
+// @version      2.0.1
 // @description  在 opencode.ai/go 订阅页显示「当前最佳模型」：综合分 = AA 智力分 + 月额度加成，并高亮对应模型行。
 // @author       pass
 // @match        https://opencode.ai/*
@@ -19,6 +19,11 @@
 //   1. SCORES 是 AA 智力指数（artificialanalysis.ai/leaderboards/models），新模型上市时手动补一行，缺的会显示为「未收录评分」。
 //   2. 额度、请求数、价格都实时抓自 docs/go，不需要手改。
 //   3. TRAIN_PENALTY > 0 可给「会用你的数据训练」的模型扣分（设 10 则 GLM-5.3-Flash 会反超 Muse Spark 1.3）。
+//
+// v2.0.1 修复：docs/go 会按 Accept-Language 返回中文本地化页面（表头「每月限制/每 5 小时请求数」），
+//             之前只匹配英文表头 → 中文环境下解析不出模型、卡片不显示。现在①抓取显式要英文版
+//             ②表头匹配中英双语兜底 ③解析失败不再永久放弃（退避重试 + 清缓存）。
+//             实测环境：软路由 192.168.3.100 上 browser 容器（playwright 1.62）zh-CN / en-US 均通过。
 
 (function () {
   'use strict';
@@ -26,7 +31,7 @@
   if (!/\/go\/?$/.test(location.pathname)) return; // 只在 /go（含 /zh/go）订阅页运行
 
   var DOCS_URL = 'https://opencode.ai/docs/go/';
-  var CACHE_KEY = 'ocgb_docs_cache';
+  var CACHE_KEY = 'ocgb_docs_cache_v2';
   var CACHE_TTL = 6 * 3600 * 1000;
   var LIMIT_MIN = 15;      // 月额度下限 $
   var LIMIT_MAX = 60;      // 月额度上限 $
@@ -83,26 +88,39 @@
     var doc = new DOMParser().parseFromString(html, 'text/html');
     var map = {}; // key = norm(模型名)，与 norm(modelId) 一致
     function slot(k, name) { return map[k] || (map[k] = { name: name }); }
+    function hit(head, keys) {
+      for (var i = 0; i < keys.length; i++) if (head.indexOf(keys[i]) !== -1) return true;
+      return false;
+    }
+    // docs 会按 Accept-Language 本地化，表头中英双语都认
+    function tableKind(head) {
+      if (hit(head, ['monthly limit', '每月限制'])) return 'price';
+      if (hit(head, ['requests per 5 hour', '每 5 小时请求数'])) return 'req';
+      if (hit(head, ['model id', '模型 id'])) return 'id';
+      if (hit(head, ['model training', '模型训练'])) return 'train';
+      return null;
+    }
 
     Array.prototype.forEach.call(doc.querySelectorAll('table'), function (t) {
       var headRow = t.querySelector('tr');
-      var head = headRow ? headRow.textContent.toLowerCase() : '';
+      var kind = tableKind(headRow ? headRow.textContent.toLowerCase() : '');
+      if (!kind) return;
       Array.prototype.forEach.call(t.querySelectorAll('tr'), function (tr) {
         var c = Array.prototype.map.call(tr.querySelectorAll('th,td'), function (x) { return x.textContent.trim(); });
         if (c.length < 2) return;
         var name = cleanName(c[0]);
-        if (!name || /^model$/i.test(name)) return;
+        if (!name || /^(model|模型)$/i.test(name)) return;
         var m = slot(norm(name), name);
-        if (head.indexOf('monthly limit') !== -1) {
+        if (kind === 'price') {
           m.limit = Math.max(m.limit || 0, maxNum(c[5]));
           m.input = Math.min(m.input || 99, maxNum(c[1]) || 99);
-          if (/4x|ends/i.test(c[5])) m.promo = true;
-        } else if (head.indexOf('requests per 5 hour') !== -1) {
+          if (/4x|ends|结束|限时|倍/i.test(c[5])) m.promo = true;
+        } else if (kind === 'req') {
           m.req5h = Math.max(m.req5h || 0, maxNum(c[1]));
-        } else if (head.indexOf('model id') !== -1) {
+        } else if (kind === 'id') {
           m.id = c[1];
-        } else if (head.indexOf('model training') !== -1) {
-          m.trained = /^yes/i.test(c[1]);
+        } else if (kind === 'train') {
+          m.trained = /^(yes|是|使用)/i.test(c[1]) && !/^(not|不)/i.test(c[1]);
         }
       });
     });
@@ -186,7 +204,7 @@
       var c = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
       if (c && Date.now() - c.t < CACHE_TTL) return Promise.resolve(c.html);
     } catch (e) {}
-    return fetch(DOCS_URL, { credentials: 'omit' })
+    return fetch(DOCS_URL, { credentials: 'omit', headers: { 'Accept-Language': 'en-US,en;q=0.9' } })
       .then(function (r) { return r.ok ? r.text() : null; })
       .then(function (html) {
         if (html) { try { localStorage.setItem(CACHE_KEY, JSON.stringify({ t: Date.now(), html: html })); } catch (e) {} }
@@ -196,7 +214,7 @@
   }
 
   // —— 幂等重入：应付 SSR 水合抹掉卡片 / 站内路由切到 /go / 展开全部模型 ——
-  var res = null, loading = false, lastTick = 0, fails = 0;
+  var res = null, loading = false, lastTick = 0, fails = 0, cooldownUntil = 0;
 
   function tick() {
     if (!/\/go\/?$/.test(location.pathname)) return;
@@ -205,13 +223,19 @@
     if (res) {
       if (!document.getElementById('ocgb-card')) inject(res);
       else highlight(res.ranked[0].id);
-    } else if (!loading && fails < 3) {
+    } else if (!loading && Date.now() > cooldownUntil) {
       loading = true;
       load().then(function (html) {
         loading = false;
-        if (!html) { fails++; console.warn('[OC Go Best] docs/go 拉取失败'); return; }
-        res = parseDocs(html);
-        if (!res.ranked.length) { fails = 9; console.warn('[OC Go Best] 未解析到模型数据'); return; }
+        var parsed = html && parseDocs(html);
+        if (!parsed || !parsed.ranked.length) { // 失败不放弃：清缓存 + 30s 起步退避重试
+          fails++;
+          cooldownUntil = Date.now() + Math.min(60000 * fails, 300000);
+          try { localStorage.removeItem(CACHE_KEY); } catch (e) {}
+          console.warn('[OC Go Best] docs/go 拉取或解析失败，第 ' + fails + ' 次，稍后重试');
+          return;
+        }
+        res = parsed;
         inject(res);
       });
     }
