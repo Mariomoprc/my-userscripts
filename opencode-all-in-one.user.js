@@ -7,10 +7,15 @@
 // @match        https://opencode.ai/*
 // @match        https://commandcode.ai/*
 // @run-at       document-idle
-// @updateURL    https://cdn.jsdelivr.net/gh/Mariomoprc/my-userscripts@main/opencode-all-in-one.user.js
-// @downloadURL  https://cdn.jsdelivr.net/gh/Mariomoprc/my-userscripts@main/opencode-all-in-one.user.js
+// @updateURL    https://fastly.jsdelivr.net/gh/Mariomoprc/my-userscripts@main/opencode-all-in-one.user.js
+// @downloadURL  https://fastly.jsdelivr.net/gh/Mariomoprc/my-userscripts@main/opencode-all-in-one.user.js
 // ==/UserScript==
 
+// 更新地址说明（2026-09-16）：cdn.jsdelivr.net 的前置缓存出现过长时间不刷新（purge 两次仍返回旧版），
+// 所以改用 fastly 镜像。备用手动安装链接（任选其一，内容一样）：
+//   https://fastly.jsdelivr.net/gh/Mariomoprc/my-userscripts@main/opencode-all-in-one.user.js
+//   https://raw.githubusercontent.com/Mariomoprc/my-userscripts/main/opencode-all-in-one.user.js
+//
 // v3.1.0 呈现方式可选（PLACEMENT）：commandcode 改成**底部悬浮条**，不再插进内容流，
 //        页面原有的卡片/数据一点不被挤压、不用翻动（实测 h1 位置与文档高度零变化）；
 //        悬浮条收起时一行显示前三名，点 ⤢ 展开完整卡片，点 × 本次不再显示。
