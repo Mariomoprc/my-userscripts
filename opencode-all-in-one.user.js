@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         模型综合排名（OpenCode / Command Code）
 // @namespace    http://tampermonkey.net/
-// @version      3.0.0
+// @version      3.1.0
 // @description  opencode.ai（/go 订阅页 + /console 用量页）与 commandcode.ai（用量/套餐页）显示「智力评分 + 额度」综合排名，直接可见、不需点按钮、随刷新更新。
 // @author       pass
 // @match        https://opencode.ai/*
@@ -11,6 +11,9 @@
 // @downloadURL  https://cdn.jsdelivr.net/gh/Mariomoprc/my-userscripts@main/opencode-all-in-one.user.js
 // ==/UserScript==
 
+// v3.1.0 呈现方式可选（PLACEMENT）：commandcode 改成**底部悬浮条**，不再插进内容流，
+//        页面原有的卡片/数据一点不被挤压、不用翻动（实测 h1 位置与文档高度零变化）；
+//        悬浮条收起时一行显示前三名，点 ⤢ 展开完整卡片，点 × 本次不再显示。
 // v3.0.0 支持两个站点，面板一律「直接显示、无需点击」：
 //   opencode.ai     /go 订阅页（模型额度表上方） + /console/*（用量区上方，文本锚点定位）
 //   commandcode.ai  /<user>/settings/*（用量页） + /docs/plans/*（套餐文档页）
@@ -20,7 +23,7 @@
 // 维护提示：
 //   1. opencode 的智力分 SCORES 手写在下面（AA 智力指数），新模型上市补一行即可；缺失的会标「未收录评分」。
 //   2. commandcode 的智力分/额度/请求数全部实时抓文档，不用手改；换套餐改 CC.plan。
-//   3. 想调「额度」的权重改 BONUS_MAX，想调页面上的摆放位置改各站点 render 里的插入点。
+//   3. 想调「额度」的权重改 BONUS_MAX，想调页面上的摆放位置改 PLACEMENT。
 
 (function () {
   'use strict';
@@ -32,6 +35,10 @@
   var BONUS_MAX = 10;                 // 额度加成满分
   var TTL = 10 * 60 * 1000;           // 数据缓存 10 分钟（刷新页面超过 10 分钟就重新抓）
   var CARD_ID = 'ocrank-card';
+  var FLOAT_ID = 'ocrank-float';
+  // 呈现方式：'float' = 悬浮在底部，不挤压页面原有内容（推荐给「页面本身已经够满」的站点）
+  //           'inline' = 直接插进页面内容流（会占用版面）
+  var PLACEMENT = { opencode: 'inline', commandcode: 'float' };
 
   // ======================= 通用工具 =======================
   function norm(s) { return (s || '').toLowerCase().replace(/[^a-z0-9.]/g, ''); }
@@ -130,6 +137,43 @@
     document.body.appendChild(wrap);
   }
 
+  // 悬浮条：不改变页面内容、不挤压任何元素（position:fixed 脱离文档流）
+  // 收起时只有一行「🏆 最佳：X 分 ｜ 2 … ｜ 3 …」；点 ⤢ 展开完整卡片；点 × 本次不再显示
+  function floatPanel(res, title, note) {
+    if (document.getElementById(FLOAT_ID)) return true;
+    if (dismissed) return true;
+    var wrap = el('div', 'position:fixed;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));' +
+      'z-index:2147483000;font-size:12px;line-height:1.5;');
+    wrap.id = FLOAT_ID;
+    var bar = el('div', 'display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:10px;' +
+      'background:rgba(18,18,18,.93);color:#eee;border:1px solid rgba(127,127,127,.35);box-shadow:0 3px 14px rgba(0,0,0,.45);');
+    var r = res.ranked;
+    var line = '🏆 ' + r[0].name + ' ' + r[0].total + ' 分';
+    if (r[1]) line += ' ｜ 2 ' + r[1].name + ' ' + r[1].total;
+    if (r[2]) line += ' ｜ 3 ' + r[2].name + ' ' + r[2].total;
+    var text = el('div', 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;', line);
+    var exp = el('span', 'flex:none;cursor:pointer;opacity:.75;padding:0 4px;font-size:14px;', '⤢');
+    var close = el('span', 'flex:none;cursor:pointer;opacity:.6;padding:0 4px;font-size:15px;', '×');
+
+    var detail = null;
+    exp.addEventListener('click', function () {
+      if (detail) { detail.remove(); detail = null; text.style.whiteSpace = 'nowrap'; return; }
+      detail = buildCard(title, res, note);
+      detail.style.margin = '0 0 6px';
+      detail.style.background = 'rgba(18,18,18,.95)';
+      text.style.whiteSpace = 'normal';
+      wrap.insertBefore(detail, bar);
+    });
+    close.addEventListener('click', function () { dismissed = true; wrap.remove(); });
+
+    bar.appendChild(text);
+    bar.appendChild(exp);
+    bar.appendChild(close);
+    wrap.appendChild(bar);
+    document.body.appendChild(wrap);
+    return true;
+  }
+
   function load(storeKey, url) {
     try {
       var c = JSON.parse(localStorage.getItem(storeKey) || 'null');
@@ -212,6 +256,7 @@
 
   // opencode 面板：/go 订阅页插在模型额度表上方；/console 用量页插在用量区上方
   function ocRender(res) {
+    if (PLACEMENT.opencode === 'float') return floatPanel(res, '当前最佳', '数据 docs/go + artificialanalysis');
     var card = buildCard('当前最佳', res, '数据 docs/go + artificialanalysis');
     if (!card) return false;
     var host = document.querySelector('figure[data-component="go-usage"]') ||
@@ -283,7 +328,10 @@
 
   function ccRender(res) {
     if (!res.ranked.length) return false;
-    var card = buildCard('当前最佳（' + CC.plan.toUpperCase() + ' 套餐）', res, '数据 commandcode.ai/docs/plans/' + CC.plan);
+    var title = '当前最佳（' + CC.plan.toUpperCase() + ' 套餐）';
+    var note = '数据 commandcode.ai/docs/plans/' + CC.plan;
+    if (PLACEMENT.commandcode === 'float') return floatPanel(res, title, note);
+    var card = buildCard(title, res, note);
     if (!card) return false;
     var main = document.querySelector('main') || document.body;
     var old = document.getElementById(CARD_ID);
@@ -315,8 +363,11 @@
     return CC.base + CC.plan;
   }
 
-  var res = null, loading = false, fails = 0, cooldownUntil = 0, lastTick = 0;
+  var res = null, loading = false, fails = 0, cooldownUntil = 0, lastTick = 0, dismissed = false;
   var MAX_TRIES = 12; // 找不到插入点时的重试次数（SPA 渲染慢）
+
+  // 面板是否已经画出来（inline 用 CARD_ID，float 用 FLOAT_ID）
+  function painted() { return !!(document.getElementById(CARD_ID) || document.getElementById(FLOAT_ID)); }
 
   function shouldRender() {
     if (IS_OC) return true; // /go 与 /console 都由插入点决定是否出现
@@ -329,9 +380,9 @@
     if (Date.now() - lastTick < 400) return;
     lastTick = Date.now();
     if (res) {
-      if (!document.getElementById(CARD_ID)) {
+      if (!painted()) {
         var ok = IS_OC ? ocRender(res) : ccRender(res);
-        if (!ok && ++fails > MAX_TRIES && !document.getElementById(CARD_ID)) {
+        if (!ok && ++fails > MAX_TRIES && !painted()) {
           var fb = IS_OC ? buildCard('当前最佳', res, '数据 docs/go') : buildCard('当前最佳（' + CC.plan.toUpperCase() + '）', res, 'commandcode docs');
           if (fb) fixedFallback(fb);
         }
