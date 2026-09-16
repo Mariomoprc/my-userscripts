@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         模型综合排名（OpenCode / Command Code）
 // @namespace    http://tampermonkey.net/
-// @version      3.1.0
-// @description  opencode.ai（/go 订阅页 + /console 用量页）与 commandcode.ai（用量/套餐页）显示「智力评分 + 额度」综合排名，直接可见、不需点按钮、随刷新更新。
+// @version      3.2.0
+// @description  opencode.ai（/go 订阅页 + /console 用量页）与 commandcode.ai（用量/套餐页）显示 AA 智力排名 + 三层额度（5小时/每周/每月）+ 月额度对比，直接可见、不需点按钮、随刷新更新。
 // @author       pass
 // @match        https://opencode.ai/*
 // @match        https://commandcode.ai/*
@@ -15,20 +15,23 @@
 // 所以改用 fastly 镜像。备用手动安装链接（任选其一，内容一样）：
 //   https://fastly.jsdelivr.net/gh/Mariomoprc/my-userscripts@main/opencode-all-in-one.user.js
 //   https://raw.githubusercontent.com/Mariomoprc/my-userscripts/main/opencode-all-in-one.user.js
-//
-// v3.1.0 呈现方式可选（PLACEMENT）：commandcode 改成**底部悬浮条**，不再插进内容流，
+
+// v3.2.0 按用户要求改：①不再自己算「综合分」，直接按官方 AA 智力分排名（避免与官方指标混淆）
+//        ②每个模型列出三层额度(5小时/每周/每月)+月额度($)，展开后逐行对比
+//        ③名字粘连修复（「DeepSeek V4.1 FlashOff-peak shown」这类→剥掉促销文案后可与额度表对齐）
+//        ④opencode 控制台（/console/*）是数据密集页，也改走悬浮，不动它的内容；营销页 /go 保持插入式
+// v3.1.0 呈现方式可选（PLACEMENT）：commandcode 改成底部悬浮条，不再插进内容流，
 //        页面原有的卡片/数据一点不被挤压、不用翻动（实测 h1 位置与文档高度零变化）；
 //        悬浮条收起时一行显示前三名，点 ⤢ 展开完整卡片，点 × 本次不再显示。
 // v3.0.0 支持两个站点，面板一律「直接显示、无需点击」：
 //   opencode.ai     /go 订阅页（模型额度表上方） + /console/*（用量区上方，文本锚点定位）
 //   commandcode.ai  /<user>/settings/*（用量页） + /docs/plans/*（套餐文档页）
 // 数据源：opencode 抓 docs/go；commandcode 抓 docs/plans/<plan>（含智力分 + 每模型 Monthly credits）
-// 综合分 = 智力分 + 额度加成（额度按该站点模型里的最小值→0、最大值→+10 线性归一）
 //
 // 维护提示：
 //   1. opencode 的智力分 SCORES 手写在下面（AA 智力指数），新模型上市补一行即可；缺失的会标「未收录评分」。
 //   2. commandcode 的智力分/额度/请求数全部实时抓文档，不用手改；换套餐改 CC.plan。
-//   3. 想调「额度」的权重改 BONUS_MAX，想调页面上的摆放位置改 PLACEMENT。
+//   3. 排名口径：只用官方 AA 智力分（sortByScore），不再自算综合分；想换排序改 sortByScore。
 
 (function () {
   'use strict';
@@ -37,13 +40,18 @@
   var IS_CC = /(^|\.)commandcode\.ai$/.test(location.hostname);
   if (!IS_OC && !IS_CC) return;
 
-  var BONUS_MAX = 10;                 // 额度加成满分
   var TTL = 10 * 60 * 1000;           // 数据缓存 10 分钟（刷新页面超过 10 分钟就重新抓）
   var CARD_ID = 'ocrank-card';
   var FLOAT_ID = 'ocrank-float';
   // 呈现方式：'float' = 悬浮在底部，不挤压页面原有内容（推荐给「页面本身已经够满」的站点）
   //           'inline' = 直接插进页面内容流（会占用版面）
   var PLACEMENT = { opencode: 'inline', commandcode: 'float' };
+  // opencode 控制台（/console/*）是数据密集页，和 commandcode 一样走悬浮，不动它的内容；
+  // 营销页 /go 内容稀疏，保持插入式。
+  function placementFor(site) {
+    if (site === 'opencode') return /\/console/.test(location.pathname) ? 'float' : PLACEMENT.opencode;
+    return PLACEMENT[site];
+  }
 
   // ======================= 通用工具 =======================
   function norm(s) { return (s || '').toLowerCase().replace(/[^a-z0-9.]/g, ''); }
@@ -52,13 +60,13 @@
       .map(function (x) { return Number(x.replace(/,/g, '')) || 0; });
   }
   function maxNum(s) { var a = nums(s); return a.length ? Math.max.apply(null, a) : 0; }
-  // 去掉括号注释 / 促销尾巴 / FREE 后缀，得到模型名主干
+  // 去掉括号注释 / 促销尾巴 / FREE 后缀 /「Off-peak shown」这类文案，得到模型名主干
   function cleanName(s) {
     return (s || '')
       .replace(/\([^)]*\)/g, '')
       .split('·')[0]
+      .replace(/\s*(off-?peak|peak|free|shown|new)\b[\s\S]*$/i, '')
       .replace(/\d+(\.\d+)?x.*$/i, '')
-      .replace(/\s*(FREE|Off-peak|Peak)\s*$/i, '')
       .replace(/\s+/g, ' ')
       .trim();
   }
@@ -70,49 +78,49 @@
     return d;
   }
 
-  // 计算综合分：智力分 + 额度加成（额度在 [lo, hi] 线性归一）
-  function rank(models) {
-    var withLimit = models.filter(function (m) { return m.allowance > 0; });
-    var limits = withLimit.map(function (m) { return m.allowance; });
-    var lo = limits.length ? Math.min.apply(null, limits) : 0;
-    var hi = limits.length ? Math.max.apply(null, limits) : 0;
-    models.forEach(function (m) {
-      var t = (hi > lo) ? (m.allowance - lo) / (hi - lo) : 0;
-      m.bonus = Math.round(BONUS_MAX * Math.max(0, Math.min(1, t)) * 10) / 10;
-      m.total = (m.score == null) ? null : Math.round((m.score + m.bonus) * 10) / 10;
+  // 只按官方 AA 智力分排序（不自己算综合分，避免和官方指标混淆）
+  function sortByScore(models) {
+    var scored = models.filter(function (m) { return m.score != null; });
+    scored.sort(function (a, b) {
+      return b.score - a.score || (b.allowance || 0) - (a.allowance || 0);
     });
-    var ranked = models.filter(function (m) { return m.total != null; }).sort(function (a, b) {
-      return b.total - a.total || b.score - a.score || b.allowance - a.allowance;
-    });
-    return { all: models, ranked: ranked, lo: lo, hi: hi };
+    return { all: models, ranked: scored };
+  }
+
+  // 每个模型两行：第一行 序号 + 名字 + 标签 + 智力分，第二行 额度（月$ / 5小时 / 每周 / 每月 / 上下文）
+  function modelRow(m, i) {
+    var tags = (m.trained ? '<span style="margin-left:4px;padding:0 4px;border-radius:99px;background:#b7791f;color:#fff;font-size:9px">训练</span>' : '') +
+      (m.promo ? '<span style="margin-left:4px;padding:0 4px;border-radius:99px;background:#1f6feb;color:#fff;font-size:9px">限时</span>' : '');
+    var l2 = [];
+    if (m.allowance) l2.push('<b>' + money(m.allowance) + '</b>/月');
+    if (m.req5h) l2.push('5小时 ' + m.req5h.toLocaleString());
+    if (m.reqWeek) l2.push('每周 ' + m.reqWeek.toLocaleString());
+    if (m.reqMonth) l2.push('每月 ' + m.reqMonth.toLocaleString());
+    if (m.context) l2.push('上下文 ' + m.context);
+    return '<div style="padding:5px 0;border-top:1px solid rgba(127,127,127,.16)">' +
+      '<div style="display:flex;align-items:baseline;gap:6px">' +
+      '<span style="opacity:.45;flex:none;min-width:14px;text-align:right">' + (i + 1) + '</span>' +
+      '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + m.name + tags + '</span>' +
+      '<b style="flex:none;color:#2ea043">' + m.score + '</b></div>' +
+      '<div style="opacity:.55;font-size:11px;padding-left:20px">' + (l2.join(' · ') || '（该模型无额度数据）') + '</div></div>';
   }
 
   function buildCard(title, res, note) {
-    var best = res.ranked[0];
-    if (!best) return null;
-    var card = el('div', 'margin:14px 0;padding:12px 14px;border:1px solid rgba(127,127,127,.3);border-radius:10px;' +
-      'background:rgba(127,127,127,.07);font-size:13px;line-height:1.75;color:inherit;');
+    var card = el('div', 'padding:10px 12px;border:1px solid rgba(127,127,127,.3);border-radius:10px;' +
+      'background:rgba(20,20,20,.96);font-size:12px;line-height:1.45;color:#eee;max-height:56vh;overflow:auto;' +
+      '-webkit-overflow-scrolling:touch;');
     card.id = CARD_ID;
-    var runners = res.ranked.slice(1, 4).map(function (m, i) { return (i + 2) + '. ' + m.name + ' ' + m.total; }).join(' · ');
-    var unknown = res.all.length - res.ranked.length;
-    var extras = [];
-    if (best.reqMonth) extras.push('月 ' + best.reqMonth.toLocaleString() + ' 次');
-    else if (best.req5h) extras.push('5 小时 ' + best.req5h.toLocaleString() + ' 次');
-    if (best.context) extras.push('上下文 ' + best.context);
-    var tag = function (txt, bg) {
-      return '<span style="margin-left:6px;padding:1px 6px;border-radius:99px;background:' + bg +
-        ';color:#fff;font-size:10px;vertical-align:middle">' + txt + '</span>';
-    };
+    var list = res.ranked.slice(0, 12).map(modelRow).join('');
+    var t = new Date();
+    var hhmm = ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2);
     card.innerHTML =
-      '<div style="font-weight:700;font-size:14px">🏆 ' + title + '：<span style="color:#2ea043">' + best.name + '</span>' +
-      (best.trained ? tag('训练用户数据', '#b7791f') : '') + (best.promo ? tag('限时', '#1f6feb') : '') +
-      '<span style="margin-left:8px;font-weight:400;opacity:.75">综合 ' + best.total + ' 分</span></div>' +
-      '<div style="opacity:.85">智力 ' + best.score + ' ＋ 额度加成 ' + best.bonus +
-      (best.allowance ? '（' + money(best.allowance) + '/月）' : '') +
-      (extras.length ? ' · ' + extras.join(' · ') : '') + '</div>' +
-      (runners ? '<div style="opacity:.6">' + runners + '</div>' : '') +
-      '<div style="opacity:.45;font-size:11px">综合分 = 智力分 + 额度加成（' + money(res.lo) + '→0、' + money(res.hi) + '→+' + BONUS_MAX +
-      '）· 共 ' + res.all.length + ' 个模型' + (unknown ? '，' + unknown + ' 个未收录评分' : '') + ' · ' + note + '</div>';
+      '<div style="font-weight:700;font-size:13px">🧠 AA 智力排名 · ' + title + '</div>' +
+      '<div style="opacity:.5;font-size:11px;margin-bottom:2px">按官方 AA 智力分排序（不另外算综合分）；额度是该模型的上限</div>' +
+      list +
+      '<div style="opacity:.45;font-size:11px;margin-top:6px;padding-top:5px;border-top:1px solid rgba(127,127,127,.16)">' +
+      '共 ' + res.all.length + ' 个模型，' + res.ranked.length + ' 个有评分' +
+      (res.all.length - res.ranked.length ? '（' + (res.all.length - res.ranked.length) + ' 个未收录评分）' : '') +
+      ' · ' + note + ' · 抓取于 ' + hhmm + '</div>';
     return card;
   }
 
@@ -143,7 +151,7 @@
   }
 
   // 悬浮条：不改变页面内容、不挤压任何元素（position:fixed 脱离文档流）
-  // 收起时只有一行「🏆 最佳：X 分 ｜ 2 … ｜ 3 …」；点 ⤢ 展开完整卡片；点 × 本次不再显示
+  // 收起时一行显示前三名（名字+AA 智力分）；点 ⤢ 展开完整对比列表；点 × 本次不再显示
   function floatPanel(res, title, note) {
     if (document.getElementById(FLOAT_ID)) return true;
     if (dismissed) return true;
@@ -153,9 +161,9 @@
     var bar = el('div', 'display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:10px;' +
       'background:rgba(18,18,18,.93);color:#eee;border:1px solid rgba(127,127,127,.35);box-shadow:0 3px 14px rgba(0,0,0,.45);');
     var r = res.ranked;
-    var line = '🏆 ' + r[0].name + ' ' + r[0].total + ' 分';
-    if (r[1]) line += ' ｜ 2 ' + r[1].name + ' ' + r[1].total;
-    if (r[2]) line += ' ｜ 3 ' + r[2].name + ' ' + r[2].total;
+    var line = '🧠 1 ' + r[0].name + ' ' + r[0].score;
+    if (r[1]) line += ' ｜ 2 ' + r[1].name + ' ' + r[1].score;
+    if (r[2]) line += ' ｜ 3 ' + r[2].name + ' ' + r[2].score;
     var text = el('div', 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;', line);
     var exp = el('span', 'flex:none;cursor:pointer;opacity:.75;padding:0 4px;font-size:14px;', '⤢');
     var close = el('span', 'flex:none;cursor:pointer;opacity:.6;padding:0 4px;font-size:15px;', '×');
@@ -241,6 +249,7 @@
           if (/4x|ends|结束|限时|倍/i.test(c[5])) m.promo = true;
         } else if (kind === 'req') {
           m.req5h = Math.max(m.req5h || 0, maxNum(c[1]));
+          m.reqWeek = Math.max(m.reqWeek || 0, maxNum(c[2]));
           m.reqMonth = Math.max(m.reqMonth || 0, maxNum(c[3]));
         } else if (kind === 'id') {
           m.id = c[1];
@@ -256,13 +265,13 @@
       m.score = OC_SCORES[m.id || k];
       models.push(m);
     });
-    return rank(models);
+    return sortByScore(models);
   }
 
-  // opencode 面板：/go 订阅页插在模型额度表上方；/console 用量页插在用量区上方
+  // opencode 面板：/go 订阅页插在模型额度表上方；/console 用量页走悬浮条
   function ocRender(res) {
-    if (PLACEMENT.opencode === 'float') return floatPanel(res, '当前最佳', '数据 docs/go + artificialanalysis');
-    var card = buildCard('当前最佳', res, '数据 docs/go + artificialanalysis');
+    if (placementFor('opencode') === 'float') return floatPanel(res, 'OpenCode Go', '数据 docs/go + artificialanalysis');
+    var card = buildCard('OpenCode Go', res, '数据 docs/go + artificialanalysis');
     if (!card) return false;
     var host = document.querySelector('figure[data-component="go-usage"]') ||
       document.querySelector('section[data-component="comparison"]');
@@ -306,6 +315,7 @@
           m.tok = maxNum(c[3]) || null;                   // Tok/s
         } else if (isReq) {
           m.req5h = Math.max(m.req5h || 0, maxNum(c[1]));
+          m.reqWeek = Math.max(m.reqWeek || 0, maxNum(c[2]));
           m.reqMonth = Math.max(m.reqMonth || 0, maxNum(c[3]));
         } else if (isCredits) {
           m.allowance = Math.max(m.allowance, maxNum(c[c.length - 1]));  // Monthly credits（促销取大值）
@@ -328,14 +338,14 @@
     });
     var list = Object.keys(models).map(function (k) { return models[k]; })
       .filter(function (m) { return m.allowance || m.score != null; });
-    return rank(list);
+    return sortByScore(list);
   }
 
   function ccRender(res) {
     if (!res.ranked.length) return false;
-    var title = '当前最佳（' + CC.plan.toUpperCase() + ' 套餐）';
+    var title = CC.plan.toUpperCase() + ' 套餐';
     var note = '数据 commandcode.ai/docs/plans/' + CC.plan;
-    if (PLACEMENT.commandcode === 'float') return floatPanel(res, title, note);
+    if (placementFor('commandcode') === 'float') return floatPanel(res, title, note);
     var card = buildCard(title, res, note);
     if (!card) return false;
     var main = document.querySelector('main') || document.body;
@@ -388,7 +398,7 @@
       if (!painted()) {
         var ok = IS_OC ? ocRender(res) : ccRender(res);
         if (!ok && ++fails > MAX_TRIES && !painted()) {
-          var fb = IS_OC ? buildCard('当前最佳', res, '数据 docs/go') : buildCard('当前最佳（' + CC.plan.toUpperCase() + '）', res, 'commandcode docs');
+          var fb = IS_OC ? buildCard('OpenCode Go', res, '数据 docs/go') : buildCard(CC.plan.toUpperCase() + ' 套餐', res, 'commandcode docs');
           if (fb) fixedFallback(fb);
         }
       }
@@ -407,7 +417,7 @@
         return;
       }
       res = parsed;
-      console.log('[OC Rank] 共 ' + res.all.length + ' 个模型，最佳：' + res.ranked[0].name + ' ' + res.ranked[0].total);
+      console.log('[OC Rank] 共 ' + res.all.length + ' 个模型，智力最高：' + res.ranked[0].name + ' ' + res.ranked[0].score);
       tick();
     });
   }
