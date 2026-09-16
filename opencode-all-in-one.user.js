@@ -1,25 +1,17 @@
 // ==UserScript==
 // @name         模型综合排名（OpenCode / Command Code）
 // @namespace    http://tampermonkey.net/
-// @version      3.3.1
-// @description  opencode.ai（/go 订阅页 + /console 用量页）与 commandcode.ai（用量/套餐页）显示 AA 智力排名 + 三层额度（5小时/每周/每月）+ 月额度对比，直接可见、不需点按钮、随刷新更新。
+// @version      3.4.0
+// @description  opencode.ai（/go 订阅页 + /console 用量页）与 commandcode.ai（用量/套餐页）显示 AA 智力排名 + 三层额度（5小时/每周/每月）+ 月额度对比；评分与额度全自动抓取，直接可见、随刷新更新。
 // @author       pass
+// @grant        GM_xmlhttpRequest
+// @connect      artificialanalysis.ai
 // @match        https://opencode.ai/*
 // @match        https://commandcode.ai/*
 // @run-at       document-idle
 // @updateURL    https://raw.githubusercontent.com/Mariomoprc/my-userscripts/main/opencode-all-in-one.user.js
 // @downloadURL  https://raw.githubusercontent.com/Mariomoprc/my-userscripts/main/opencode-all-in-one.user.js
 // ==/UserScript==
-// 更新地址（2026-09-16 实测定的）：用 raw.githubusercontent.com。
-// v3.3.1 把自动更新地址从 fastly.jsdelivr 换成 raw.githubusercontent（手机直连实测只有它能通）
-// v3.3.0 按反馈再改：①「限时」标签带到期日 ②加 tok/s 速度 ③面板顶部可点切换排序（智力/5小时/$额度）
-// v3.2.0 按用户要求改：①不再自己算「综合分」，直接按官方 AA 智力分排名 ②列出三层额度+月额度
-// v3.1.0 呈现方式可选（PLACEMENT）：commandcode 改成底部悬浮条，不再插进内容流
-// v3.0.0 支持两个站点，面板一律「直接显示、无需点击」
-// 维护提示：
-//   1. opencode 的智力分 SCORES 手写在下面（AA 智力指数），新模型上市补一行即可；缺失的会标未收录。
-//   2. commandcode 的智力分/额度/请求数全部实时抓文档，不用手改；换套餐改 CC.plan。
-//   3. 排名口径只用官方指标，不自算综合分；可点面板顶部切换。AA_FALLBACK 是 AA 兜底分（带 *）。
 (function () {
 'use strict';
 var IS_OC = /(^|\.)opencode\.ai$/.test(location.hostname);
@@ -49,13 +41,85 @@ return (s || '')
 .trim();
 }
 function money(v) { return '$' + (Math.round(v * 100) / 100); }
+var AA_URL = 'https://artificialanalysis.ai/leaderboards/models';
+var AA_CACHE_KEY = 'ocrank_aa_v1';
+var AA_TTL = 24 * 3600 * 1000;
+function gmGet(url, cb) {
+try {
+if (typeof GM_xmlhttpRequest === 'function') {
+GM_xmlhttpRequest({
+method: 'GET', url: url, timeout: 40000,
+headers: { 'Accept-Language': 'en-US,en;q=0.9' },
+onload: function (r) { cb(r && r.status >= 200 && r.status < 300 ? r.responseText : null); },
+onerror: function () { cb(null); },
+ontimeout: function () { cb(null); }
+});
+return true;
+}
+} catch (e) {}
+return false;
+}
+function parseAA(html) {
+var map = {};
+var re = /\{"slug":"([^"]+)","name":"([^"]+)"[\s\S]{0,500}?"intelligenceIndex":([\d.]+)/g, m;
+while ((m = re.exec(html)) !== null) {
+var k = norm(String(m[2]).replace(/\([^)]*\)/g, ''));
+var v = parseFloat(m[3]);
+if (!k || !isFinite(v)) continue;
+if (!(map[k] >= v)) map[k] = v;
+}
+return map;
+}
+function aaCount(map) { var n = 0; for (var k in map) n++; return n; }
+function lookupAA(map, names) {
+if (!map) return null;
+var i, k;
+for (i = 0; i < names.length; i++) {
+k = norm(names[i]);
+if (k && map[k] != null) return map[k];
+}
+for (i = 0; i < names.length; i++) {
+k = norm(names[i]);
+if (!k || k.length < 5) continue;
+var best = null, bestLen = -1;
+for (var k3 in map) {
+var ok = false;
+if (k3.indexOf(k) !== -1 || k.indexOf(k3) !== -1) {
+var longer = k.length > k3.length ? k : k3, shorter = k.length > k3.length ? k3 : k;
+var next = longer.charAt(shorter.length);
+ok = (longer.charAt(0) === shorter.charAt(0)) && !/[0-9.]/.test(next);
+}
+if (ok && k3.length > bestLen) { bestLen = k3.length; best = map[k3]; }
+}
+if (best != null) return best;
+}
+return null;
+}
+function ensureAA() {
+try {
+var c = JSON.parse(localStorage.getItem(AA_CACHE_KEY) || 'null');
+if (c && c.map && Date.now() - c.t < AA_TTL && aaCount(c.map) > 50) {
+return Promise.resolve({ map: c.map, live: true, age: Date.now() - c.t });
+}
+} catch (e) {}
+return new Promise(function (resolve) {
+var started = gmGet(AA_URL, function (html) {
+if (!html) return resolve({ map: null, live: false });
+var map = parseAA(html);
+if (aaCount(map) < 50) return resolve({ map: null, live: false });
+try { localStorage.setItem(AA_CACHE_KEY, JSON.stringify({ t: Date.now(), map: map })); } catch (e) {}
+resolve({ map: map, live: true, age: 0 });
+});
+if (!started) resolve({ map: null, live: false });
+});
+}
 function el(tag, css, html) {
 var d = document.createElement(tag);
 if (css) d.style.cssText = css;
 if (html != null) d.innerHTML = html;
 return d;
 }
-var AA_FALLBACK = {
+var AA_SNAPSHOT = {
 'longcat2.0': 19.69, 'ling3.0flashsante': 20.63, 'inkling': 25.54, 'inklingsmall': 26.09,
 'step3.7flash': 19.48, 'step3.5flash': 16.96, 'nemotron3ultra': 23.41, 'qwen3.827b': 33.90,
 'mimo-v2.5': 22.30
@@ -143,7 +207,8 @@ list +
 '共 ' + res.all.length + ' 个模型 · 有评分 ' + scoredCount + ' 个' +
 (unscored ? '（' + unscored + ' 个未收录评分）' : '') +
 (hasFallback ? '；* = 取自 AA 排行榜（该站文档未收录）' : '') +
-' · ' + note + ' · 抓取于 ' + hhmm + (stale ? ' · ⚠︎ 可能已过期，下拉刷新页面' : '') + '</div>';
+' · ' + note + ' · 评分源 ' + (res.aaSrc || '内置快照') + ' · 抓取于 ' + hhmm +
+(stale ? ' · ⚠︎ 可能已过期，下拉刷新页面' : '') + '</div>';
 Array.prototype.forEach.call(card.querySelectorAll('[data-sort]'), function (b) {
 b.addEventListener('click', function () { setSort(b.getAttribute('data-sort')); });
 });
@@ -265,7 +330,7 @@ var OC_SCORES = {
 'qwen3.8-flash': 39.91, 'qwen3.7-max': 29.87, 'qwen3.7-plus': 25.82, 'qwen3.6-plus': 27.01,
 'hy3': 25.77
 };
-function ocParse(html) {
+function ocParse(html, aa, aaLive) {
 var map = {};
 function slot(k, name) { return map[k] || (map[k] = { name: name, allowance: 0 }); }
 var hit = function (head, keys) {
@@ -303,11 +368,18 @@ var models = [];
 Object.keys(map).forEach(function (k) {
 var m = map[k];
 if (!m.allowance) return;
+var live = lookupAA(aa, [m.id, m.name]);
+if (live != null) {
+m.score = live; m.aaLive = true;
+} else {
 m.score = OC_SCORES[m.id || k];
-if (m.score == null && AA_FALLBACK[k] != null) { m.score = AA_FALLBACK[k]; m.aaFallback = true; }
+if (m.score == null && AA_SNAPSHOT[k] != null) { m.score = AA_SNAPSHOT[k]; m.aaFallback = true; }
+}
 models.push(m);
 });
-return sortModels(models);
+var out = sortModels(models);
+out.aaSrc = aaLive ? 'AA 实时' : '内置快照';
+return out;
 }
 function ocRender(res) {
 if (placementFor('opencode') === 'float') return floatPanel(res, 'OpenCode Go', '数据 docs/go + artificialanalysis');
@@ -331,7 +403,7 @@ currentRender = function () { ocRender(res); };
 return true;
 }
 var CC = { plan: 'goat', base: 'https://commandcode.ai/docs/plans/' };
-function ccParse(html) {
+function ccParse(html, aa, aaLive) {
 var models = {}, byKey = {};
 function put(k, name) { return byKey[k] || (byKey[k] = (models[k] = { name: name, allowance: 0 })); }
 parseTables(html).forEach(function (tb) {
@@ -347,7 +419,11 @@ var m = put(norm(name), name);
 if (isModels) {
 m.score = maxNum(c[2]) || null;
 if (/not yet scored/i.test(c[2] || '')) m.score = null;
-if (m.score == null && AA_FALLBACK[norm(name)] != null) { m.score = AA_FALLBACK[norm(name)]; m.aaFallback = true; }
+if (m.score == null) {
+var live = lookupAA(aa, [name]);
+if (live != null) { m.score = live; m.aaLive = true; }
+else if (AA_SNAPSHOT[norm(name)] != null) { m.score = AA_SNAPSHOT[norm(name)]; m.aaFallback = true; }
+}
 var ctx = (c[1] || '').trim();
 if (/k$/i.test(ctx) || /m$/i.test(ctx)) m.context = ctx.toUpperCase();
 m.tok = maxNum(c[3]) || null;
@@ -380,7 +456,9 @@ try { pageText = new DOMParser().parseFromString(html, 'text/html').body.textCon
 list.forEach(function (m) {
 if (m.promo && !m.promoEnd) m.promoEnd = findEndDate(pageText, m.name);
 });
-return sortModels(list);
+var out = sortModels(list);
+out.aaSrc = aaLive ? '文档 + AA 实时' : '文档（AA 未取到）';
+return out;
 }
 function ccRender(res) {
 if (!res.ranked.length) return false;
@@ -439,9 +517,10 @@ return;
 }
 if (loading || Date.now() < cooldownUntil) return;
 loading = true;
-load('ocrank_' + (IS_OC ? 'oc' : 'cc'), targetUrl()).then(function (html) {
+Promise.all([load('ocrank_' + (IS_OC ? 'oc' : 'cc'), targetUrl()), ensureAA()]).then(function (r2) {
 loading = false;
-var parsed = html && (IS_OC ? ocParse(html) : ccParse(html));
+var html = r2[0], aa = r2[1];
+var parsed = html && (IS_OC ? ocParse(html, aa.map, aa.live) : ccParse(html, aa.map, aa.live));
 if (!parsed || !parsed.ranked.length) {
 fails++;
 cooldownUntil = Date.now() + Math.min(30000 * fails, 180000);
