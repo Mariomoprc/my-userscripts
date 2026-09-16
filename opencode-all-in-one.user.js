@@ -1,16 +1,17 @@
 // ==UserScript==
 // @name         模型综合排名（OpenCode / Command Code）
 // @namespace    http://tampermonkey.net/
-// @version      3.3.0
+// @version      3.3.1
 // @description  opencode.ai（/go 订阅页 + /console 用量页）与 commandcode.ai（用量/套餐页）显示 AA 智力排名 + 三层额度（5小时/每周/每月）+ 月额度对比，直接可见、不需点按钮、随刷新更新。
 // @author       pass
 // @match        https://opencode.ai/*
 // @match        https://commandcode.ai/*
 // @run-at       document-idle
-// @updateURL    https://fastly.jsdelivr.net/gh/Mariomoprc/my-userscripts@main/opencode-all-in-one.user.js
-// @downloadURL  https://fastly.jsdelivr.net/gh/Mariomoprc/my-userscripts@main/opencode-all-in-one.user.js
+// @updateURL    https://raw.githubusercontent.com/Mariomoprc/my-userscripts/main/opencode-all-in-one.user.js
+// @downloadURL  https://raw.githubusercontent.com/Mariomoprc/my-userscripts/main/opencode-all-in-one.user.js
 // ==/UserScript==
-// 更新地址说明（2026-09-16）：cdn.jsdelivr.net 的前置缓存出现过长时间不刷新（purge 两次仍返回旧版），
+// 更新地址（2026-09-16 实测定的）：用 raw.githubusercontent.com。
+// v3.3.1 把自动更新地址从 fastly.jsdelivr 换成 raw.githubusercontent（手机直连实测只有它能通）
 // v3.3.0 按反馈再改：①「限时」标签带到期日 ②加 tok/s 速度 ③面板顶部可点切换排序（智力/5小时/$额度）
 // v3.2.0 按用户要求改：①不再自己算「综合分」，直接按官方 AA 智力分排名 ②列出三层额度+月额度
 // v3.1.0 呈现方式可选（PLACEMENT）：commandcode 改成底部悬浮条，不再插进内容流
